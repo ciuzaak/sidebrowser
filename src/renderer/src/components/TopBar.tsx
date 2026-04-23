@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type ReactElement } from 'react';
-import { ArrowLeft, ArrowRight, RotateCw, Loader2, Layers } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCw, Loader2, Layers, Smartphone, Monitor } from 'lucide-react';
 import { useActiveTab } from '../store/tab-store';
 import { normalizeUrlInput } from '@shared/url';
 
@@ -60,6 +60,15 @@ export function TopBar({ drawerOpen, onToggleDrawer }: TopBarProps): ReactElemen
         onClick={() => id && void window.sidebrowser.reload(id)}
       >
         {tab?.isLoading ? <Loader2 size={16} className="animate-spin" /> : <RotateCw size={16} />}
+      </IconButton>
+      <IconButton
+        ariaLabel={tab?.isMobile ? 'Switch to desktop' : 'Switch to mobile'}
+        testId="topbar-ua-toggle"
+        disabled={disabled}
+        active={tab?.isMobile}
+        onClick={() => id && void window.sidebrowser.setMobile(id, !tab?.isMobile)}
+      >
+        {tab?.isMobile ? <Smartphone size={16} /> : <Monitor size={16} />}
       </IconButton>
 
       <form onSubmit={submit} className="flex-1">
