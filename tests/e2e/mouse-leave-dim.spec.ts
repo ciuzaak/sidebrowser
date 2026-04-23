@@ -5,7 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
-import { getChromeWindow } from './helpers';
+import {
+  getActiveFilter,
+  getChromeWindow,
+  navigateActive,
+  waitForAddressBarReady,
+} from './helpers';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAIN_PATH = resolve(__dirname, '../../out/main/index.cjs');
@@ -48,25 +53,6 @@ function startDimServer(): Promise<{ server: Server; baseUrl: string }> {
   });
 }
 
-async function waitForAddressBarReady(page: Page): Promise<void> {
-  await page.waitForFunction(
-    () => {
-      const el = document.querySelector<HTMLInputElement>('[data-testid="address-bar"]');
-      return Boolean(el && !el.disabled);
-    },
-    { timeout: 10_000 },
-  );
-}
-
-async function navigateActive(page: Page, url: string): Promise<void> {
-  const bar = page.getByTestId('address-bar');
-  await bar.fill(url);
-  await bar.press('Enter');
-  await expect
-    .poll(async () => (await bar.inputValue()) === url, { timeout: 10_000 })
-    .toBeTruthy();
-}
-
 async function openDrawer(page: Page): Promise<void> {
   await page.getByTestId('topbar-tabs-toggle').click();
   await page.getByTestId('tab-drawer').waitFor({ state: 'visible' });
@@ -77,25 +63,6 @@ async function createNewTab(page: Page): Promise<void> {
   await page.getByTestId('tab-drawer-new').click();
   await page.getByTestId('tab-drawer').waitFor({ state: 'hidden' });
   await waitForAddressBarReady(page);
-}
-
-/**
- * Read computed CSS filter on the active WebContents via app.evaluate (main process).
- * Uses getComputedStyle because insertCSS injects a stylesheet rule, not inline style —
- * document.documentElement.style.filter would always return '' in that case.
- */
-async function getActiveFilter(app: ElectronApplication): Promise<string | null> {
-  return app.evaluate(async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const h = (globalThis as any).__sidebrowserTestHooks as {
-      getActiveWebContents: () => Electron.WebContents | null;
-    };
-    const wc = h.getActiveWebContents();
-    if (!wc) return null;
-    return wc.executeJavaScript(
-      'window.getComputedStyle(document.documentElement).filter',
-    ) as Promise<string>;
-  });
 }
 
 /**

@@ -1,11 +1,16 @@
-import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
 import { createServer, type Server } from 'node:http';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
-import { getChromeWindow } from './helpers';
+import {
+  getActiveFilter,
+  getChromeWindow,
+  navigateActive,
+  waitForAddressBarReady,
+} from './helpers';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAIN_PATH = resolve(__dirname, '../../out/main/index.cjs');
@@ -55,29 +60,6 @@ function startMinimalServer(): Promise<{ server: Server; baseUrl: string }> {
       done({ server, baseUrl: `http://127.0.0.1:${port}` });
     });
   });
-}
-
-// ---------------------------------------------------------------------------
-// Page helpers (mirrored from mouse-leave-dim.spec.ts)
-// ---------------------------------------------------------------------------
-
-async function waitForAddressBarReady(page: Page): Promise<void> {
-  await page.waitForFunction(
-    () => {
-      const el = document.querySelector<HTMLInputElement>('[data-testid="address-bar"]');
-      return Boolean(el && !el.disabled);
-    },
-    { timeout: 10_000 },
-  );
-}
-
-async function navigateActive(page: Page, url: string): Promise<void> {
-  const bar = page.getByTestId('address-bar');
-  await bar.fill(url);
-  await bar.press('Enter');
-  await expect
-    .poll(async () => (await bar.inputValue()) === url, { timeout: 10_000 })
-    .toBeTruthy();
 }
 
 // ---------------------------------------------------------------------------
@@ -138,24 +120,6 @@ async function getPrimaryWorkArea(
   app: ElectronApplication,
 ): Promise<{ x: number; y: number; width: number; height: number }> {
   return app.evaluate(async ({ screen }) => screen.getPrimaryDisplay().workArea);
-}
-
-/**
- * Read computed CSS filter on the active WebContents via app.evaluate (main process).
- * Uses getComputedStyle because insertCSS injects a stylesheet rule, not inline style.
- */
-async function getActiveFilter(app: ElectronApplication): Promise<string | null> {
-  return app.evaluate(async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const h = (globalThis as any).__sidebrowserTestHooks as {
-      getActiveWebContents: () => Electron.WebContents | null;
-    };
-    const wc = h.getActiveWebContents();
-    if (!wc) return null;
-    return wc.executeJavaScript(
-      'window.getComputedStyle(document.documentElement).filter',
-    ) as Promise<string>;
-  });
 }
 
 // ---------------------------------------------------------------------------

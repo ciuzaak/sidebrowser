@@ -1,4 +1,4 @@
-import type { ElectronApplication, Page } from '@playwright/test';
+import { expect, type ElectronApplication, type Page } from '@playwright/test';
 
 /**
  * Resolve the chrome (TopBar) renderer window.
@@ -25,4 +25,44 @@ export async function getChromeWindow(app: ElectronApplication, timeoutMs = 10_0
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(`getChromeWindow: chrome window (window.sidebrowser) not found within ${timeoutMs}ms`);
+}
+
+/** Wait for the address-bar input to exist and be enabled (tabs seeded). */
+export async function waitForAddressBarReady(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const el = document.querySelector<HTMLInputElement>('[data-testid="address-bar"]');
+      return Boolean(el && !el.disabled);
+    },
+    { timeout: 10_000 },
+  );
+}
+
+/** Type `url` into the address bar and press Enter; poll until the input reflects the submitted value. */
+export async function navigateActive(page: Page, url: string): Promise<void> {
+  const bar = page.getByTestId('address-bar');
+  await bar.fill(url);
+  await bar.press('Enter');
+  await expect
+    .poll(async () => (await bar.inputValue()) === url, { timeout: 10_000 })
+    .toBeTruthy();
+}
+
+/**
+ * Read computed CSS filter on the active WebContents via app.evaluate (main process).
+ * Uses getComputedStyle because insertCSS injects a stylesheet rule, not inline style —
+ * document.documentElement.style.filter would always return '' in that case.
+ */
+export async function getActiveFilter(app: ElectronApplication): Promise<string | null> {
+  return app.evaluate(async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const h = (globalThis as any).__sidebrowserTestHooks as {
+      getActiveWebContents: () => Electron.WebContents | null;
+    };
+    const wc = h.getActiveWebContents();
+    if (!wc) return null;
+    return wc.executeJavaScript(
+      'window.getComputedStyle(document.documentElement).filter',
+    ) as Promise<string>;
+  });
 }
