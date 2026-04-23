@@ -1,0 +1,209 @@
+/**
+ * clampSettings — pure normalization of an inbound `Partial<Settings>` patch
+ * before it is deep-merged into the persisted `Settings`. Spec §7 ranges +
+ * preset behavior are the source of truth.
+ *
+ * Contract (see plan 2026-04-23-M6-settings-persistence Task 2):
+ *  - Output is itself a `Partial<Settings>`. Sections absent from `partial`
+ *    are absent from the output. Sections present but with no surviving
+ *    fields are emitted as empty objects (`{}`) so caller policy stays
+ *    explicit; the deep-merge in `SettingsStore.update()` treats those as
+ *    no-ops.
+ *  - Numeric fields are clamped to the spec §7 range; out-of-range values
+ *    are silently snapped to the nearest endpoint rather than rejected.
+ *  - Preset normalization (rule 2):
+ *      * non-'custom' preset present → overwrites width/height with the
+ *        preset's canonical dimensions; wins over any width/height that may
+ *        also be in the same partial.
+ *      * width or height present without preset → coerce preset='custom'.
+ *      * preset='custom' alone → keep preset, leave width/height to current.
+ *  - `browsing.mobileUserAgent === ''` is dropped (empty string == "no
+ *    change intent"); current value is preserved.
+ *  - Booleans and string literal-unions pass through unchanged.
+ *
+ * Pure: no Electron imports, no I/O, no Date.now, no logging.
+ *
+ * Defensive note on `Partial<Settings>` semantics: section properties may
+ * be `undefined` when callers spread sparsely. We treat `undefined` and
+ * "key absent" identically by checking `partial.X === undefined`.
+ */
+
+import type {
+  BrowsingSettings,
+  DimSettings,
+  EdgeDockSettings,
+  LifecycleSettings,
+  MouseLeaveSettings,
+  Settings,
+  WindowSettings,
+} from '@shared/types';
+
+/**
+ * One-level-deep partial: each top-level section is optional, and *within* a
+ * section every field is optional too. The plan's signature uses
+ * `Partial<Settings>` but the clamper must accept and produce nested partials
+ * (e.g. `{ browsing: {} }` after dropping an empty mobileUserAgent), so we
+ * lock the relaxed shape into the type system rather than relying on
+ * structural compatibility tricks. Task 3's deep-merge consumes this directly.
+ */
+export type SettingsPatch = {
+  window?: Partial<WindowSettings>;
+  mouseLeave?: Partial<MouseLeaveSettings>;
+  dim?: Partial<DimSettings>;
+  edgeDock?: Partial<EdgeDockSettings>;
+  lifecycle?: Partial<LifecycleSettings>;
+  browsing?: Partial<BrowsingSettings>;
+};
+
+// ---------------------------------------------------------------------------
+// Internal constants & helpers
+// ---------------------------------------------------------------------------
+
+const PRESETS: Record<
+  Exclude<WindowSettings['preset'], 'custom'>,
+  { width: number; height: number }
+> = {
+  iphone14pro: { width: 393, height: 852 },
+  iphonese: { width: 375, height: 667 },
+  pixel7: { width: 412, height: 915 },
+};
+
+const clamp = (n: number, lo: number, hi: number): number =>
+  Math.min(hi, Math.max(lo, n));
+
+// Per-section clampers. Each returns a `Partial<Section>` containing only
+// the fields actually written by `partial`. They never inspect `current`
+// except where rule 2 (preset coercion) requires reading defaults from
+// `partial` itself — `current` is unused inside these helpers, by design.
+
+function clampWindow(
+  partial: Partial<WindowSettings>,
+): Partial<WindowSettings> {
+  const out: Partial<WindowSettings> = {};
+
+  // Rule 2 ordering matters:
+  //   1. If preset is set and ≠ 'custom' → overwrite width/height.
+  //   2. Else if width/height set without preset → coerce preset='custom'.
+  //   3. Else (preset='custom' alone) → keep preset only.
+  if (partial.preset !== undefined) {
+    if (partial.preset === 'custom') {
+      out.preset = 'custom';
+    } else {
+      const dims = PRESETS[partial.preset];
+      out.preset = partial.preset;
+      out.width = dims.width;
+      out.height = dims.height;
+    }
+  } else if (partial.width !== undefined || partial.height !== undefined) {
+    out.preset = 'custom';
+    if (partial.width !== undefined) out.width = partial.width;
+    if (partial.height !== undefined) out.height = partial.height;
+  }
+
+  if (partial.edgeThresholdPx !== undefined) {
+    out.edgeThresholdPx = clamp(partial.edgeThresholdPx, 0, 50);
+  }
+
+  return out;
+}
+
+function clampMouseLeave(
+  partial: Partial<MouseLeaveSettings>,
+): Partial<MouseLeaveSettings> {
+  const out: Partial<MouseLeaveSettings> = {};
+  if (partial.delayMs !== undefined) {
+    out.delayMs = clamp(partial.delayMs, 0, 2000);
+  }
+  return out;
+}
+
+function clampDim(partial: Partial<DimSettings>): Partial<DimSettings> {
+  const out: Partial<DimSettings> = {};
+  if (partial.effect !== undefined) out.effect = partial.effect;
+  if (partial.blurPx !== undefined) {
+    out.blurPx = clamp(partial.blurPx, 0, 40);
+  }
+  if (partial.darkBrightness !== undefined) {
+    out.darkBrightness = clamp(partial.darkBrightness, 0, 1);
+  }
+  if (partial.lightBrightness !== undefined) {
+    out.lightBrightness = clamp(partial.lightBrightness, 1, 3);
+  }
+  if (partial.transitionMs !== undefined) {
+    out.transitionMs = clamp(partial.transitionMs, 0, 1000);
+  }
+  return out;
+}
+
+function clampEdgeDock(
+  partial: Partial<EdgeDockSettings>,
+): Partial<EdgeDockSettings> {
+  const out: Partial<EdgeDockSettings> = {};
+  if (partial.enabled !== undefined) out.enabled = partial.enabled;
+  if (partial.animationMs !== undefined) {
+    // Spec doesn't fix an upper bound; 1000ms is a protective cap (plan §Task 2).
+    out.animationMs = clamp(partial.animationMs, 0, 1000);
+  }
+  if (partial.triggerStripPx !== undefined) {
+    out.triggerStripPx = clamp(partial.triggerStripPx, 1, 10);
+  }
+  return out;
+}
+
+function clampLifecycle(
+  partial: Partial<LifecycleSettings>,
+): Partial<LifecycleSettings> {
+  const out: Partial<LifecycleSettings> = {};
+  if (partial.closeAction !== undefined) out.closeAction = partial.closeAction;
+  if (partial.restoreTabsOnLaunch !== undefined) {
+    out.restoreTabsOnLaunch = partial.restoreTabsOnLaunch;
+  }
+  return out;
+}
+
+function clampBrowsing(
+  partial: Partial<BrowsingSettings>,
+): Partial<BrowsingSettings> {
+  const out: Partial<BrowsingSettings> = {};
+  if (partial.defaultIsMobile !== undefined) {
+    out.defaultIsMobile = partial.defaultIsMobile;
+  }
+  // Empty-string guard: drop the field so current is preserved.
+  if (
+    partial.mobileUserAgent !== undefined &&
+    partial.mobileUserAgent !== ''
+  ) {
+    out.mobileUserAgent = partial.mobileUserAgent;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export function clampSettings(
+  partial: SettingsPatch,
+  // `current` is part of the public signature for forward compatibility (e.g.
+  // future "diff against current to skip no-op writes" optimization). It is
+  // currently unused — preset coercion only ever reads from `partial`. The
+  // leading underscore opts out of `@typescript-eslint/no-unused-vars`.
+  _current: Settings,
+): SettingsPatch {
+  const out: SettingsPatch = {};
+
+  if (partial.window !== undefined) out.window = clampWindow(partial.window);
+  if (partial.mouseLeave !== undefined) {
+    out.mouseLeave = clampMouseLeave(partial.mouseLeave);
+  }
+  if (partial.dim !== undefined) out.dim = clampDim(partial.dim);
+  if (partial.edgeDock !== undefined) {
+    out.edgeDock = clampEdgeDock(partial.edgeDock);
+  }
+  if (partial.lifecycle !== undefined) {
+    out.lifecycle = clampLifecycle(partial.lifecycle);
+  }
+  if (partial.browsing !== undefined) out.browsing = clampBrowsing(partial.browsing);
+
+  return out;
+}
