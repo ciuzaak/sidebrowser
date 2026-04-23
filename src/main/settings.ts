@@ -36,9 +36,7 @@ export interface Settings {
 
 export const DEFAULTS: Settings = {
   window: { width: 393, edgeThresholdPx: 8 },
-  mouseLeave: {
-    delayMs: 100,
-  },
+  mouseLeave: { delayMs: 100 },
   dim: {
     effect: 'blur',
     blurPx: 8,
