@@ -13,4 +13,15 @@ describe('DEFAULTS', () => {
     expect(DEFAULTS.dim.lightBrightness).toBe(1.5);
     expect(DEFAULTS.dim.transitionMs).toBe(150);
   });
+
+  it('has correct spec §7 default values for window and edgeDock', () => {
+    // window
+    expect(DEFAULTS.window.width).toBe(393);
+    expect(DEFAULTS.window.edgeThresholdPx).toBe(8);
+
+    // edgeDock
+    expect(DEFAULTS.edgeDock.enabled).toBe(true);
+    expect(DEFAULTS.edgeDock.animationMs).toBe(200);
+    expect(DEFAULTS.edgeDock.triggerStripPx).toBe(3);
+  });
 });
