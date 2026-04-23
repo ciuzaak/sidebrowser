@@ -83,6 +83,14 @@ export function registerIpcRouter(window: BrowserWindow, viewManager: ViewManage
     },
   );
 
+  ipcMain.removeHandler(IpcChannels.tabSetMobile);
+  ipcMain.handle(
+    IpcChannels.tabSetMobile,
+    (_event, payload: IpcContract[typeof IpcChannels.tabSetMobile]['request']) => {
+      viewManager.setMobile(payload.id, payload.isMobile);
+    },
+  );
+
   // Chrome layout — fire-and-forget. Scope listener to this window's lifetime.
   const onChromeSetHeight = (
     _event: IpcMainEvent,
