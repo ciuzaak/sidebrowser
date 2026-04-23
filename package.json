@@ -22,8 +22,11 @@
   "dependencies": {
     "electron": "^41.3.0",
     "electron-store": "^11.0.2",
+    "lucide-react": "^1.8.0",
+    "nanoid": "^5.1.9",
     "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react-dom": "^19.2.5",
+    "zustand": "^5.0.12"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
