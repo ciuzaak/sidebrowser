@@ -1,48 +1,65 @@
 import { useState, type FormEvent, type ReactElement } from 'react';
-import { ArrowLeft, ArrowRight, RotateCw, Loader2 } from 'lucide-react';
-import { useTabStore } from '../store/tab-store';
+import { ArrowLeft, ArrowRight, RotateCw, Loader2, Layers } from 'lucide-react';
+import { useActiveTab } from '../store/tab-store';
 import { normalizeUrlInput } from '@shared/url';
 
-export function TopBar(): ReactElement {
-  const tab = useTabStore((s) => s.tab);
-  const [draft, setDraft] = useState<string>('');
-  const [syncedUrl, setSyncedUrl] = useState<string>(tab.url);
+interface TopBarProps {
+  drawerOpen: boolean;
+  onToggleDrawer: () => void;
+}
 
-  // Sync the address bar when navigation happens from outside the input (back/forward/redirect).
-  // Tracked via a stored sentinel so the reset runs during render rather than in an effect —
-  // the latter is a React 19 anti-pattern for deriving state from props/store.
-  if (tab.url !== syncedUrl) {
-    setSyncedUrl(tab.url);
-    setDraft(tab.url === 'about:blank' ? '' : tab.url);
+export function TopBar({ drawerOpen, onToggleDrawer }: TopBarProps): ReactElement {
+  const tab = useActiveTab();
+  const [draft, setDraft] = useState<string>('');
+  const [syncedUrl, setSyncedUrl] = useState<string>(tab?.url ?? '');
+
+  // Sync address bar when the active tab or its url changes externally.
+  const currentUrl = tab?.url ?? '';
+  if (currentUrl !== syncedUrl) {
+    setSyncedUrl(currentUrl);
+    setDraft(currentUrl === 'about:blank' ? '' : currentUrl);
   }
 
   const submit = (e: FormEvent): void => {
     e.preventDefault();
+    if (!tab) return;
     const url = normalizeUrlInput(draft);
-    void window.sidebrowser.navigate(url);
+    void window.sidebrowser.navigate(tab.id, url);
   };
+
+  const id = tab?.id ?? '';
+  const disabled = !tab;
 
   return (
     <div className="flex w-full items-center gap-1 border-b border-neutral-800 bg-neutral-900 px-2 py-1.5">
       <IconButton
+        ariaLabel="Toggle tabs"
+        testId="topbar-tabs-toggle"
+        active={drawerOpen}
+        onClick={onToggleDrawer}
+      >
+        <Layers size={16} />
+      </IconButton>
+      <IconButton
         ariaLabel="Back"
-        disabled={!tab.canGoBack}
-        onClick={() => void window.sidebrowser.goBack()}
+        disabled={disabled || !tab?.canGoBack}
+        onClick={() => id && void window.sidebrowser.goBack(id)}
       >
         <ArrowLeft size={16} />
       </IconButton>
       <IconButton
         ariaLabel="Forward"
-        disabled={!tab.canGoForward}
-        onClick={() => void window.sidebrowser.goForward()}
+        disabled={disabled || !tab?.canGoForward}
+        onClick={() => id && void window.sidebrowser.goForward(id)}
       >
         <ArrowRight size={16} />
       </IconButton>
       <IconButton
         ariaLabel="Reload"
-        onClick={() => void window.sidebrowser.reload()}
+        disabled={disabled}
+        onClick={() => id && void window.sidebrowser.reload(id)}
       >
-        {tab.isLoading ? <Loader2 size={16} className="animate-spin" /> : <RotateCw size={16} />}
+        {tab?.isLoading ? <Loader2 size={16} className="animate-spin" /> : <RotateCw size={16} />}
       </IconButton>
 
       <form onSubmit={submit} className="flex-1">
@@ -53,7 +70,8 @@ export function TopBar(): ReactElement {
           placeholder="Enter URL or search"
           spellCheck={false}
           data-testid="address-bar"
-          className="w-full rounded bg-neutral-800 px-2 py-1 text-sm text-neutral-100 placeholder-neutral-500 outline-none focus:ring-1 focus:ring-sky-500"
+          disabled={disabled}
+          className="w-full rounded bg-neutral-800 px-2 py-1 text-sm text-neutral-100 placeholder-neutral-500 outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-50"
         />
       </form>
     </div>
@@ -63,21 +81,29 @@ export function TopBar(): ReactElement {
 function IconButton({
   children,
   ariaLabel,
+  testId,
   disabled,
+  active,
   onClick,
 }: {
   children: ReactElement;
   ariaLabel: string;
+  testId?: string;
   disabled?: boolean;
+  active?: boolean;
   onClick: () => void;
 }): ReactElement {
   return (
     <button
       type="button"
       aria-label={ariaLabel}
+      data-testid={testId}
       disabled={disabled}
       onClick={onClick}
-      className="rounded p-1 text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+      className={
+        'rounded p-1 text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40 ' +
+        (active ? 'bg-neutral-800 text-sky-400' : '')
+      }
     >
       {children}
     </button>
