@@ -18,7 +18,6 @@ import {
   WindowBoundsPersister,
   type WindowBoundsBackend,
 } from './window-bounds';
-import { MOBILE_UA } from './user-agents';
 import { IpcChannels } from '@shared/ipc-contract';
 import type { Settings, SettingsPatch } from '@shared/types';
 
@@ -206,10 +205,18 @@ app.whenReady().then(() => {
     if (dim.isActive) void dim.restyle(settings.dim);
     watcher.setDelayMs(settings.mouseLeave.delayMs);
     const b = win.getBounds();
+    // NOTE: setBounds synchronously fires 'resize', which re-enters
+    // boundsPersister.markDirty(). The debounce coalesces the self-triggered
+    // write, and on the second tick the persisted rect already matches
+    // settings, so the loop terminates after one store.set within ~1s.
     if (b.width !== settings.window.width || b.height !== settings.window.height) {
       win.setBounds({ ...b, width: settings.window.width, height: settings.window.height });
     }
     if (!win.isDestroyed()) {
+      // If a renderer isn't yet listening (e.g. a test hook calls updateSettings
+      // before React mount / did-finish-load), the broadcast drops silently.
+      // Task 9's getSettings().then(setSettings) on mount is the authoritative
+      // first-paint path; app:ready is a backup hint.
       win.webContents.send(IpcChannels.settingsChanged, settings);
     }
   });
@@ -273,19 +280,21 @@ app.whenReady().then(() => {
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      // TODO(post-v1-Windows): macOS activate path does not wire persistence,
-      // settings-store-bound browsing defaults, or window-bounds persistence —
-      // reactivated windows lose tab state and live settings. Spec §17 ships
-      // v1 as Windows-only, so this is best-effort. Extract a shared
-      // bootstrapWindow helper when adding macOS support. The trivial
-      // getBrowsingDefaults stub below is sufficient for a blank reactivated
-      // window and keeps the ViewManager constructor signature consistent.
-      const fallbackDefaults = (): { defaultIsMobile: boolean; mobileUserAgent: string } => ({
-        defaultIsMobile: true,
-        mobileUserAgent: MOBILE_UA,
-      });
+      // TODO(post-v1-Windows): macOS activate path still has gaps — the
+      // initialBounds snapshot is stale (no fresh boundsPersister.loadOrDefault
+      // call) and tab persistence isn't re-attached, so reactivated windows
+      // lose their saved tab state. Spec §17 ships v1 as Windows-only, so
+      // this is best-effort. Extract a shared bootstrapWindow helper when
+      // adding macOS support. Browsing defaults below now read live from
+      // settingsStore, matching the primary-window wiring.
       const newWin = createWindow(initialBounds);
-      const newViewManager = new ViewManager(newWin, fallbackDefaults);
+      const newViewManager = new ViewManager(newWin, () => {
+        const s = settingsStore.get();
+        return {
+          defaultIsMobile: s.browsing.defaultIsMobile,
+          mobileUserAgent: s.browsing.mobileUserAgent,
+        };
+      });
       registerIpcRouter(newWin, newViewManager, settingsStore);
       newWin.webContents.once('did-finish-load', () => {
         newViewManager.createTab('about:blank');

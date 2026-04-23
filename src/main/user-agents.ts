@@ -8,7 +8,3 @@ export const MOBILE_UA =
 export function desktopUa(): string {
   return app.userAgentFallback;
 }
-
-export function uaFor(isMobile: boolean): string {
-  return isMobile ? MOBILE_UA : desktopUa();
-}
