@@ -213,6 +213,7 @@ test('drawer open suppresses active view bounds; close restores them', async () 
         .toBeGreaterThan(0);
       const restored = await getActiveViewBounds(app);
       expect(restored!.height).toBeGreaterThan(0);
+      expect(restored!.width).toBeGreaterThan(0);
     } finally {
       await app.close();
     }
@@ -415,7 +416,7 @@ test('restoreTabsOnLaunch=false relaunches with about:blank, not persisted tab',
           .toBe(false);
 
         const addressValue = await page.getByTestId('address-bar').inputValue();
-        expect(addressValue).not.toContain('/plain');
+        expect(['', 'about:blank']).toContain(addressValue);
       } finally {
         await app.close();
       }
