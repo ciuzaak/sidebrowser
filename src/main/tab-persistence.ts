@@ -32,14 +32,16 @@ export function sanitizePersisted(raw: unknown): PersistedTabs | null {
   for (const entry of obj.tabs) {
     if (!entry || typeof entry !== 'object') continue;
     const e = entry as { id?: unknown; url?: unknown };
-    if (typeof e.id !== 'string' || typeof e.url !== 'string') continue;
+    if (typeof e.id !== 'string' || e.id === '' || typeof e.url !== 'string') continue;
     if (!SAFE_SCHEME.test(e.url)) continue;
     cleaned.push({ id: e.id, url: e.url });
   }
   if (cleaned.length === 0) return null;
 
   const activeId =
-    typeof obj.activeId === 'string' && cleaned.some((t) => t.id === obj.activeId)
+    typeof obj.activeId === 'string' &&
+    obj.activeId !== '' &&
+    cleaned.some((t) => t.id === obj.activeId)
       ? obj.activeId
       : cleaned[0]!.id;
 

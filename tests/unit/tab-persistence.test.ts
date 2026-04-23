@@ -54,4 +54,18 @@ describe('sanitizePersisted', () => {
     });
     expect(result?.tabs).toHaveLength(2);
   });
+
+  it('drops tabs with empty-string id and ignores empty-string activeId', () => {
+    const result = sanitizePersisted({
+      tabs: [
+        { id: '', url: 'https://x.com' },
+        { id: 'a', url: 'https://example.com' },
+      ],
+      activeId: '',
+    });
+    expect(result).toEqual({
+      tabs: [{ id: 'a', url: 'https://example.com' }],
+      activeId: 'a',
+    });
+  });
 });
