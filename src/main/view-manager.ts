@@ -1,6 +1,7 @@
 import { WebContentsView, type BrowserWindow } from 'electron';
 import { nanoid } from 'nanoid';
 import { getPersistentSession } from './session-manager';
+import { uaFor } from './user-agents';
 import type { Tab, TabsSnapshot } from '@shared/types';
 import { makeEmptyTab } from '@shared/types';
 
@@ -78,7 +79,7 @@ export class ViewManager {
   /** Create a new tab, auto-activate it, return the full Tab object.
    *  `id` is optional and only used by the persistence-restore path in `seedTabs`
    *  to preserve persisted ids; user-initiated `tab:create` IPC always gets a fresh nanoid. */
-  createTab(url: string = 'about:blank', id: string = nanoid()): Tab {
+  createTab(url: string = 'about:blank', id: string = nanoid(), isMobile: boolean = true): Tab {
     const view = new WebContentsView({
       webPreferences: {
         session: getPersistentSession(),
@@ -88,10 +89,16 @@ export class ViewManager {
       },
     });
     this.window.contentView.addChildView(view);
+    // Per spec §5.4: set UA before loadURL so the very first request uses the
+    // correct (mobile-by-default) UA. desktopUa() reads app.userAgentFallback,
+    // which requires app.whenReady() to have fired — all createTab call paths
+    // (seedTabs under did-finish-load, setWindowOpenHandler, tab:create IPC)
+    // originate post-whenReady, so this is safe.
+    view.webContents.setUserAgent(uaFor(isMobile));
 
     const managed: ManagedTab = {
       view,
-      tab: makeEmptyTab(id, url),
+      tab: makeEmptyTab(id, url, isMobile),
       detach: this.attachWebContentsEvents(id, view),
     };
     this.tabs.set(id, managed);
@@ -159,11 +166,35 @@ export class ViewManager {
     this.tabs.get(id)?.view.webContents.reload();
   }
 
+  /**
+   * Toggle a tab between mobile and desktop UA. Per spec §5.4:
+   *   1. setUserAgent so the next request uses the new UA
+   *   2. updateTab so the renderer reflects the new isMobile (button state) immediately
+   *      and clears the stale favicon (page-favicon-updated will re-populate post-reload)
+   *   3. reloadIgnoringCache so the page re-fetches under the new UA without
+   *      serving a cached response tied to the previous UA
+   */
+  setMobile(id: string, isMobile: boolean): void {
+    const managed = this.tabs.get(id);
+    if (!managed) return;
+    const wc = managed.view.webContents;
+    wc.setUserAgent(uaFor(isMobile));
+    this.updateTab(id, { isMobile, favicon: null });
+    wc.reloadIgnoringCache();
+  }
+
   /** Shape for persistence layer — strips transient fields. */
-  serializeForPersistence(): { tabs: { id: string; url: string }[]; activeId: string } | null {
+  serializeForPersistence(): {
+    tabs: { id: string; url: string; isMobile: boolean }[];
+    activeId: string;
+  } | null {
     if (this.tabs.size === 0 || !this.activeId) return null;
     return {
-      tabs: Array.from(this.tabs.values()).map((m) => ({ id: m.tab.id, url: m.tab.url })),
+      tabs: Array.from(this.tabs.values()).map((m) => ({
+        id: m.tab.id,
+        url: m.tab.url,
+        isMobile: m.tab.isMobile,
+      })),
       activeId: this.activeId,
     };
   }
@@ -238,12 +269,17 @@ export class ViewManager {
         canGoForward: wc.navigationHistory.canGoForward(),
       });
     const onTitle = (_e: Electron.Event, title: string): void => this.updateTab(id, { title });
+    // Electron's page-favicon-updated supplies all discovered <link rel=icon>
+    // candidates in priority order; we take the first as spec §5.3 dictates.
+    const onFavicon = (_e: Electron.Event, favicons: string[]): void =>
+      this.updateTab(id, { favicon: favicons[0] ?? null });
 
     wc.on('did-start-loading', onStart);
     wc.on('did-stop-loading', onStop);
     wc.on('did-navigate', onNavigate);
     wc.on('did-navigate-in-page', onNavigate);
     wc.on('page-title-updated', onTitle);
+    wc.on('page-favicon-updated', onFavicon);
     wc.setWindowOpenHandler(({ url }) => {
       // M2: open popups as new tabs rather than redirecting current (fixes M1 OAuth breakage).
       // Note: Electron has no API to unregister setWindowOpenHandler — it's implicitly cleaned
@@ -259,6 +295,7 @@ export class ViewManager {
       wc.off('did-navigate', onNavigate);
       wc.off('did-navigate-in-page', onNavigate);
       wc.off('page-title-updated', onTitle);
+      wc.off('page-favicon-updated', onFavicon);
     };
   }
 }
