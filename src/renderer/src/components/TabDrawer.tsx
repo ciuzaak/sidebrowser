@@ -59,6 +59,20 @@ export function TabDrawer({ open, onSelect }: TabDrawerProps): ReactElement | nu
               (isActive ? 'bg-neutral-800 text-sky-400' : 'text-neutral-200')
             }
           >
+            {tab.favicon ? (
+              <img
+                src={tab.favicon}
+                alt=""
+                width={14}
+                height={14}
+                className="shrink-0 rounded-sm"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
+                }}
+              />
+            ) : (
+              <span className="inline-block h-[14px] w-[14px] shrink-0" aria-hidden />
+            )}
             <span className="flex-1 truncate">{label}</span>
             <span
               role="button"
