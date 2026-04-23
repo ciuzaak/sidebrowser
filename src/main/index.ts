@@ -64,18 +64,24 @@ app.whenReady().then(() => {
     if (snap) saver.save(snap);
   });
 
-  // Defer seeding by one tick so renderer has begun bootstrapping and the
-  // tabs:snapshot broadcast arrives alongside the first tab:updated events.
-  setImmediate(() => {
+  // Defer seeding until the renderer bundle has loaded so the tabs:snapshot
+  // broadcast lands on a renderer that has registered its IPC listeners.
+  // (setImmediate fires too early — at that tick the renderer process exists
+  // but React hasn't mounted and useTabBridge hasn't subscribed yet.)
+  win.webContents.once('did-finish-load', () => {
     seedTabs(viewManager, loadPersistedTabs(store));
   });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
+      // TODO(post-v1-Windows): macOS activate path does not wire persistence —
+      // reactivated windows lose tab state. Spec §17 ships v1 as Windows-only,
+      // so this is best-effort. Extract a shared bootstrapWindow helper when
+      // adding macOS support.
       const newWin = createWindow();
       const newViewManager = new ViewManager(newWin);
       registerIpcRouter(newWin, newViewManager);
-      setImmediate(() => {
+      newWin.webContents.once('did-finish-load', () => {
         newViewManager.createTab('about:blank');
       });
     }
@@ -84,6 +90,9 @@ app.whenReady().then(() => {
   app.on('before-quit', () => {
     saver.flush();
   });
+}).catch((err: unknown) => {
+  console.error('[sidebrowser] bootstrap failed:', err);
+  app.quit();
 });
 
 app.on('window-all-closed', () => {
