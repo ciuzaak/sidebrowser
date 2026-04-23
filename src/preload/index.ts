@@ -27,6 +27,8 @@ const api = {
     ipcRenderer.invoke(IpcChannels.tabGoForward, { id }),
   reload: (id: string): Promise<void> =>
     ipcRenderer.invoke(IpcChannels.tabReload, { id }),
+  setMobile: (id: string, isMobile: boolean): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.tabSetMobile, { id, isMobile }),
 
   // Chrome layout
   setChromeHeight: (heightPx: number): void => {
