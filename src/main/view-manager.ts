@@ -199,6 +199,11 @@ export class ViewManager {
     };
   }
 
+  getActiveWebContents(): Electron.WebContents | null {
+    if (!this.activeId) return null;
+    return this.tabs.get(this.activeId)?.view.webContents ?? null;
+  }
+
   destroy(): void {
     this.window.removeListener('resize', this.onWindowResize);
     for (const managed of this.tabs.values()) {
