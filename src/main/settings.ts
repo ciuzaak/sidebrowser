@@ -1,41 +1,30 @@
 /**
- * Settings types and defaults (spec §7).
- * This is a stub for M4/M5: dim + mouseLeave + window + edgeDock sections, rest deferred to M6.
- * M6 will replace DEFAULTS with getSettings() backed by electron-store + IPC.
+ * Settings DEFAULTS (spec §7).
+ *
+ * Type symbols (Settings, WindowSettings, etc.) live in `@shared/types` so
+ * main, preload, and renderer can all import them. They are re-exported below
+ * for back-compat with existing `from './settings'` imports.
+ *
+ * M6 will add a SettingsStore (electron-store + IPC) on top of these defaults.
  */
 
-export interface WindowSettings {
-  width: number;            // 393
-  edgeThresholdPx: number;  // 8, 0–50
-}
+import type { Settings } from '@shared/types';
+import { MOBILE_UA } from './user-agents';
 
-export interface EdgeDockSettings {
-  enabled: boolean;         // true
-  animationMs: number;      // 200, 0 = instant
-  triggerStripPx: number;   // 3, 1–10
-}
-
-export interface DimSettings {
-  effect: 'dark' | 'light' | 'blur' | 'none';
-  blurPx: number;           // 0–40
-  darkBrightness: number;   // 0–1
-  lightBrightness: number;  // 1–3
-  transitionMs: number;     // 0–1000
-}
-
-export interface MouseLeaveSettings {
-  delayMs: number;          // 0–2000
-}
-
-export interface Settings {
-  window: WindowSettings;
-  mouseLeave: MouseLeaveSettings;
-  dim: DimSettings;
-  edgeDock: EdgeDockSettings;
-}
+// Back-compat re-exports so existing `import type { DimSettings } from './settings'`
+// callers keep working without edits.
+export type {
+  WindowSettings,
+  MouseLeaveSettings,
+  DimSettings,
+  EdgeDockSettings,
+  LifecycleSettings,
+  BrowsingSettings,
+  Settings,
+} from '@shared/types';
 
 export const DEFAULTS: Settings = {
-  window: { width: 393, edgeThresholdPx: 8 },
+  window: { width: 393, height: 852, preset: 'iphone14pro', edgeThresholdPx: 8 },
   mouseLeave: { delayMs: 100 },
   dim: {
     effect: 'blur',
@@ -45,4 +34,6 @@ export const DEFAULTS: Settings = {
     transitionMs: 150,
   },
   edgeDock: { enabled: true, animationMs: 200, triggerStripPx: 3 },
+  lifecycle: { closeAction: 'minimize-to-tray', restoreTabsOnLaunch: true },
+  browsing: { defaultIsMobile: true, mobileUserAgent: MOBILE_UA },
 };
