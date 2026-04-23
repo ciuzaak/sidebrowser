@@ -1,9 +1,19 @@
 import { WebContentsView, type BrowserWindow } from 'electron';
 import { nanoid } from 'nanoid';
 import { getPersistentSession } from './session-manager';
-import { uaFor } from './user-agents';
+import { desktopUa } from './user-agents';
 import type { Tab, TabsSnapshot } from '@shared/types';
 import { makeEmptyTab } from '@shared/types';
+
+/**
+ * Getter closure the main bootstrap injects so ViewManager can read live
+ * browsing defaults (UA + mobile flag) from SettingsStore at each createTab
+ * call without holding a direct SettingsStore reference. M6 Task 8.
+ */
+export type BrowsingDefaultsGetter = () => {
+  defaultIsMobile: boolean;
+  mobileUserAgent: string;
+};
 
 type TabUpdatedListener = (tab: Tab) => void;
 type SnapshotListener = (snapshot: TabsSnapshot) => void;
@@ -27,14 +37,20 @@ export class ViewManager {
   private readonly tabs = new Map<string, ManagedTab>();
   private activeId: string | null = null;
   private chromeHeightPx = 0;
+  private suppressed = false;
   private readonly tabUpdatedListeners = new Set<TabUpdatedListener>();
   private readonly snapshotListeners = new Set<SnapshotListener>();
+  private readonly getBrowsingDefaults: BrowsingDefaultsGetter;
 
   /** Stored resize handler so it can be removed in destroy(). */
   private readonly onWindowResize = (): void => this.applyBounds();
 
-  constructor(window: BrowserWindow) {
+  constructor(
+    window: BrowserWindow,
+    getBrowsingDefaults: BrowsingDefaultsGetter,
+  ) {
     this.window = window;
+    this.getBrowsingDefaults = getBrowsingDefaults;
     window.on('resize', this.onWindowResize);
     window.once('ready-to-show', () => this.applyBounds());
   }
@@ -78,8 +94,12 @@ export class ViewManager {
 
   /** Create a new tab, auto-activate it, return the full Tab object.
    *  `id` is optional and only used by the persistence-restore path in `seedTabs`
-   *  to preserve persisted ids; user-initiated `tab:create` IPC always gets a fresh nanoid. */
-  createTab(url: string = 'about:blank', id: string = nanoid(), isMobile: boolean = true): Tab {
+   *  to preserve persisted ids; user-initiated `tab:create` IPC always gets a fresh nanoid.
+   *  `isMobile` defaults to `settings.browsing.defaultIsMobile` when omitted; an explicit
+   *  caller value (e.g. the restore path preserving per-tab UA) always wins. */
+  createTab(url: string = 'about:blank', id: string = nanoid(), isMobile?: boolean): Tab {
+    const defaults = this.getBrowsingDefaults();
+    const resolvedIsMobile = isMobile ?? defaults.defaultIsMobile;
     const view = new WebContentsView({
       webPreferences: {
         session: getPersistentSession(),
@@ -94,11 +114,13 @@ export class ViewManager {
     // which requires app.whenReady() to have fired — all createTab call paths
     // (seedTabs under did-finish-load, setWindowOpenHandler, tab:create IPC)
     // originate post-whenReady, so this is safe.
-    view.webContents.setUserAgent(uaFor(isMobile));
+    view.webContents.setUserAgent(
+      resolvedIsMobile ? defaults.mobileUserAgent : desktopUa(),
+    );
 
     const managed: ManagedTab = {
       view,
-      tab: makeEmptyTab(id, url, isMobile),
+      tab: makeEmptyTab(id, url, resolvedIsMobile),
       detach: this.attachWebContentsEvents(id, view),
     };
     this.tabs.set(id, managed);
@@ -178,7 +200,8 @@ export class ViewManager {
     const managed = this.tabs.get(id);
     if (!managed) return;
     const wc = managed.view.webContents;
-    wc.setUserAgent(uaFor(isMobile));
+    const defaults = this.getBrowsingDefaults();
+    wc.setUserAgent(isMobile ? defaults.mobileUserAgent : desktopUa());
     this.updateTab(id, { isMobile, favicon: null });
     wc.reloadIgnoringCache();
   }
@@ -204,6 +227,29 @@ export class ViewManager {
     return this.tabs.get(this.activeId)?.view.webContents ?? null;
   }
 
+  /**
+   * Toggle the "suppressed" flag. While suppressed, every tab's view is
+   * shrunk to `{0,0,0,0}` so a renderer-layer overlay (e.g. the M6 settings
+   * drawer) can paint over the WebContentsView layer. Idempotent.
+   */
+  setSuppressed(v: boolean): void {
+    if (this.suppressed === v) return;
+    this.suppressed = v;
+    this.applyBounds();
+  }
+
+  /**
+   * E2E hook: returns the active tab's view bounds, or null if no active tab.
+   * Used by settings-drawer E2E specs to verify suppression actually shrinks
+   * the view rect (visual blur alone is an insufficient signal — see
+   * plan §Task 11 rationale).
+   */
+  getActiveBoundsForTest(): { x: number; y: number; width: number; height: number } | null {
+    if (!this.activeId) return null;
+    const m = this.tabs.get(this.activeId);
+    return m ? m.view.getBounds() : null;
+  }
+
   getWebContentsByUrlSubstring(substring: string): Electron.WebContents | null {
     for (const managed of this.tabs.values()) {
       if (managed.tab.url.includes(substring)) return managed.view.webContents;
@@ -225,6 +271,15 @@ export class ViewManager {
   // ---------- private ----------
 
   private applyBounds(): void {
+    // Suppressed: every tab shrinks to zero so the renderer-layer drawer
+    // overlay can paint unobstructed. Background-tab bounds were already
+    // zero; this extends the same treatment to the active tab.
+    if (this.suppressed) {
+      const zero = { x: 0, y: 0, width: 0, height: 0 };
+      for (const [, managed] of this.tabs) managed.view.setBounds(zero);
+      return;
+    }
+
     const { width, height } = this.window.getContentBounds();
     const realBounds = {
       x: 0,

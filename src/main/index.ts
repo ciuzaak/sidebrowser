@@ -1,5 +1,6 @@
 import { app, BrowserWindow, screen } from 'electron';
 import type { Rectangle } from 'electron';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { ViewManager } from './view-manager';
 import { registerIpcRouter } from './ipc-router';
@@ -12,13 +13,21 @@ import {
 import { CursorWatcher } from './cursor-watcher';
 import { DimController } from './dim-controller';
 import { EdgeDock } from './edge-dock';
-import { DEFAULTS } from './settings';
+import { SettingsStore, createElectronBackend } from './settings-store';
+import {
+  WindowBoundsPersister,
+  type WindowBoundsBackend,
+} from './window-bounds';
+import { MOBILE_UA } from './user-agents';
 import { IpcChannels } from '@shared/ipc-contract';
+import type { Settings, SettingsPatch } from '@shared/types';
 
-function createWindow(): BrowserWindow {
+function createWindow(initialBounds: Rectangle): BrowserWindow {
   const win = new BrowserWindow({
-    width: 393,
-    height: 852,
+    x: initialBounds.x,
+    y: initialBounds.y,
+    width: initialBounds.width,
+    height: initialBounds.height,
     title: 'sidebrowser',
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
@@ -51,16 +60,67 @@ function seedTabs(viewManager: ViewManager, persisted: PersistedTabs | null): vo
   }
 }
 
-app.whenReady().then(() => {
-  const win = createWindow();
-  const viewManager = new ViewManager(win);
-  registerIpcRouter(win, viewManager);
+/**
+ * Window-bounds backend — second `electron-store` instance under the
+ * `'window-bounds'` name. Chosen over multiplexing the settings store because:
+ *  - Bounds write cadence (debounced per drag/resize) is orthogonal to
+ *    settings writes (infrequent, user-driven).
+ *  - File-level separation keeps a corrupt bounds blob from risking settings
+ *    load on next launch (and vice versa).
+ *  - Matches the lazy-require pattern in `createElectronBackend` so this
+ *    module stays Node-only-importable in non-Electron contexts.
+ */
+function createBoundsBackend(): WindowBoundsBackend {
+  const requireCjs = createRequire(import.meta.url);
+  const StoreModule = requireCjs('electron-store') as
+    | { default: new (opts?: unknown) => ElectronStoreInstance }
+    | (new (opts?: unknown) => ElectronStoreInstance);
+  const StoreCtor =
+    typeof StoreModule === 'function' ? StoreModule : StoreModule.default;
+  const store = new StoreCtor({
+    name: 'window-bounds',
+    defaults: {},
+  }) as ElectronStoreInstance;
+  return {
+    get: () => store.get('bounds'),
+    set: (v) => { store.set('bounds', v); },
+  };
+}
 
+interface ElectronStoreInstance {
+  get(key: 'bounds'): { x: number; y: number; width: number; height: number } | undefined;
+  set(
+    key: 'bounds',
+    value: { x: number; y: number; width: number; height: number },
+  ): void;
+}
+
+app.whenReady().then(() => {
+  // 1. Settings store + window-bounds persister.
+  const settingsStore = new SettingsStore(createElectronBackend());
+  const boundsPersister = new WindowBoundsPersister(
+    createBoundsBackend(),
+    screen,
+    (cb, ms) => setTimeout(cb, ms),
+    (h) => { clearTimeout(h); },
+  );
+  const initial = settingsStore.get().window;
+  const initialBounds = boundsPersister.loadOrDefault(initial.width, initial.height);
+
+  // 2. Window + ViewManager + IPC router.
+  const win = createWindow(initialBounds);
+  const viewManager = new ViewManager(win, () => {
+    const s = settingsStore.get();
+    return {
+      defaultIsMobile: s.browsing.defaultIsMobile,
+      mobileUserAgent: s.browsing.mobileUserAgent,
+    };
+  });
+  registerIpcRouter(win, viewManager, settingsStore);
+
+  // 3. Tab persistence — save on any snapshot change or per-tab URL update.
   const store = createTabStore();
   const saver = createPersistedTabSaver(store);
-
-  // Save tabs on every snapshot change, and on every tab URL update
-  // (the URL is the only persisted-tab field that transient events can change).
   viewManager.onSnapshot(() => {
     const snap = viewManager.serializeForPersistence();
     if (snap) saver.save(snap);
@@ -75,14 +135,17 @@ app.whenReady().then(() => {
   // (setImmediate fires too early — at that tick the renderer process exists
   // but React hasn't mounted and useTabBridge hasn't subscribed yet.)
   win.webContents.once('did-finish-load', () => {
-    seedTabs(viewManager, loadPersistedTabs(store));
+    const persisted = settingsStore.get().lifecycle.restoreTabsOnLaunch
+      ? loadPersistedTabs(store)
+      : null;
+    seedTabs(viewManager, persisted);
   });
 
-  // M4: mouse-leave dim — construct watcher + dim controller, wire listeners.
+  // 4. M4: mouse-leave dim — construct watcher + dim controller, wire listeners.
   const watcher = new CursorWatcher({
     getCursorPoint: () => screen.getCursorScreenPoint(),
     getWindowBounds: () => (win.isDestroyed() ? null : win.getBounds()),
-    settings: DEFAULTS.mouseLeave,
+    settings: settingsStore.get().mouseLeave,
   });
   const dim = new DimController();
 
@@ -95,26 +158,23 @@ app.whenReady().then(() => {
   const edgeDock = new EdgeDock({
     setWindowX: (x) => { const b = win.getBounds(); win.setBounds({ ...b, x: Math.round(x) }); },
     getWindowBounds: () => win.getBounds(),
-    applyDim: () => { const wc = viewManager.getActiveWebContents(); if (wc) void dim.apply(wc, DEFAULTS.dim); },
+    applyDim: () => { const wc = viewManager.getActiveWebContents(); if (wc) void dim.apply(wc, settingsStore.get().dim); },
     clearDim: () => { void dim.clear(); },
     broadcastState: (s) => { if (!win.isDestroyed()) win.webContents.send(IpcChannels.windowState, s); },
     now: () => Date.now(),
     setInterval: (cb, ms) => setInterval(cb, ms),
-    clearInterval: (h) => clearInterval(h),
-    // Getter so live settings changes (M6 Task 8) are picked up per-dispatch.
-    // Until Task 8 wires settingsStore here, the body is a constant from DEFAULTS.
-    config: () => ({
-      edgeThresholdPx: DEFAULTS.window.edgeThresholdPx,
-      animationMs: DEFAULTS.edgeDock.animationMs,
-      triggerStripPx: DEFAULTS.edgeDock.triggerStripPx,
-      windowWidth: DEFAULTS.window.width,
-      enabled: DEFAULTS.edgeDock.enabled,
-    }),
-  });
-
-  // Seed workArea after window ready (one-shot).
-  win.once('ready-to-show', () => {
-    edgeDock.dispatch({ type: 'WINDOW_MOVED', bounds: win.getBounds(), workArea: getWorkArea() });
+    clearInterval: (h) => { clearInterval(h); },
+    // Getter so live settings changes (M6) are picked up per-dispatch.
+    config: () => {
+      const s = settingsStore.get();
+      return {
+        edgeThresholdPx: s.window.edgeThresholdPx,
+        animationMs: s.edgeDock.animationMs,
+        triggerStripPx: s.edgeDock.triggerStripPx,
+        windowWidth: s.window.width,
+        enabled: s.edgeDock.enabled,
+      };
+    },
   });
 
   // M4 direct dim wiring replaced: mouse events now route through EdgeDock.
@@ -125,12 +185,44 @@ app.whenReady().then(() => {
   viewManager.onSnapshot(() => {
     if (!dim.isActive) return;
     const wc = viewManager.getActiveWebContents();
-    if (wc) void dim.retarget(wc, DEFAULTS.dim);
+    if (wc) void dim.retarget(wc, settingsStore.get().dim);
   });
 
-  // New event sources: window move + display topology changes.
-  win.on('moved', () => edgeDock.dispatch({ type: 'WINDOW_MOVED', bounds: win.getBounds(), workArea: getWorkArea() }));
+  // 5. Window bounds persistence — debounced on every move/resize.
+  win.on('moved', () => {
+    boundsPersister.markDirty(win.getBounds());
+    edgeDock.dispatch({ type: 'WINDOW_MOVED', bounds: win.getBounds(), workArea: getWorkArea() });
+  });
+  win.on('resize', () => {
+    boundsPersister.markDirty(win.getBounds());
+  });
 
+  // 6. Live-apply fan-out. Fires on every settingsStore.update(). Spec §7 +
+  // plan §Task 8 live-apply matrix: dim (restyle if active), mouse-leave
+  // delay (swap via setDelayMs), window width/height (setBounds), and the
+  // renderer broadcast. EdgeDock config is a getter — it picks up fresh
+  // values on its next dispatch without explicit poke.
+  settingsStore.onChanged((settings) => {
+    if (dim.isActive) void dim.restyle(settings.dim);
+    watcher.setDelayMs(settings.mouseLeave.delayMs);
+    const b = win.getBounds();
+    if (b.width !== settings.window.width || b.height !== settings.window.height) {
+      win.setBounds({ ...b, width: settings.window.width, height: settings.window.height });
+    }
+    if (!win.isDestroyed()) {
+      win.webContents.send(IpcChannels.settingsChanged, settings);
+    }
+  });
+
+  // 7. app:ready broadcast + initial EdgeDock seed (one-shot on ready-to-show).
+  win.once('ready-to-show', () => {
+    if (!win.isDestroyed()) {
+      win.webContents.send(IpcChannels.appReady, { settings: settingsStore.get() });
+    }
+    edgeDock.dispatch({ type: 'WINDOW_MOVED', bounds: win.getBounds(), workArea: getWorkArea() });
+  });
+
+  // 8. Display topology changes — unchanged from M5.
   const onDisplayChanged = (): void => {
     const b = win.getBounds();
     const center = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
@@ -164,6 +256,11 @@ app.whenReady().then(() => {
       getEdgeDockState: () => edgeDock.getState(),
       getWindowBounds: () => win.getBounds(),
       setWindowBounds: (b: Rectangle) => win.setBounds(b),
+      // M6 Task 8 hooks.
+      getSettings: (): Settings => settingsStore.get(),
+      updateSettings: (p: SettingsPatch): Settings => settingsStore.update(p),
+      getActiveViewBounds: () => viewManager.getActiveBoundsForTest(),
+      flushWindowBounds: () => { boundsPersister.flush(); },
     };
   } else {
     watcher.start();
@@ -176,20 +273,30 @@ app.whenReady().then(() => {
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      // TODO(post-v1-Windows): macOS activate path does not wire persistence —
-      // reactivated windows lose tab state. Spec §17 ships v1 as Windows-only,
-      // so this is best-effort. Extract a shared bootstrapWindow helper when
-      // adding macOS support.
-      const newWin = createWindow();
-      const newViewManager = new ViewManager(newWin);
-      registerIpcRouter(newWin, newViewManager);
+      // TODO(post-v1-Windows): macOS activate path does not wire persistence,
+      // settings-store-bound browsing defaults, or window-bounds persistence —
+      // reactivated windows lose tab state and live settings. Spec §17 ships
+      // v1 as Windows-only, so this is best-effort. Extract a shared
+      // bootstrapWindow helper when adding macOS support. The trivial
+      // getBrowsingDefaults stub below is sufficient for a blank reactivated
+      // window and keeps the ViewManager constructor signature consistent.
+      const fallbackDefaults = (): { defaultIsMobile: boolean; mobileUserAgent: string } => ({
+        defaultIsMobile: true,
+        mobileUserAgent: MOBILE_UA,
+      });
+      const newWin = createWindow(initialBounds);
+      const newViewManager = new ViewManager(newWin, fallbackDefaults);
+      registerIpcRouter(newWin, newViewManager, settingsStore);
       newWin.webContents.once('did-finish-load', () => {
         newViewManager.createTab('about:blank');
       });
     }
   });
 
+  // 9. Before-quit: flush both bounds debounce and tab-save debounce so the
+  // last rect/tab-state mutation always hits disk.
   app.on('before-quit', () => {
+    boundsPersister.flush();
     saver.flush();
   });
 }).catch((err: unknown) => {

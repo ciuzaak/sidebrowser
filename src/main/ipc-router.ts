@@ -1,6 +1,7 @@
 import { ipcMain, type BrowserWindow, type IpcMainEvent } from 'electron';
 import { IpcChannels, type IpcContract } from '@shared/ipc-contract';
 import type { ViewManager } from './view-manager';
+import type { SettingsStore } from './settings-store';
 
 /**
  * Wires up all ipcMain handlers in one place.
@@ -8,8 +9,17 @@ import type { ViewManager } from './view-manager';
  * Idempotent: every handler registration is guarded with removeHandler so a
  * re-call (e.g. macOS `activate` recreating the window) does not throw. The
  * per-window ipcMain.on listener is released when its host window closes.
+ *
+ * Note: the `settings:changed` broadcast is NOT wired here — that lives in
+ * `src/main/index.ts` because it fans out live-apply side effects (dim
+ * restyle, watcher.setDelayMs, win.setBounds) alongside the renderer notify.
+ * This router only handles request/response RPCs + fire-and-forget sends.
  */
-export function registerIpcRouter(window: BrowserWindow, viewManager: ViewManager): void {
+export function registerIpcRouter(
+  window: BrowserWindow,
+  viewManager: ViewManager,
+  settingsStore: SettingsStore,
+): void {
   // M0 smoke-test ping.
   ipcMain.removeHandler(IpcChannels.appPing);
   ipcMain.handle(
@@ -101,6 +111,30 @@ export function registerIpcRouter(window: BrowserWindow, viewManager: ViewManage
   ipcMain.on(IpcChannels.chromeSetHeight, onChromeSetHeight);
   window.once('closed', () => {
     ipcMain.removeListener(IpcChannels.chromeSetHeight, onChromeSetHeight);
+  });
+
+  // Settings RPCs (M6 Task 8).
+  ipcMain.removeHandler(IpcChannels.settingsGet);
+  ipcMain.handle(IpcChannels.settingsGet, () => settingsStore.get());
+
+  ipcMain.removeHandler(IpcChannels.settingsUpdate);
+  ipcMain.handle(
+    IpcChannels.settingsUpdate,
+    (_event, payload: IpcContract[typeof IpcChannels.settingsUpdate]['request']) =>
+      settingsStore.update(payload),
+  );
+
+  // view:set-suppressed — R→M send (fire-and-forget). Drives ViewManager
+  // suppression while the settings drawer is open.
+  const onViewSetSuppressed = (
+    _event: IpcMainEvent,
+    payload: IpcContract[typeof IpcChannels.viewSetSuppressed]['request'],
+  ): void => {
+    viewManager.setSuppressed(payload.suppressed);
+  };
+  ipcMain.on(IpcChannels.viewSetSuppressed, onViewSetSuppressed);
+  window.once('closed', () => {
+    ipcMain.removeListener(IpcChannels.viewSetSuppressed, onViewSetSuppressed);
   });
 
   // Main → renderer broadcasts.
