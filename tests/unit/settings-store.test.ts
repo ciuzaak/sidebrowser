@@ -161,22 +161,26 @@ describe('SettingsStore', () => {
     expect(cb).toHaveBeenCalledTimes(1);
   });
 
-  it('defends against an undefined patch (defensive coalesce)', () => {
+  it('update(undefined) short-circuits to a true no-op (no write, no notify)', () => {
     // IPC validator will normally guarantee SettingsPatch shape, but if a
-    // malformed message slips past, the store must not crash. We coalesce
-    // undefined → {} and treat the call as a no-op write (same policy as
-    // update({})).
+    // malformed message slips past, the store must not crash. Unlike
+    // update({}) (a deliberate user-intent broadcast), update(undefined) is
+    // an error path with no caller intent — we short-circuit to avoid
+    // generating spurious backend writes and onChanged broadcasts.
     const backend = createFakeBackend();
     const store = new SettingsStore(backend);
+    const cb = vi.fn();
+    store.onChanged(cb);
     const before = store.get();
 
     const result = store.update(undefined as unknown as SettingsPatch);
 
-    expect(result).toEqual(before);
-    expect(backend.setCount).toBe(1);
+    expect(result).toBe(before);
+    expect(backend.setCount).toBe(0);
+    expect(cb).toHaveBeenCalledTimes(0);
   });
 
-  it('mergeDeep treats an empty section as a no-op (does not wipe current section)', () => {
+  it('mergeSettingsPatch treats an empty section as a no-op (does not wipe current section)', () => {
     // After clampSettings strips an empty-string mobileUserAgent the patch
     // arrives as { browsing: {} }. The deep-merge must not blow `browsing`
     // away — every existing field has to survive.
