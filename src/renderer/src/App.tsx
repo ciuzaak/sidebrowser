@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 import { TopBar } from './components/TopBar';
 import { TabDrawer } from './components/TabDrawer';
 import { useTabBridge } from './hooks/useTabBridge';
+import { useWindowStateBridge } from './hooks/useWindowStateBridge';
 
 export function App(): ReactElement {
   useTabBridge();
+  useWindowStateBridge();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const chromeRef = useRef<HTMLDivElement | null>(null);

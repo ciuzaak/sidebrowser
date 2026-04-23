@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type ReactElement } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, Loader2, Layers, Smartphone, Monitor } from 'lucide-react';
 import { useActiveTab } from '../store/tab-store';
+import { useWindowStateStore } from '../store/window-state-store';
 import { normalizeUrlInput } from '@shared/url';
 
 interface TopBarProps {
@@ -10,6 +11,7 @@ interface TopBarProps {
 
 export function TopBar({ drawerOpen, onToggleDrawer }: TopBarProps): ReactElement {
   const tab = useActiveTab();
+  const hidden = useWindowStateStore((s) => s.hidden);
   const [draft, setDraft] = useState<string>('');
   const [syncedUrl, setSyncedUrl] = useState<string>(tab?.url ?? '');
 
@@ -31,7 +33,7 @@ export function TopBar({ drawerOpen, onToggleDrawer }: TopBarProps): ReactElemen
   const disabled = !tab;
 
   return (
-    <div className="flex w-full items-center gap-1 border-b border-neutral-800 bg-neutral-900 px-2 py-1.5">
+    <div className={`flex w-full items-center gap-1 border-b border-neutral-800 bg-neutral-900 px-2 py-1.5 transition-opacity duration-200 ${hidden ? 'opacity-30' : 'opacity-100'}`}>
       <IconButton
         ariaLabel="Toggle tabs"
         testId="topbar-tabs-toggle"

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { IpcChannels, type IpcContract } from '@shared/ipc-contract';
-import type { Tab, TabsSnapshot } from '@shared/types';
+import type { Tab, TabsSnapshot, WindowState } from '@shared/types';
 
 const api = {
   // M0 smoke-test ping (kept for regression coverage).
@@ -47,6 +47,12 @@ const api = {
       listener(snapshot);
     ipcRenderer.on(IpcChannels.tabsSnapshot, handler);
     return () => ipcRenderer.off(IpcChannels.tabsSnapshot, handler);
+  },
+  /** Subscribe to EdgeDock window state broadcasts. Returns an unsubscribe. */
+  onWindowState: (listener: (s: WindowState) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, s: WindowState): void => listener(s);
+    ipcRenderer.on(IpcChannels.windowState, handler);
+    return () => ipcRenderer.off(IpcChannels.windowState, handler);
   },
 };
 
