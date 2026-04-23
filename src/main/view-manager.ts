@@ -53,7 +53,11 @@ export class ViewManager {
    */
   onSnapshot(listener: SnapshotListener): () => void {
     this.snapshotListeners.add(listener);
-    listener(this.snapshot());
+    try {
+      listener(this.snapshot());
+    } catch (err) {
+      console.error('[sidebrowser] onSnapshot initial listener call threw:', err);
+    }
     return () => this.snapshotListeners.delete(listener);
   }
 
@@ -194,7 +198,13 @@ export class ViewManager {
 
   private emitSnapshot(): void {
     const snap = this.snapshot();
-    for (const listener of this.snapshotListeners) listener(snap);
+    for (const listener of this.snapshotListeners) {
+      try {
+        listener(snap);
+      } catch (err) {
+        console.error('[sidebrowser] onSnapshot listener threw:', err);
+      }
+    }
   }
 
   private updateTab(id: string, patch: Partial<Tab>): void {
@@ -202,7 +212,13 @@ export class ViewManager {
     if (!managed) return;
     managed.tab = { ...managed.tab, ...patch };
     const tabCopy = { ...managed.tab };
-    for (const listener of this.tabUpdatedListeners) listener(tabCopy);
+    for (const listener of this.tabUpdatedListeners) {
+      try {
+        listener(tabCopy);
+      } catch (err) {
+        console.error('[sidebrowser] onTabUpdated listener threw:', err);
+      }
+    }
   }
 
   private attachWebContentsEvents(id: string, view: WebContentsView): () => void {
@@ -230,6 +246,9 @@ export class ViewManager {
     wc.on('page-title-updated', onTitle);
     wc.setWindowOpenHandler(({ url }) => {
       // M2: open popups as new tabs rather than redirecting current (fixes M1 OAuth breakage).
+      // Note: Electron has no API to unregister setWindowOpenHandler — it's implicitly cleaned
+      // up when webContents.close() runs in closeTab/destroy. Late-fire between detach and close
+      // would still call createTab on this ViewManager (low-likelihood synchronous race).
       this.createTab(url);
       return { action: 'deny' };
     });

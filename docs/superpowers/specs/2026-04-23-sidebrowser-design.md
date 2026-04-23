@@ -269,15 +269,13 @@ interface Tab {
 
 | Domain | Channel | 方向 | 载荷 | 返回 |
 |---|---|---|---|---|
-| tab | `tab:list` | R→M invoke | — | `Tab[]` |
-| tab | `tab:create` | R→M invoke | `{url?, isMobile?}` | `Tab` |
+| tab | `tab:create` | R→M invoke | `{url?}` | `Tab` |
 | tab | `tab:close` | R→M invoke | `{id}` | void |
 | tab | `tab:activate` | R→M invoke | `{id}` | void |
 | tab | `tab:navigate` | R→M invoke | `{id, url}` | void |
 | tab | `tab:go-back` / `go-forward` / `reload` | R→M invoke | `{id}` | void |
-| tab | `tab:set-mobile` | R→M invoke | `{id, isMobile}` | void |
-| tab | `tab:updated` | M→R event | `{id, patch: Partial<Tab>}` | — |
-| tab | `tab:activated` | M→R event | `{id}` | — |
+| tab | `tab:updated` | M→R event | `Tab` | — |
+| tab | `tabs:snapshot` | M→R event | `TabsSnapshot` | — |
 | settings | `settings:get` | R→M invoke | — | `Settings` |
 | settings | `settings:update` | R→M invoke | `Partial<Settings>` | `Settings` |
 | settings | `settings:changed` | M→R event | `Settings` | — |
@@ -286,6 +284,8 @@ interface Tab {
 | window | `window:close` | R→M invoke | — | void |
 | app | `app:ready` | M→R event | 初始 state 快照 | — |
 | app | `app:quit` | R→M invoke | — | void |
+
+**M2 broadcasts split:** `tabs:snapshot` fires on collection-wide changes (create/close/activate); `tab:updated` fires on per-tab field changes (url/title/loading/history). Carrying the full `Tab` (rather than a partial patch) keeps the renderer's Zustand store update deterministic and avoids ordering bugs when several updates batch.
 
 `chrome:set-height` 是关键：React TopBar 用 `ResizeObserver` 监听自身高度变化，发给 main 重定位 WebContentsView。设置抽屉是覆盖式不触发此事件。
 
