@@ -4,42 +4,80 @@ import type { ViewManager } from './view-manager';
 
 /**
  * Wires up all ipcMain handlers in one place.
- * Every handler reads/writes through the contract types so channel names and
- * payload shapes are verified at compile time.
  *
- * Safe to call multiple times for successive windows (e.g. macOS `activate`
- * re-opens the window after all windows close): `handle` registrations are
- * overwritten via `removeHandler`, and the per-window `ipcMain.on` listener
- * is removed when its window closes.
+ * Idempotent: every handler registration is guarded with removeHandler so a
+ * re-call (e.g. macOS `activate` recreating the window) does not throw. The
+ * per-window ipcMain.on listener is released when its host window closes.
  */
 export function registerIpcRouter(window: BrowserWindow, viewManager: ViewManager): void {
-  // Kept from M0 for preload sanity checks.
+  // M0 smoke-test ping.
   ipcMain.removeHandler(IpcChannels.appPing);
   ipcMain.handle(
     IpcChannels.appPing,
-    (_event, payload: IpcContract[typeof IpcChannels.appPing]['request']) => {
-      return {
-        reply: `pong: ${payload.message}`,
-        timestamp: Date.now(),
-      };
+    (_event, payload: IpcContract[typeof IpcChannels.appPing]['request']) => ({
+      reply: `pong: ${payload.message}`,
+      timestamp: Date.now(),
+    }),
+  );
+
+  // Tab management.
+  ipcMain.removeHandler(IpcChannels.tabCreate);
+  ipcMain.handle(
+    IpcChannels.tabCreate,
+    (_event, payload: IpcContract[typeof IpcChannels.tabCreate]['request']) =>
+      viewManager.createTab(payload.url),
+  );
+
+  ipcMain.removeHandler(IpcChannels.tabClose);
+  ipcMain.handle(
+    IpcChannels.tabClose,
+    (_event, payload: IpcContract[typeof IpcChannels.tabClose]['request']) => {
+      viewManager.closeTab(payload.id);
     },
   );
 
+  ipcMain.removeHandler(IpcChannels.tabActivate);
+  ipcMain.handle(
+    IpcChannels.tabActivate,
+    (_event, payload: IpcContract[typeof IpcChannels.tabActivate]['request']) => {
+      viewManager.activateTab(payload.id);
+    },
+  );
+
+  // Per-tab navigation.
   ipcMain.removeHandler(IpcChannels.tabNavigate);
   ipcMain.handle(
     IpcChannels.tabNavigate,
-    async (_event, payload: IpcContract[typeof IpcChannels.tabNavigate]['request']) => {
-      await viewManager.navigate(payload.url);
+    (_event, payload: IpcContract[typeof IpcChannels.tabNavigate]['request']) => {
+      viewManager.navigate(payload.id, payload.url);
     },
   );
 
   ipcMain.removeHandler(IpcChannels.tabGoBack);
-  ipcMain.handle(IpcChannels.tabGoBack, () => viewManager.goBack());
-  ipcMain.removeHandler(IpcChannels.tabGoForward);
-  ipcMain.handle(IpcChannels.tabGoForward, () => viewManager.goForward());
-  ipcMain.removeHandler(IpcChannels.tabReload);
-  ipcMain.handle(IpcChannels.tabReload, () => viewManager.reload());
+  ipcMain.handle(
+    IpcChannels.tabGoBack,
+    (_event, payload: IpcContract[typeof IpcChannels.tabGoBack]['request']) => {
+      viewManager.goBack(payload.id);
+    },
+  );
 
+  ipcMain.removeHandler(IpcChannels.tabGoForward);
+  ipcMain.handle(
+    IpcChannels.tabGoForward,
+    (_event, payload: IpcContract[typeof IpcChannels.tabGoForward]['request']) => {
+      viewManager.goForward(payload.id);
+    },
+  );
+
+  ipcMain.removeHandler(IpcChannels.tabReload);
+  ipcMain.handle(
+    IpcChannels.tabReload,
+    (_event, payload: IpcContract[typeof IpcChannels.tabReload]['request']) => {
+      viewManager.reload(payload.id);
+    },
+  );
+
+  // Chrome layout — fire-and-forget. Scope listener to this window's lifetime.
   const onChromeSetHeight = (
     _event: IpcMainEvent,
     payload: IpcContract[typeof IpcChannels.chromeSetHeight]['request'],
@@ -51,10 +89,15 @@ export function registerIpcRouter(window: BrowserWindow, viewManager: ViewManage
     ipcMain.removeListener(IpcChannels.chromeSetHeight, onChromeSetHeight);
   });
 
-  // Main → renderer: broadcast tab state on every change.
-  viewManager.onTabChange((tab) => {
+  // Main → renderer broadcasts.
+  viewManager.onTabUpdated((tab) => {
     if (!window.isDestroyed()) {
       window.webContents.send(IpcChannels.tabUpdated, tab);
+    }
+  });
+  viewManager.onSnapshot((snapshot) => {
+    if (!window.isDestroyed()) {
+      window.webContents.send(IpcChannels.tabsSnapshot, snapshot);
     }
   });
 }
