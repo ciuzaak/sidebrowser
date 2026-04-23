@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { IpcChannels, type IpcContract } from '@shared/ipc-contract';
-import type { Tab, TabsSnapshot, WindowState } from '@shared/types';
+import type { Settings, SettingsPatch, Tab, TabsSnapshot, WindowState } from '@shared/types';
 
 const api = {
   // M0 smoke-test ping (kept for regression coverage).
@@ -53,6 +53,32 @@ const api = {
     const handler = (_event: IpcRendererEvent, s: WindowState): void => listener(s);
     ipcRenderer.on(IpcChannels.windowState, handler);
     return () => ipcRenderer.off(IpcChannels.windowState, handler);
+  },
+
+  // Settings + app lifecycle + drawer view-suppression (M6)
+  getSettings: (): Promise<Settings> =>
+    ipcRenderer.invoke(IpcChannels.settingsGet, {}),
+
+  updateSettings: (partial: SettingsPatch): Promise<Settings> =>
+    ipcRenderer.invoke(IpcChannels.settingsUpdate, partial),
+
+  /** Subscribe to settings:changed broadcasts. Returns unsubscribe. */
+  onSettingsChanged: (listener: (s: Settings) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, s: Settings): void => listener(s);
+    ipcRenderer.on(IpcChannels.settingsChanged, handler);
+    return () => ipcRenderer.off(IpcChannels.settingsChanged, handler);
+  },
+
+  /** Subscribe to the single app:ready broadcast (carries initial Settings). Returns unsubscribe. */
+  onAppReady: (listener: (p: { settings: Settings }) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, p: { settings: Settings }): void => listener(p);
+    ipcRenderer.on(IpcChannels.appReady, handler);
+    return () => ipcRenderer.off(IpcChannels.appReady, handler);
+  },
+
+  /** R→M send. Tell ViewManager to hide/show the active WebContentsView beneath the chrome layer. Used by SettingsDrawer open/close in Task 10. */
+  setViewSuppressed: (suppressed: boolean): void => {
+    ipcRenderer.send(IpcChannels.viewSetSuppressed, { suppressed });
   },
 };
 
