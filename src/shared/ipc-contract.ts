@@ -1,21 +1,28 @@
 // Centralized IPC channel names and payload types.
 // All main/renderer IPC must go through this module — never use string literals inline.
 
-import type { Tab } from './types';
+import type { Tab, TabsSnapshot } from './types';
 
 export const IpcChannels = {
   // Smoke-test channel kept from M0 for the preload API sanity check.
   appPing: 'app:ping',
 
-  // M1: tab navigation (single-tab; no ID arg until M2).
+  // Multi-tab management (M2).
+  tabCreate: 'tab:create',
+  tabClose: 'tab:close',
+  tabActivate: 'tab:activate',
+  /** Main → renderer event. Fires on create/close/activate — whenever the tab set or active id changes. */
+  tabsSnapshot: 'tabs:snapshot',
+
+  // Per-tab navigation (all take `{ id }` in M2 — the single-tab shortcut from M1 is gone).
   tabNavigate: 'tab:navigate',
   tabGoBack: 'tab:go-back',
   tabGoForward: 'tab:go-forward',
   tabReload: 'tab:reload',
-  /** Main → renderer event. Carries the full Tab (simpler than patches for M1). */
+  /** Main → renderer event. Fires on a single tab's field change (url / title / loading / history). */
   tabUpdated: 'tab:updated',
 
-  // M1: renderer reports its chrome bar height so main can position the WebContentsView.
+  // Renderer reports chrome bar height so main can position WebContentsViews.
   chromeSetHeight: 'chrome:set-height',
 } as const;
 
@@ -26,27 +33,48 @@ export interface IpcContract {
     request: { message: string };
     response: { reply: string; timestamp: number };
   };
+
+  [IpcChannels.tabCreate]: {
+    /** Optional initial URL; defaults to about:blank. */
+    request: { url?: string };
+    response: Tab;
+  };
+  [IpcChannels.tabClose]: {
+    request: { id: string };
+    response: void;
+  };
+  [IpcChannels.tabActivate]: {
+    request: { id: string };
+    response: void;
+  };
+  [IpcChannels.tabsSnapshot]: {
+    /** Full snapshot — renderer replaces its store wholesale on receive. */
+    request: TabsSnapshot;
+    response: void;
+  };
+
   [IpcChannels.tabNavigate]: {
-    request: { url: string };
+    request: { id: string; url: string };
     response: void;
   };
   [IpcChannels.tabGoBack]: {
-    request: void;
+    request: { id: string };
     response: void;
   };
   [IpcChannels.tabGoForward]: {
-    request: void;
+    request: { id: string };
     response: void;
   };
   [IpcChannels.tabReload]: {
-    request: void;
+    request: { id: string };
     response: void;
   };
   [IpcChannels.tabUpdated]: {
-    /** Main broadcasts on navigation / title / loading state changes. */
+    /** Main broadcasts the full new Tab (id included). Renderer stores it keyed by id. */
     request: Tab;
     response: void;
   };
+
   [IpcChannels.chromeSetHeight]: {
     request: { heightPx: number };
     response: void;

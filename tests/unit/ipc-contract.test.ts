@@ -14,6 +14,13 @@ describe('IpcChannels', () => {
     expect(IpcChannels.tabUpdated).toBe('tab:updated');
   });
 
+  it('defines multi-tab management channels', () => {
+    expect(IpcChannels.tabCreate).toBe('tab:create');
+    expect(IpcChannels.tabClose).toBe('tab:close');
+    expect(IpcChannels.tabActivate).toBe('tab:activate');
+    expect(IpcChannels.tabsSnapshot).toBe('tabs:snapshot');
+  });
+
   it('defines chrome layout channel', () => {
     expect(IpcChannels.chromeSetHeight).toBe('chrome:set-height');
   });
