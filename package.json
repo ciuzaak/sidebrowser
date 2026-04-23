@@ -6,13 +6,13 @@
   "type": "module",
   "main": "out/main/index.cjs",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "preview": "electron-vite preview",
+    "dev": "node scripts/run.mjs electron-vite dev",
+    "build": "node scripts/run.mjs electron-vite build",
+    "preview": "node scripts/run.mjs electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/run.mjs playwright test",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\""
   },
@@ -26,7 +26,11 @@
     "react-dom": "^19.2.5"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["electron", "esbuild", "electron-winstaller"]
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild",
+      "electron-winstaller"
+    ]
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
