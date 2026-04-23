@@ -71,9 +71,10 @@ export class ViewManager {
     this.applyBounds();
   }
 
-  /** Create a new tab, auto-activate it, return the full Tab object. */
-  createTab(url: string = 'about:blank'): Tab {
-    const id = nanoid();
+  /** Create a new tab, auto-activate it, return the full Tab object.
+   *  `id` is optional and only used by the persistence-restore path in `seedTabs`
+   *  to preserve persisted ids; user-initiated `tab:create` IPC always gets a fresh nanoid. */
+  createTab(url: string = 'about:blank', id: string = nanoid()): Tab {
     const view = new WebContentsView({
       webPreferences: {
         session: getPersistentSession(),
