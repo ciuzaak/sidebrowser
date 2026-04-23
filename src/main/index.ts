@@ -36,7 +36,7 @@ function seedTabs(viewManager: ViewManager, persisted: PersistedTabs | null): vo
     // Create tabs in stored order; last-created becomes active by default,
     // but we then explicitly activate the stored activeId.
     for (const pt of persisted.tabs) {
-      viewManager.createTab(pt.url, pt.id);
+      viewManager.createTab(pt.url, pt.id, pt.isMobile);
       // createTab auto-activates — we override the active tab below.
     }
     viewManager.activateTab(persisted.activeId);
