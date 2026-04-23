@@ -56,10 +56,6 @@ export interface EdgeDockDeps {
 
 interface AnimState {
   handle: IntervalHandle;
-  fromX: number;
-  toX: number;
-  startedAt: number;
-  ms: number;
 }
 
 export class EdgeDock {
@@ -90,7 +86,7 @@ export class EdgeDock {
 
       case 'ANIM_HIDE':
       case 'ANIM_REVEAL':
-        this.startAnim(fx.side, fx.targetX, fx.ms);
+        this.startAnim(fx.targetX, fx.ms);
         return;
 
       case 'ANIM_CANCEL':
@@ -110,7 +106,7 @@ export class EdgeDock {
     }
   }
 
-  private startAnim(side: 'left' | 'right', targetX: number, ms: number): void {
+  private startAnim(targetX: number, ms: number): void {
     // Always cancel any running animation first (defensive)
     this.cancelAnim();
 
@@ -134,12 +130,7 @@ export class EdgeDock {
       }
     }, 16);
 
-    this.anim = { handle, fromX, toX: targetX, startedAt, ms };
-
-    // Suppress unused-variable lint warnings for `side` (it's part of the
-    // interface but the executor only needs targetX; side is in the effect
-    // so the test can verify it at the reducer layer).
-    void side;
+    this.anim = { handle };
   }
 
   private cancelAnim(): void {

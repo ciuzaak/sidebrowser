@@ -91,12 +91,10 @@ function seedDockedLeft(dock: EdgeDock, x = 0): void {
   });
 }
 
-// ---------------------------------------------------------------------------
-// interpolateX at t=0.5: ease-out-cubic eased = 1 - (0.5)^3 = 0.875
-// So from 0 to -390: interpolated = 0 + 0.875 * (-390) = -341.25
-// ---------------------------------------------------------------------------
+// interpolateX at t=0.5 (ease-out-cubic): eased = 1 - 0.5^3 = 0.875
+// from 0 to -390, x would be 0 + 0.875 * -390 = -341.25
+// (actual runtime value read via getCurrentX() below — informational only)
 const HIDE_TARGET_LEFT = 0 - 393 + 3; // -390
-const HALF_WAY_LEFT = 0 + (1 - Math.pow(0.5, 3)) * (HIDE_TARGET_LEFT - 0); // -341.25
 
 // ---------------------------------------------------------------------------
 // Test suites
@@ -125,8 +123,8 @@ describe('EdgeDock executor', () => {
       seedDockedLeft(dock);
       dock.dispatch({ type: 'MOUSE_LEAVE' }); // go to HIDING (also dims)
       dock.dispatch({ type: 'MOUSE_ENTER' }); // ANIM_CANCEL + CLEAR_DIM + ANIM_REVEAL
-      // clearDim should have been called (DOCKED_NONE level isn't relevant here)
-      expect(clearDimCalls.length).toBeGreaterThanOrEqual(1);
+      // clearDim should have been called exactly once
+      expect(clearDimCalls.length).toBe(1);
     });
   });
 
@@ -154,8 +152,9 @@ describe('EdgeDock executor', () => {
         (c) => c.docked === 'left' && c.hidden === true && c.dimmed === true,
       );
       expect(hiddenBroadcast).toBeDefined();
+      if (!hiddenBroadcast) throw new Error('unreachable'); // narrows for TS
       // Verify exact shape — no extra keys
-      expect(Object.keys(hiddenBroadcast!).sort()).toEqual(['dimmed', 'docked', 'hidden']);
+      expect(Object.keys(hiddenBroadcast).sort()).toEqual(['dimmed', 'docked', 'hidden']);
     });
   });
 
