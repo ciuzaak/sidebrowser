@@ -6,6 +6,18 @@ describe('IpcChannels', () => {
     expect(IpcChannels.appPing).toBe('app:ping');
   });
 
+  it('defines tab navigation channels', () => {
+    expect(IpcChannels.tabNavigate).toBe('tab:navigate');
+    expect(IpcChannels.tabGoBack).toBe('tab:go-back');
+    expect(IpcChannels.tabGoForward).toBe('tab:go-forward');
+    expect(IpcChannels.tabReload).toBe('tab:reload');
+    expect(IpcChannels.tabUpdated).toBe('tab:updated');
+  });
+
+  it('defines chrome layout channel', () => {
+    expect(IpcChannels.chromeSetHeight).toBe('chrome:set-height');
+  });
+
   it('all channel values follow <domain>:<action> pattern', () => {
     for (const channel of Object.values(IpcChannels)) {
       expect(channel).toMatch(/^[a-z]+:[a-z-]+$/);
