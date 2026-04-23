@@ -44,6 +44,12 @@ export function registerIpcRouter(window: BrowserWindow, viewManager: ViewManage
     },
   );
 
+  ipcMain.removeHandler(IpcChannels.tabsRequestSnapshot);
+  ipcMain.handle(
+    IpcChannels.tabsRequestSnapshot,
+    () => viewManager.snapshot(),
+  );
+
   // Per-tab navigation.
   ipcMain.removeHandler(IpcChannels.tabNavigate);
   ipcMain.handle(

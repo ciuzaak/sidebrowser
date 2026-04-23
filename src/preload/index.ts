@@ -14,6 +14,9 @@ const api = {
     ipcRenderer.invoke(IpcChannels.tabClose, { id }),
   activateTab: (id: string): Promise<void> =>
     ipcRenderer.invoke(IpcChannels.tabActivate, { id }),
+  /** Explicitly fetch the current tabs snapshot from main. Used after subscribing to close the broadcast race. */
+  requestTabsSnapshot: (): Promise<TabsSnapshot> =>
+    ipcRenderer.invoke(IpcChannels.tabsRequestSnapshot, {}),
 
   // Per-tab navigation
   navigate: (id: string, url: string): Promise<void> =>

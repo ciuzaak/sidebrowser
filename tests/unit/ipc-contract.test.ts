@@ -19,6 +19,7 @@ describe('IpcChannels', () => {
     expect(IpcChannels.tabClose).toBe('tab:close');
     expect(IpcChannels.tabActivate).toBe('tab:activate');
     expect(IpcChannels.tabsSnapshot).toBe('tabs:snapshot');
+    expect(IpcChannels.tabsRequestSnapshot).toBe('tabs:request-snapshot');
   });
 
   it('defines chrome layout channel', () => {

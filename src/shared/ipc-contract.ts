@@ -13,6 +13,8 @@ export const IpcChannels = {
   tabActivate: 'tab:activate',
   /** Main → renderer event. Fires on create/close/activate — whenever the tab set or active id changes. */
   tabsSnapshot: 'tabs:snapshot',
+  /** Renderer → main invoke. Returns the current TabsSnapshot synchronously. Used after mount to close the snapshot-vs-useEffect race. */
+  tabsRequestSnapshot: 'tabs:request-snapshot',
 
   // Per-tab navigation (all take `{ id }` in M2 — the single-tab shortcut from M1 is gone).
   tabNavigate: 'tab:navigate',
@@ -51,6 +53,10 @@ export interface IpcContract {
     /** Full snapshot — renderer replaces its store wholesale on receive. */
     request: TabsSnapshot;
     response: void;
+  };
+  [IpcChannels.tabsRequestSnapshot]: {
+    request: Record<string, never>;
+    response: TabsSnapshot;
   };
 
   [IpcChannels.tabNavigate]: {
