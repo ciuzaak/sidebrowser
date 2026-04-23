@@ -1,9 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { IpcChannels } from '@shared/ipc-contract';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -11,7 +8,7 @@ function createWindow(): BrowserWindow {
     height: 852,
     title: 'sidebrowser',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      preload: join(__dirname, '../preload/index.cjs'),
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
