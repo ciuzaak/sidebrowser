@@ -15,6 +15,7 @@ export const IpcChannels = {
   tabsSnapshot: 'tabs:snapshot',
   /** Renderer → main invoke. Returns the current TabsSnapshot synchronously. Used after mount to close the snapshot-vs-useEffect race. */
   tabsRequestSnapshot: 'tabs:request-snapshot',
+  tabSetMobile: 'tab:set-mobile',
 
   // Per-tab navigation (all take `{ id }` in M2 — the single-tab shortcut from M1 is gone).
   tabNavigate: 'tab:navigate',
@@ -57,6 +58,10 @@ export interface IpcContract {
   [IpcChannels.tabsRequestSnapshot]: {
     request: Record<string, never>;
     response: TabsSnapshot;
+  };
+  [IpcChannels.tabSetMobile]: {
+    request: { id: string; isMobile: boolean };
+    response: void;
   };
 
   [IpcChannels.tabNavigate]: {

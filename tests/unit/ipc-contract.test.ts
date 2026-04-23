@@ -20,6 +20,7 @@ describe('IpcChannels', () => {
     expect(IpcChannels.tabActivate).toBe('tab:activate');
     expect(IpcChannels.tabsSnapshot).toBe('tabs:snapshot');
     expect(IpcChannels.tabsRequestSnapshot).toBe('tabs:request-snapshot');
+    expect(IpcChannels.tabSetMobile).toBe('tab:set-mobile');
   });
 
   it('defines chrome layout channel', () => {
