@@ -375,7 +375,8 @@ Renderer TopBar 淡出（CSS class 切换）
 SettingsDrawer slider onChange
   → invoke('settings:update', { dim: { blurPx: 16 } })
     → SettingsStore.merge + 持久化
-    → 若 DimController 正 active：removeInsertedCSS(oldKey) + insertCSS(newRule) 立即生效
+    → 若 DimController 正 active：DimController.restyle(newDim)
+      （removeInsertedCSS(oldKey) + insertCSS(newRule) 立即生效，保持 active 态不解除）
     → broadcast 'settings:changed' 全量 Settings
   Renderer Zustand 更新 → Slider 反映 canonical 值
 ```
@@ -442,6 +443,8 @@ SettingsDrawer slider onChange
 **E2E 测试钩（`SIDEBROWSER_E2E=1`）：** bootstrap 里读该环境变量；为 `'1'` 时 (a) 跳过 `CursorWatcher.start()`（真实轮询会和测试里的 `fireLeaveNow / fireEnterNow` 抢态，制造 flake）；(b) 在 `globalThis.__sidebrowserTestHooks` 上挂 `{ fireLeaveNow, fireEnterNow, getActiveWebContents, getWebContentsByUrlSubstring }` 供 `app.evaluate` 调用。这样 E2E 完全走命令式事件注入，轮询+防抖由单测（`tests/unit/cursor-watcher.test.ts` 用 `vi.useFakeTimers`）覆盖。
 
 **M5 E2E 钩（追加）：** Task 6 在同一 `__sidebrowserTestHooks` 上追加 `emitWindowMoved` / `emitDisplayChanged` / `getEdgeDockState` / `getWindowBounds` / `setWindowBounds`，使 E2E 可以绕过真实 `win.on('moved')` / `screen.on('display-*')` 事件源，直接注入几何变化。EdgeDock 动画不 mock——`edgeDock.animationMs = 200` 真跑，`expect.poll` 预算（5s / 10s）覆盖真实动画时间 + 缓冲。
+
+**M6 E2E 钩（追加）：** `tests/e2e/settings-drawer.spec.ts` 覆盖 drawer 开关 + 持久化 + 窗口 bounds 跨重启恢复；Task 11 在 `__sidebrowserTestHooks` 上追加 `getSettings` / `updateSettings` / `getActiveViewBounds`，对应 SettingsStore 和 ViewManager 的可测入口，让 E2E 可以绕过 UI 直接读/写 canonical settings，并断言 view-suppression（drawer open 时 active view 缩成 `{0,0,0,0}`）。
 
 **CI：** GitHub Actions Windows runner 跑 `pnpm test` + `pnpm test:e2e`。Mac runner 留到加平台时再开。
 

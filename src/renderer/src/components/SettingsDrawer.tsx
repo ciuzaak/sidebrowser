@@ -369,7 +369,7 @@ function NumberInput({ testId, value, min, max, onChange }: NumberInputProps): R
       max={max}
       onChange={(e) => {
         const n = Number(e.target.value);
-        if (Number.isFinite(n)) onChange(n);
+        if (Number.isFinite(n) && n >= min && n <= max) onChange(n);
       }}
       className="w-24 rounded bg-neutral-800 px-2 py-1 text-right text-sm text-neutral-100 outline-none focus:ring-1 focus:ring-sky-500"
     />
