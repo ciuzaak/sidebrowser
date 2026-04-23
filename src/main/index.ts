@@ -104,6 +104,7 @@ app.whenReady().then(() => {
       fireLeaveNow: () => watcher.emitLeaveNow(),
       fireEnterNow: () => watcher.emitEnterNow(),
       getActiveWebContents: () => viewManager.getActiveWebContents(),
+      getWebContentsByUrlSubstring: (s: string) => viewManager.getWebContentsByUrlSubstring(s),
     };
   }
 

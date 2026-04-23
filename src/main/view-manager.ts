@@ -204,6 +204,13 @@ export class ViewManager {
     return this.tabs.get(this.activeId)?.view.webContents ?? null;
   }
 
+  getWebContentsByUrlSubstring(substring: string): Electron.WebContents | null {
+    for (const managed of this.tabs.values()) {
+      if (managed.tab.url.includes(substring)) return managed.view.webContents;
+    }
+    return null;
+  }
+
   destroy(): void {
     this.window.removeListener('resize', this.onWindowResize);
     for (const managed of this.tabs.values()) {
