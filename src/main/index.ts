@@ -133,6 +133,11 @@ app.whenReady().then(() => {
     const b = win.getBounds();
     const center = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
     const nearest = screen.getDisplayNearestPoint(center);
+    // Strict containment — a HIDDEN_LEFT/RIGHT window has triggerStripPx (3px) outside
+    // the workArea by design, so insideAny=false there. If a display unplug fires while
+    // HIDDEN, this correctly surfaces as offscreen=true → SNAP_TO_CENTER, matching the
+    // spec §10 recovery requirement. A window docked flush against the edge (before hide)
+    // has its right/left edge exactly on the workArea boundary and still passes `<=`.
     const insideAny = screen.getAllDisplays().some(d =>
       b.x >= d.workArea.x && b.x + b.width <= d.workArea.x + d.workArea.width
       && b.y >= d.workArea.y && b.y + b.height <= d.workArea.y + d.workArea.height);
