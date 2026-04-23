@@ -274,6 +274,7 @@ interface Tab {
 | tab | `tab:activate` | R→M invoke | `{id}` | void |
 | tab | `tab:navigate` | R→M invoke | `{id, url}` | void |
 | tab | `tab:go-back` / `go-forward` / `reload` | R→M invoke | `{id}` | void |
+| tab | `tab:set-mobile` | R→M invoke | `{id, isMobile}` | void |
 | tab | `tab:updated` | M→R event | `Tab` | — |
 | tab | `tabs:snapshot` | M→R event | `TabsSnapshot` | — |
 | settings | `settings:get` | R→M invoke | — | `Settings` |
