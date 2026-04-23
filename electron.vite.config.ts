@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin({ exclude: ['electron-store', 'nanoid'] })],
     resolve: {
       alias: {
         '@shared': resolve(__dirname, 'src/shared'),
@@ -14,7 +14,7 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/main/index.ts') },
-        external: ['electron', 'electron-store', /^node:/],
+        external: ['electron', /^node:/],
         output: {
           format: 'cjs',
           entryFileNames: '[name].cjs',
