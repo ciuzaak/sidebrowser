@@ -322,4 +322,25 @@ describe('CursorWatcher', () => {
 
     watcher.stop();
   });
+
+  // ── Test 13: setDelayMs reallocates deps.settings (does not mutate caller object)
+  it('setDelayMs replaces deps.settings reference (does not mutate caller object)', () => {
+    // Capture a shared settings object that the caller still holds a reference to,
+    // mimicking SettingsStore handing its section pointer to the watcher.
+    const sharedSettings: { delayMs: number } = { delayMs: 100 };
+    const watcher = new CursorWatcher({
+      getCursorPoint: () => ({ ...INSIDE }),
+      getWindowBounds: () => ({ ...BOUNDS }),
+      settings: sharedSettings,
+      pollMs: POLL,
+    });
+
+    watcher.setDelayMs(500);
+
+    // Caller's original object must be untouched — setDelayMs reallocates,
+    // it does NOT mutate in place.
+    expect(sharedSettings.delayMs).toBe(100);
+
+    watcher.stop();
+  });
 });

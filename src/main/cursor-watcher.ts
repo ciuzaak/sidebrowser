@@ -55,9 +55,13 @@ export class CursorWatcher {
   /**
    * Update the leave delay. Any in-flight leaveTimer keeps the old delay
    * (we don't reschedule mid-debounce); the next fresh leave uses the new value.
+   *
+   * The `deps.settings` reference is replaced (not mutated in place), so callers
+   * that hold onto the original `MouseLeaveSettings` object — e.g. SettingsStore's
+   * section pointer — won't be inadvertently modified.
    */
   setDelayMs(ms: number): void {
-    this.deps.settings.delayMs = ms;
+    this.deps.settings = { ...this.deps.settings, delayMs: ms };
   }
 
   /**
