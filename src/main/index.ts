@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, screen } from 'electron';
 import { join } from 'node:path';
 import { ViewManager } from './view-manager';
 import { registerIpcRouter } from './ipc-router';
@@ -8,6 +8,9 @@ import {
   loadPersistedTabs,
   type PersistedTabs,
 } from './tab-persistence';
+import { CursorWatcher } from './cursor-watcher';
+import { DimController } from './dim-controller';
+import { DEFAULTS } from './settings';
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -71,6 +74,38 @@ app.whenReady().then(() => {
   win.webContents.once('did-finish-load', () => {
     seedTabs(viewManager, loadPersistedTabs(store));
   });
+
+  // M4: mouse-leave dim — construct watcher + dim controller, wire listeners.
+  const watcher = new CursorWatcher({
+    getCursorPoint: () => screen.getCursorScreenPoint(),
+    getWindowBounds: () => (win.isDestroyed() ? null : win.getBounds()),
+    settings: DEFAULTS.mouseLeave,
+  });
+  const dim = new DimController();
+
+  watcher.onLeave(() => {
+    const wc = viewManager.getActiveWebContents();
+    if (wc) void dim.apply(wc, DEFAULTS.dim);
+  });
+  watcher.onEnter(() => {
+    void dim.clear();
+  });
+  viewManager.onSnapshot(() => {
+    if (!dim.isActive) return;
+    const wc = viewManager.getActiveWebContents();
+    if (wc) void dim.retarget(wc, DEFAULTS.dim);
+  });
+
+  watcher.start();
+  win.once('closed', () => watcher.stop());
+
+  if (process.env['SIDEBROWSER_E2E'] === '1') {
+    (globalThis as Record<string, unknown>)['__sidebrowserTestHooks'] = {
+      fireLeaveNow: () => watcher.emitLeaveNow(),
+      fireEnterNow: () => watcher.emitEnterNow(),
+      getActiveWebContents: () => viewManager.getActiveWebContents(),
+    };
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
