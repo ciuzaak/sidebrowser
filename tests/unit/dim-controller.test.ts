@@ -94,4 +94,42 @@ describe('DimController', () => {
     await controller.clear();
     expect(controller.isActive).toBe(false);
   });
+
+  it('restyle when inactive → no calls on target (silent no-op)', async () => {
+    const controller = new DimController();
+    const target = mk();
+    await controller.restyle(DEFAULTS.dim);
+    expect(vi.mocked(target.insertCSS).mock.calls).toHaveLength(0);
+    expect(vi.mocked(target.removeInsertedCSS).mock.calls).toHaveLength(0);
+    expect(controller.isActive).toBe(false);
+  });
+
+  it('restyle when active → old CSS removed + new CSS inserted', async () => {
+    const controller = new DimController();
+    const target = mk();
+    await controller.apply(target, DEFAULTS.dim);
+    // After apply: insertCSS=1, removeInsertedCSS=0
+    await controller.restyle({ ...DEFAULTS.dim, blurPx: 16 });
+    // After restyle: removeInsertedCSS=1 (cleared old), insertCSS=2 (re-inserted with new)
+    expect(vi.mocked(target.removeInsertedCSS).mock.calls).toHaveLength(1);
+    expect(vi.mocked(target.insertCSS).mock.calls).toHaveLength(2);
+    expect(controller.isActive).toBe(true);
+  });
+
+  it('restyle uses new dim settings (blurPx reflected in new CSS rule)', async () => {
+    const controller = new DimController();
+    const capturedRules: string[] = [];
+    const target: CssTarget = {
+      insertCSS: vi.fn(async (rule: string) => {
+        capturedRules.push(rule);
+        return 'key-' + capturedRules.length;
+      }),
+      removeInsertedCSS: vi.fn(async () => undefined),
+    };
+    await controller.apply(target, DEFAULTS.dim); // blurPx: 8
+    await controller.restyle({ ...DEFAULTS.dim, blurPx: 16 });
+    expect(capturedRules).toHaveLength(2);
+    expect(capturedRules[0]).toContain('blur(8px)');
+    expect(capturedRules[1]).toContain('blur(16px)');
+  });
 });

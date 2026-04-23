@@ -41,6 +41,20 @@ export class DimController {
     await this.apply(newTarget, dim);
   }
 
+  /**
+   * Force re-insert CSS on the current target with new settings.
+   * No-op when inactive. Used when settings change while dim is active —
+   * `retarget` goes through `apply` which short-circuits on same-target,
+   * so we can't reuse it for same-target live restyling.
+   */
+  async restyle(dim: DimSettings): Promise<void> {
+    if (!this.state) return;
+    const target = this.state.target;
+    await this.state.target.removeInsertedCSS(this.state.key);
+    this.state = null; // null out so apply() doesn't short-circuit
+    await this.apply(target, dim);
+  }
+
   get isActive(): boolean {
     return this.state !== null;
   }

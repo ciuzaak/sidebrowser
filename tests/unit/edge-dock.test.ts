@@ -62,7 +62,7 @@ function mk(overrides: Partial<EdgeDockConfig> = {}) {
     now: () => Date.now(),
     setInterval: (cb, ms) => setInterval(cb, ms),
     clearInterval: (h) => clearInterval(h),
-    config,
+    config: () => config,
   };
 
   const dock = new EdgeDock(deps);
@@ -288,6 +288,61 @@ describe('EdgeDock executor', () => {
       vi.advanceTimersByTime(216);
 
       expect(dock.getState().kind).toBe('DOCKED_LEFT');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  describe('config getter (live settings updates)', () => {
+    it('config getter read freshly per dispatch: mid-test animationMs change reflected in next effect', () => {
+      // Hand-rolled deps so we can mutate cfgRef directly between dispatches.
+      const cfgRef: EdgeDockConfig = { ...DEFAULTS, animationMs: 200 };
+      let currentX = 0;
+      const setBoundsCalls: number[] = [];
+      const deps: EdgeDockDeps = {
+        setWindowX: (x) => { currentX = x; setBoundsCalls.push(x); },
+        getWindowBounds: () => ({ x: currentX, y: 0, width: cfgRef.windowWidth, height: 852 }),
+        applyDim: () => {},
+        clearDim: () => {},
+        broadcastState: () => {},
+        now: () => Date.now(),
+        setInterval: (cb, ms) => setInterval(cb, ms),
+        clearInterval: (h) => clearInterval(h),
+        config: () => cfgRef,
+      };
+      const dock = new EdgeDock(deps);
+      seedDockedLeft(dock); // → DOCKED_LEFT
+
+      // First HIDE animation with animationMs=200.
+      // Ticks fire every 16ms; t=elapsed/200 reaches 1 at elapsed≥200.
+      // 13 ticks × 16ms = 208ms → final tick t=1.04 → ANIM_DONE fires.
+      // Total setWindowX calls during HIDE: 13.
+      dock.dispatch({ type: 'MOUSE_LEAVE' });
+      expect(dock.getState().kind).toBe('HIDING');
+      vi.advanceTimersByTime(216);
+      expect(dock.getState().kind).toBe('HIDDEN_LEFT');
+      const callsAfterFirstHide = setBoundsCalls.length;
+      // 13 ticks during HIDE; sanity-check we got more than a handful.
+      expect(callsAfterFirstHide).toBeGreaterThan(8);
+
+      // Mutate config — shorter animation. Next dispatch must observe the new value.
+      cfgRef.animationMs = 100;
+
+      // Trigger REVEAL (MOUSE_ENTER on HIDDEN_LEFT).
+      // With animationMs=100: 7 ticks × 16ms = 112ms → final tick t=1.12 → done.
+      // So 7 setWindowX calls during REVEAL — strictly fewer than the 13 from HIDE.
+      const callsBeforeReveal = setBoundsCalls.length;
+      dock.dispatch({ type: 'MOUSE_ENTER' });
+      expect(dock.getState().kind).toBe('REVEALING');
+      vi.advanceTimersByTime(216); // plenty for either 100ms or 200ms anim
+      expect(dock.getState().kind).toBe('DOCKED_LEFT');
+      const revealTickCount = setBoundsCalls.length - callsBeforeReveal;
+
+      // Behavioral proof the getter ran fresh: REVEAL with animationMs=100
+      // produced strictly fewer ticks than the HIDE with animationMs=200.
+      expect(revealTickCount).toBeLessThan(callsAfterFirstHide);
+      // And concretely: ~7 ticks for the 100ms anim.
+      expect(revealTickCount).toBeLessThanOrEqual(8);
+      expect(revealTickCount).toBeGreaterThanOrEqual(6);
     });
   });
 });

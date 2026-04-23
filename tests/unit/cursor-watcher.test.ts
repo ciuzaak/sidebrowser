@@ -268,4 +268,58 @@ describe('CursorWatcher', () => {
 
     watcher.stop();
   });
+
+  // ── Test 11: setDelayMs updates the delay used by the next leave ─────────
+  it('setDelayMs updates the delay used by the next leave', () => {
+    const { watcher, state } = mk({ cursor: { ...INSIDE }, delayMs: 100 });
+    const onLeave = vi.fn();
+    watcher.onLeave(onLeave);
+
+    watcher.start();
+    vi.advanceTimersByTime(POLL); // first tick: inside
+
+    // Update delay live before the next leave
+    watcher.setDelayMs(500);
+
+    // Move outside; tick schedules leaveTimer with the new 500ms delay
+    state.cursor = { ...OUTSIDE };
+    vi.advanceTimersByTime(POLL); // tick: inside→outside, schedules leaveTimer at 500ms
+
+    // After the original 100ms delay: nothing fired (timer is set for 500ms)
+    vi.advanceTimersByTime(100);
+    expect(onLeave).not.toHaveBeenCalled();
+
+    // Advance the remaining 400ms to reach total 500ms
+    vi.advanceTimersByTime(400);
+    expect(onLeave).toHaveBeenCalledTimes(1);
+
+    watcher.stop();
+  });
+
+  // ── Test 12: setDelayMs does not affect an in-flight leaveTimer ──────────
+  it('setDelayMs does not affect an in-flight leaveTimer', () => {
+    const { watcher, state } = mk({ cursor: { ...INSIDE }, delayMs: 100 });
+    const onLeave = vi.fn();
+    watcher.onLeave(onLeave);
+
+    watcher.start();
+    vi.advanceTimersByTime(POLL); // first tick: inside
+
+    // Move outside → leaveTimer scheduled with the original 100ms delay
+    state.cursor = { ...OUTSIDE };
+    vi.advanceTimersByTime(POLL); // tick: inside→outside, schedules timer at 100ms
+
+    // Halfway through the 100ms debounce
+    vi.advanceTimersByTime(50);
+    expect(onLeave).not.toHaveBeenCalled();
+
+    // Mutate delay mid-debounce — must NOT reschedule the in-flight timer
+    watcher.setDelayMs(2000);
+
+    // Advance the remaining 50ms — timer fires at the originally scheduled 100ms
+    vi.advanceTimersByTime(50);
+    expect(onLeave).toHaveBeenCalledTimes(1);
+
+    watcher.stop();
+  });
 });

@@ -46,8 +46,11 @@ export interface EdgeDockDeps {
   setInterval: (cb: () => void, ms: number) => IntervalHandle;
   /** Injected so tests can clear fake-timer intervals. */
   clearInterval: (h: IntervalHandle) => void;
-  /** Static configuration; set once at bootstrap. */
-  config: EdgeDockConfig;
+  /**
+   * Configuration getter; invoked once per `dispatch()` call so live settings
+   * changes from `settingsStore.onChanged` are reflected on the very next event.
+   */
+  config: () => EdgeDockConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -65,7 +68,7 @@ export class EdgeDock {
   constructor(private readonly deps: EdgeDockDeps) {}
 
   dispatch(event: EdgeDockEvent): void {
-    const { nextState, effects } = reduce(this.state, event, this.deps.config);
+    const { nextState, effects } = reduce(this.state, event, this.deps.config());
     this.state = nextState;
     for (const fx of effects) this.runEffect(fx);
   }

@@ -101,13 +101,15 @@ app.whenReady().then(() => {
     now: () => Date.now(),
     setInterval: (cb, ms) => setInterval(cb, ms),
     clearInterval: (h) => clearInterval(h),
-    config: {
+    // Getter so live settings changes (M6 Task 8) are picked up per-dispatch.
+    // Until Task 8 wires settingsStore here, the body is a constant from DEFAULTS.
+    config: () => ({
       edgeThresholdPx: DEFAULTS.window.edgeThresholdPx,
       animationMs: DEFAULTS.edgeDock.animationMs,
       triggerStripPx: DEFAULTS.edgeDock.triggerStripPx,
       windowWidth: DEFAULTS.window.width,
       enabled: DEFAULTS.edgeDock.enabled,
-    },
+    }),
   });
 
   // Seed workArea after window ready (one-shot).

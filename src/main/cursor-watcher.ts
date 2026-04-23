@@ -53,6 +53,14 @@ export class CursorWatcher {
   }
 
   /**
+   * Update the leave delay. Any in-flight leaveTimer keeps the old delay
+   * (we don't reschedule mid-debounce); the next fresh leave uses the new value.
+   */
+  setDelayMs(ms: number): void {
+    this.deps.settings.delayMs = ms;
+  }
+
+  /**
    * Test / E2E hook: directly emit leave, bypassing the tick state machine.
    * Only called externally when SIDEBROWSER_E2E=1.
    */
