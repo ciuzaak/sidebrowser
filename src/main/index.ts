@@ -96,9 +96,6 @@ app.whenReady().then(() => {
     if (wc) void dim.retarget(wc, DEFAULTS.dim);
   });
 
-  watcher.start();
-  win.once('closed', () => watcher.stop());
-
   if (process.env['SIDEBROWSER_E2E'] === '1') {
     (globalThis as Record<string, unknown>)['__sidebrowserTestHooks'] = {
       fireLeaveNow: () => watcher.emitLeaveNow(),
@@ -106,7 +103,10 @@ app.whenReady().then(() => {
       getActiveWebContents: () => viewManager.getActiveWebContents(),
       getWebContentsByUrlSubstring: (s: string) => viewManager.getWebContentsByUrlSubstring(s),
     };
+  } else {
+    watcher.start();
   }
+  win.once('closed', () => watcher.stop());
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
