@@ -1,17 +1,27 @@
 import { useEffect } from 'react';
-import { useTabStore } from '../store/tab-store';
+import { useTabsStore } from '../store/tab-store';
 
 /**
- * Wires the Zustand `tab` slice to main's `tab:updated` broadcasts.
+ * Wires Zustand state to the two main-side broadcast events:
+ *   - tabs:snapshot  → wholesale replace (on create/close/activate)
+ *   - tab:updated    → merge one tab by id (on url/title/loading/history change)
+ *
  * Call once from the top-level App component.
  */
 export function useTabBridge(): void {
-  const setTab = useTabStore((s) => s.setTab);
+  const setSnapshot = useTabsStore((s) => s.setSnapshot);
+  const upsertTab = useTabsStore((s) => s.upsertTab);
 
   useEffect(() => {
-    const unsubscribe = window.sidebrowser.onTabUpdated((tab) => {
-      setTab(tab);
+    const unsubSnapshot = window.sidebrowser.onTabsSnapshot((snapshot) => {
+      setSnapshot(snapshot);
     });
-    return unsubscribe;
-  }, [setTab]);
+    const unsubUpdated = window.sidebrowser.onTabUpdated((tab) => {
+      upsertTab(tab);
+    });
+    return () => {
+      unsubSnapshot();
+      unsubUpdated();
+    };
+  }, [setSnapshot, upsertTab]);
 }
