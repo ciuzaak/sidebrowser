@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactElement } from 'react';
+import { useState, type FormEvent, type ReactElement } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, Loader2 } from 'lucide-react';
 import { useTabStore } from '../store/tab-store';
 import { normalizeUrlInput } from '@shared/url';
@@ -6,11 +6,15 @@ import { normalizeUrlInput } from '@shared/url';
 export function TopBar(): ReactElement {
   const tab = useTabStore((s) => s.tab);
   const [draft, setDraft] = useState<string>('');
+  const [syncedUrl, setSyncedUrl] = useState<string>(tab.url);
 
   // Sync the address bar when navigation happens from outside the input (back/forward/redirect).
-  useEffect(() => {
+  // Tracked via a stored sentinel so the reset runs during render rather than in an effect —
+  // the latter is a React 19 anti-pattern for deriving state from props/store.
+  if (tab.url !== syncedUrl) {
+    setSyncedUrl(tab.url);
     setDraft(tab.url === 'about:blank' ? '' : tab.url);
-  }, [tab.url]);
+  }
 
   const submit = (e: FormEvent): void => {
     e.preventDefault();
