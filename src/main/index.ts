@@ -2,8 +2,12 @@ import { app, BrowserWindow } from 'electron';
 import { join } from 'node:path';
 import { ViewManager } from './view-manager';
 import { registerIpcRouter } from './ipc-router';
-
-const INITIAL_URL = 'about:blank';
+import {
+  createPersistedTabSaver,
+  createTabStore,
+  loadPersistedTabs,
+  type PersistedTabs,
+} from './tab-persistence';
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -27,17 +31,43 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
+function seedTabs(viewManager: ViewManager, persisted: PersistedTabs | null): void {
+  if (persisted) {
+    // Create tabs in stored order; last-created becomes active by default,
+    // but we then explicitly activate the stored activeId.
+    for (const pt of persisted.tabs) {
+      viewManager.createTab(pt.url);
+      // createTab auto-activates — we override below.
+    }
+    viewManager.activateTab(persisted.activeId);
+  } else {
+    viewManager.createTab('about:blank');
+  }
+}
+
 app.whenReady().then(() => {
   const win = createWindow();
   const viewManager = new ViewManager(win);
   registerIpcRouter(win, viewManager);
 
-  // Navigate to the initial URL once the renderer has reported its chrome height.
-  // We defer by one tick so the renderer has a chance to send chrome:set-height first;
-  // if it hasn't by the time we navigate, the view bounds will reflow once the renderer
-  // does send the height.
+  const store = createTabStore();
+  const saver = createPersistedTabSaver(store);
+
+  // Save tabs on every snapshot change, and on every tab URL update
+  // (the URL is the only persisted-tab field that transient events can change).
+  viewManager.onSnapshot(() => {
+    const snap = viewManager.serializeForPersistence();
+    if (snap) saver.save(snap);
+  });
+  viewManager.onTabUpdated(() => {
+    const snap = viewManager.serializeForPersistence();
+    if (snap) saver.save(snap);
+  });
+
+  // Defer seeding by one tick so renderer has begun bootstrapping and the
+  // tabs:snapshot broadcast arrives alongside the first tab:updated events.
   setImmediate(() => {
-    void viewManager.navigate(INITIAL_URL);
+    seedTabs(viewManager, loadPersistedTabs(store));
   });
 
   app.on('activate', () => {
@@ -45,7 +75,14 @@ app.whenReady().then(() => {
       const newWin = createWindow();
       const newViewManager = new ViewManager(newWin);
       registerIpcRouter(newWin, newViewManager);
+      setImmediate(() => {
+        newViewManager.createTab('about:blank');
+      });
     }
+  });
+
+  app.on('before-quit', () => {
+    saver.flush();
   });
 });
 
