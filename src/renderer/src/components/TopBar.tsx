@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type ReactElement } from 'react';
-import { ArrowLeft, ArrowRight, RotateCw, Loader2, Layers, Smartphone, Monitor } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCw, Loader2, Layers, Smartphone, Monitor, Settings } from 'lucide-react';
 import { useActiveTab } from '../store/tab-store';
 import { useWindowStateStore } from '../store/window-state-store';
 import { normalizeUrlInput } from '@shared/url';
@@ -7,9 +7,16 @@ import { normalizeUrlInput } from '@shared/url';
 interface TopBarProps {
   drawerOpen: boolean;
   onToggleDrawer: () => void;
+  settingsOpen: boolean;
+  onToggleSettings: () => void;
 }
 
-export function TopBar({ drawerOpen, onToggleDrawer }: TopBarProps): ReactElement {
+export function TopBar({
+  drawerOpen,
+  onToggleDrawer,
+  settingsOpen,
+  onToggleSettings,
+}: TopBarProps): ReactElement {
   const tab = useActiveTab();
   const hidden = useWindowStateStore((s) => s.hidden);
   const [draft, setDraft] = useState<string>('');
@@ -41,6 +48,14 @@ export function TopBar({ drawerOpen, onToggleDrawer }: TopBarProps): ReactElemen
         onClick={onToggleDrawer}
       >
         <Layers size={16} />
+      </IconButton>
+      <IconButton
+        ariaLabel="Open settings"
+        testId="topbar-settings-toggle"
+        active={settingsOpen}
+        onClick={onToggleSettings}
+      >
+        <Settings size={16} />
       </IconButton>
       <IconButton
         ariaLabel="Back"
