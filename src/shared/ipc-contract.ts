@@ -1,7 +1,7 @@
 // Centralized IPC channel names and payload types.
 // All main/renderer IPC must go through this module — never use string literals inline.
 
-import type { Tab, TabsSnapshot, WindowState } from './types';
+import type { Settings, SettingsPatch, Tab, TabsSnapshot, WindowState } from './types';
 
 export const IpcChannels = {
   // Smoke-test channel kept from M0 for the preload API sanity check.
@@ -30,6 +30,16 @@ export const IpcChannels = {
 
   /** Main → renderer event. Broadcasts EdgeDock state (docked side, hidden, dimmed) to chrome. */
   windowState: 'window:state',
+
+  // Settings persistence (M6).
+  settingsGet: 'settings:get',
+  settingsUpdate: 'settings:update',
+  /** Main → renderer event. Broadcasts the full Settings after every successful update. */
+  settingsChanged: 'settings:changed',
+  /** Main → renderer event. Fires once after ready-to-show with the initial Settings snapshot. */
+  appReady: 'app:ready',
+  /** Renderer → main send. Drives ViewManager suppression while the settings drawer is open. */
+  viewSetSuppressed: 'view:set-suppressed',
 } as const;
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];
@@ -97,6 +107,41 @@ export interface IpcContract {
   [IpcChannels.windowState]: {
     /** Main broadcasts full EdgeDock state; renderer replaces its store on receive. */
     request: WindowState;
+    response: void;
+  };
+
+  [IpcChannels.settingsGet]: {
+    request: Record<string, never>;
+    response: Settings;
+  };
+  [IpcChannels.settingsUpdate]: {
+    /**
+     * Request is a nested-Partial; main clamps + merges + persists.
+     * Response is the resulting full Settings.
+     */
+    request: SettingsPatch;
+    response: Settings;
+  };
+  [IpcChannels.settingsChanged]: {
+    /** M→R event; main broadcasts full Settings after each successful update. */
+    request: Settings;
+    response: void;
+  };
+  [IpcChannels.appReady]: {
+    /**
+     * Fires once after ready-to-show. Carries initial Settings snapshot so
+     * renderer has an authoritative starting state.
+     */
+    request: { settings: Settings };
+    response: void;
+  };
+  [IpcChannels.viewSetSuppressed]: {
+    /**
+     * R→M send. When true, ViewManager shrinks active tab view bounds to
+     * {0,0,0,0} so the settings drawer can render over the native
+     * WebContentsView layer.
+     */
+    request: { suppressed: boolean };
     response: void;
   };
 }

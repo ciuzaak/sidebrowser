@@ -35,25 +35,18 @@ import type {
   LifecycleSettings,
   MouseLeaveSettings,
   Settings,
+  SettingsPatch,
   WindowSettings,
 } from '@shared/types';
 
 /**
- * One-level-deep partial: each top-level section is optional, and *within* a
- * section every field is optional too. The plan's signature uses
- * `Partial<Settings>` but the clamper must accept and produce nested partials
- * (e.g. `{ browsing: {} }` after dropping an empty mobileUserAgent), so we
- * lock the relaxed shape into the type system rather than relying on
- * structural compatibility tricks. Task 3's deep-merge consumes this directly.
+ * `SettingsPatch` lives in `@shared/types` (moved in Task 4) because both the
+ * shared IPC contract and the main process consume it, and the shared layer
+ * must not import from `src/main/`. Re-export here so existing Task 2/3
+ * imports (`from './clamp-settings'`) continue to resolve without source
+ * changes elsewhere.
  */
-export type SettingsPatch = {
-  window?: Partial<WindowSettings>;
-  mouseLeave?: Partial<MouseLeaveSettings>;
-  dim?: Partial<DimSettings>;
-  edgeDock?: Partial<EdgeDockSettings>;
-  lifecycle?: Partial<LifecycleSettings>;
-  browsing?: Partial<BrowsingSettings>;
-};
+export type { SettingsPatch };
 
 // ---------------------------------------------------------------------------
 // Internal constants & helpers

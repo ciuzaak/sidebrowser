@@ -96,3 +96,20 @@ export interface Settings {
   lifecycle: LifecycleSettings;
   browsing: BrowsingSettings;
 }
+
+/**
+ * One-level-deep partial: each top-level section is optional, and *within* a
+ * section every field is optional too. Used as the wire type for
+ * `settings:update` (IPC contract) and as the input shape of `clampSettings`
+ * + `SettingsStore.update`. Lives in `@shared/types` because both the
+ * shared IPC contract and the main process consume it — the shared layer
+ * mustn't import from `src/main/`.
+ */
+export type SettingsPatch = {
+  window?: Partial<WindowSettings>;
+  mouseLeave?: Partial<MouseLeaveSettings>;
+  dim?: Partial<DimSettings>;
+  edgeDock?: Partial<EdgeDockSettings>;
+  lifecycle?: Partial<LifecycleSettings>;
+  browsing?: Partial<BrowsingSettings>;
+};
