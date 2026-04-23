@@ -37,7 +37,7 @@ export function TabDrawer({ open, onSelect }: TabDrawerProps): ReactElement | nu
     >
       <DrawerButton
         icon={Plus}
-        label="新建 tab"
+        label="New tab"
         testId="tab-drawer-new"
         onClick={createTab}
       />
