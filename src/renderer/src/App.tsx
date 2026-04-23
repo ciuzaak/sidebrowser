@@ -1,11 +1,16 @@
-import { useEffect, useRef, type ReactElement } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
 import { TopBar } from './components/TopBar';
+import { TabDrawer } from './components/TabDrawer';
 import { useTabBridge } from './hooks/useTabBridge';
 
 export function App(): ReactElement {
   useTabBridge();
 
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const chromeRef = useRef<HTMLDivElement | null>(null);
+
+  const toggleDrawer = useCallback(() => setDrawerOpen((v) => !v), []);
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
   useEffect(() => {
     const el = chromeRef.current;
@@ -15,7 +20,6 @@ export function App(): ReactElement {
       window.sidebrowser.setChromeHeight(el.getBoundingClientRect().height);
     };
 
-    // Initial report + subsequent updates on size changes (e.g. window resize, DPI change).
     report();
     const observer = new ResizeObserver(report);
     observer.observe(el);
@@ -25,9 +29,10 @@ export function App(): ReactElement {
   return (
     <div className="flex h-full w-full flex-col">
       <div ref={chromeRef} className="shrink-0">
-        <TopBar />
+        <TopBar drawerOpen={drawerOpen} onToggleDrawer={toggleDrawer} />
+        <TabDrawer open={drawerOpen} onSelect={closeDrawer} />
       </div>
-      {/* The region below is where the WebContentsView is overlaid by main; we leave it empty. */}
+      {/* WebContentsView is overlaid by main below the chrome area. */}
       <div className="flex-1" />
     </div>
   );
