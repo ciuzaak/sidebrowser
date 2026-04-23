@@ -26,8 +26,8 @@ export class ViewManager {
   private readonly tabs = new Map<string, ManagedTab>();
   private activeId: string | null = null;
   private chromeHeightPx = 0;
-  private tabUpdatedListener: TabUpdatedListener | null = null;
-  private snapshotListener: SnapshotListener | null = null;
+  private readonly tabUpdatedListeners = new Set<TabUpdatedListener>();
+  private readonly snapshotListeners = new Set<SnapshotListener>();
 
   /** Stored resize handler so it can be removed in destroy(). */
   private readonly onWindowResize = (): void => this.applyBounds();
@@ -38,13 +38,23 @@ export class ViewManager {
     window.once('ready-to-show', () => this.applyBounds());
   }
 
-  /** Wire a single listener per event kind (matches the M1 design). */
-  onTabUpdated(listener: TabUpdatedListener): void {
-    this.tabUpdatedListener = listener;
+  /**
+   * Subscribe to per-tab field updates. Returns an unsubscribe function.
+   * Multiple subscribers (IpcRouter broadcast + persistence saver) coexist.
+   */
+  onTabUpdated(listener: TabUpdatedListener): () => void {
+    this.tabUpdatedListeners.add(listener);
+    return () => this.tabUpdatedListeners.delete(listener);
   }
-  onSnapshot(listener: SnapshotListener): void {
-    this.snapshotListener = listener;
+
+  /**
+   * Subscribe to full tab-set snapshots. Listener is invoked immediately with
+   * the current snapshot upon registration. Returns an unsubscribe function.
+   */
+  onSnapshot(listener: SnapshotListener): () => void {
+    this.snapshotListeners.add(listener);
     listener(this.snapshot());
+    return () => this.snapshotListeners.delete(listener);
   }
 
   snapshot(): TabsSnapshot {
@@ -182,14 +192,16 @@ export class ViewManager {
   }
 
   private emitSnapshot(): void {
-    this.snapshotListener?.(this.snapshot());
+    const snap = this.snapshot();
+    for (const listener of this.snapshotListeners) listener(snap);
   }
 
   private updateTab(id: string, patch: Partial<Tab>): void {
     const managed = this.tabs.get(id);
     if (!managed) return;
     managed.tab = { ...managed.tab, ...patch };
-    this.tabUpdatedListener?.({ ...managed.tab });
+    const tabCopy = { ...managed.tab };
+    for (const listener of this.tabUpdatedListeners) listener(tabCopy);
   }
 
   private attachWebContentsEvents(id: string, view: WebContentsView): () => void {
