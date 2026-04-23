@@ -94,10 +94,8 @@ export interface EdgeDockConfig {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function sideFromKind(kind: 'DOCKED_LEFT' | 'DOCKED_RIGHT' | 'HIDING' | 'REVEALING' | 'HIDDEN_LEFT' | 'HIDDEN_RIGHT'): 'left' | 'right' {
-  return kind === 'DOCKED_LEFT' || kind === 'HIDING' || kind === 'HIDDEN_LEFT'
-    ? 'left'
-    : 'right';
+function sideFromKind(kind: 'DOCKED_LEFT' | 'DOCKED_RIGHT' | 'HIDDEN_LEFT' | 'HIDDEN_RIGHT'): 'left' | 'right' {
+  return kind === 'DOCKED_LEFT' || kind === 'HIDDEN_LEFT' ? 'left' : 'right';
 }
 
 function dockedKindFromSide(side: 'left' | 'right'): 'DOCKED_LEFT' | 'DOCKED_RIGHT' {

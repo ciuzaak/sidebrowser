@@ -176,6 +176,19 @@ describe('DOCKED_LEFT + MOUSE_ENTER', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 5b. DOCKED_RIGHT + MOUSE_ENTER (symmetric to DOCKED_LEFT)
+// ---------------------------------------------------------------------------
+describe('DOCKED_RIGHT + MOUSE_ENTER', () => {
+  it('stays DOCKED_RIGHT, emits CLEAR_DIM + BROADCAST(right, false, false)', () => {
+    const { nextState, effects } = reduce(dockedRight({ dimmed: true }), { type: 'MOUSE_ENTER' }, CFG);
+    expect(nextState.kind).toBe('DOCKED_RIGHT');
+    expect((nextState as { dimmed: boolean }).dimmed).toBe(false);
+    expect(effects.some((e) => e.type === 'CLEAR_DIM')).toBe(true);
+    expect(hasBroadcast(effects, { docked: 'right', hidden: false, dimmed: false })).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 6. HIDING + ANIM_DONE → HIDDEN_*
 // ---------------------------------------------------------------------------
 describe('HIDING + ANIM_DONE', () => {
@@ -257,10 +270,19 @@ describe('HIDDEN_RIGHT + MOUSE_ENTER', () => {
 // 9. REVEALING + ANIM_DONE → DOCKED_*, no effects
 // ---------------------------------------------------------------------------
 describe('REVEALING + ANIM_DONE', () => {
-  it('REVEALING(left) → DOCKED_LEFT, no effects emitted', () => {
-    const { nextState, effects } = reduce(revealing('left'), { type: 'ANIM_DONE' }, CFG);
+  it('REVEALING(left) → DOCKED_LEFT, no effects emitted, dimmed propagated', () => {
+    const state = revealing('left', { dimmed: false });
+    const { nextState, effects } = reduce(state, { type: 'ANIM_DONE' }, CFG);
     expect(nextState.kind).toBe('DOCKED_LEFT');
     expect(effects).toHaveLength(0);
+    expect((nextState as { dimmed: boolean }).dimmed).toBe(false);
+  });
+
+  it('REVEALING(left, dimmed=true) → DOCKED_LEFT, dimmed propagated as true', () => {
+    const state = revealing('left', { dimmed: true });
+    const { nextState } = reduce(state, { type: 'ANIM_DONE' }, CFG);
+    expect(nextState.kind).toBe('DOCKED_LEFT');
+    expect((nextState as { dimmed: boolean }).dimmed).toBe(true);
   });
 
   it('REVEALING(right) → DOCKED_RIGHT', () => {
@@ -275,6 +297,18 @@ describe('REVEALING + ANIM_DONE', () => {
 describe('REVEALING + MOUSE_LEAVE', () => {
   it('is a no-op — stays REVEALING with empty effects', () => {
     const state = revealing('left');
+    const { nextState, effects } = reduce(state, { type: 'MOUSE_LEAVE' }, CFG);
+    expect(nextState).toEqual(state);
+    expect(effects).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10b. HIDING + MOUSE_LEAVE is a no-op (default guard in MOUSE_LEAVE handler)
+// ---------------------------------------------------------------------------
+describe('HIDING + MOUSE_LEAVE', () => {
+  it('is a no-op — state unchanged, no effects', () => {
+    const state = hiding('left');
     const { nextState, effects } = reduce(state, { type: 'MOUSE_LEAVE' }, CFG);
     expect(nextState).toEqual(state);
     expect(effects).toHaveLength(0);
@@ -370,6 +404,22 @@ describe('HIDING + WINDOW_MOVED', () => {
 describe('HIDDEN_LEFT + WINDOW_MOVED', () => {
   it('is a no-op', () => {
     const state = hiddenLeft();
+    const { nextState, effects } = reduce(
+      state,
+      { type: 'WINDOW_MOVED', bounds: BOUNDS_CENTER, workArea: WA },
+      CFG,
+    );
+    expect(nextState).toEqual(state);
+    expect(effects).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 16b. HIDDEN_RIGHT + WINDOW_MOVED → no-op (guard — symmetric to HIDDEN_LEFT)
+// ---------------------------------------------------------------------------
+describe('HIDDEN_RIGHT + WINDOW_MOVED', () => {
+  it('is a no-op', () => {
+    const state = hiddenRight();
     const { nextState, effects } = reduce(
       state,
       { type: 'WINDOW_MOVED', bounds: BOUNDS_CENTER, workArea: WA },
