@@ -1,6 +1,9 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { join } from 'node:path';
-import { IpcChannels } from '@shared/ipc-contract';
+import { ViewManager } from './view-manager';
+import { registerIpcRouter } from './ipc-router';
+
+const INITIAL_URL = 'about:blank';
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -24,22 +27,24 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
-function registerIpcHandlers(): void {
-  ipcMain.handle(IpcChannels.appPing, (_event, payload: { message: string }) => {
-    return {
-      reply: `pong: ${payload.message}`,
-      timestamp: Date.now(),
-    };
-  });
-}
-
 app.whenReady().then(() => {
-  registerIpcHandlers();
-  createWindow();
+  const win = createWindow();
+  const viewManager = new ViewManager(win);
+  registerIpcRouter(win, viewManager);
+
+  // Navigate to the initial URL once the renderer has reported its chrome height.
+  // We defer by one tick so the renderer has a chance to send chrome:set-height first;
+  // if it hasn't by the time we navigate, the view bounds will reflow once the renderer
+  // does send the height.
+  setImmediate(() => {
+    void viewManager.navigate(INITIAL_URL);
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      const newWin = createWindow();
+      const newViewManager = new ViewManager(newWin);
+      registerIpcRouter(newWin, newViewManager);
     }
   });
 });
