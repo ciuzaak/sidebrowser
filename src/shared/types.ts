@@ -26,6 +26,13 @@ export interface TabsSnapshot {
   activeId: string | null;
 }
 
+/** Main → renderer broadcast of EdgeDock state (§5.1). Drives TopBar fade on hidden. */
+export interface WindowState {
+  docked: 'left' | 'right' | null;
+  hidden: boolean;
+  dimmed: boolean;
+}
+
 /** Factory for a freshly-created tab. Main owns the nanoid and the URL; everything else defaults. */
 export function makeEmptyTab(id: string, url: string, isMobile: boolean = true): Tab {
   return {

@@ -27,6 +27,10 @@ describe('IpcChannels', () => {
     expect(IpcChannels.chromeSetHeight).toBe('chrome:set-height');
   });
 
+  it('defines window state channel', () => {
+    expect(IpcChannels.windowState).toBe('window:state');
+  });
+
   it('all channel values follow <domain>:<action> pattern', () => {
     for (const channel of Object.values(IpcChannels)) {
       expect(channel).toMatch(/^[a-z]+:[a-z-]+$/);

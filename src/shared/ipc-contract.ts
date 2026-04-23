@@ -1,7 +1,7 @@
 // Centralized IPC channel names and payload types.
 // All main/renderer IPC must go through this module — never use string literals inline.
 
-import type { Tab, TabsSnapshot } from './types';
+import type { Tab, TabsSnapshot, WindowState } from './types';
 
 export const IpcChannels = {
   // Smoke-test channel kept from M0 for the preload API sanity check.
@@ -27,6 +27,9 @@ export const IpcChannels = {
 
   // Renderer reports chrome bar height so main can position WebContentsViews.
   chromeSetHeight: 'chrome:set-height',
+
+  /** Main → renderer event. Broadcasts EdgeDock state (docked side, hidden, dimmed) to chrome. */
+  windowState: 'window:state',
 } as const;
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];
@@ -88,6 +91,12 @@ export interface IpcContract {
 
   [IpcChannels.chromeSetHeight]: {
     request: { heightPx: number };
+    response: void;
+  };
+
+  [IpcChannels.windowState]: {
+    /** Main broadcasts full EdgeDock state; renderer replaces its store on receive. */
+    request: WindowState;
     response: void;
   };
 }
