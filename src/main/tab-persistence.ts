@@ -7,6 +7,7 @@ const DEBOUNCE_MS = 1000;
 export interface PersistedTab {
   id: string;
   url: string;
+  isMobile: boolean;
 }
 export interface PersistedTabs {
   tabs: PersistedTab[];
@@ -31,10 +32,11 @@ export function sanitizePersisted(raw: unknown): PersistedTabs | null {
   const cleaned: PersistedTab[] = [];
   for (const entry of obj.tabs) {
     if (!entry || typeof entry !== 'object') continue;
-    const e = entry as { id?: unknown; url?: unknown };
+    const e = entry as { id?: unknown; url?: unknown; isMobile?: unknown };
     if (typeof e.id !== 'string' || e.id === '' || typeof e.url !== 'string') continue;
     if (!SAFE_SCHEME.test(e.url)) continue;
-    cleaned.push({ id: e.id, url: e.url });
+    const isMobile = typeof e.isMobile === 'boolean' ? e.isMobile : true;
+    cleaned.push({ id: e.id, url: e.url, isMobile });
   }
   if (cleaned.length === 0) return null;
 

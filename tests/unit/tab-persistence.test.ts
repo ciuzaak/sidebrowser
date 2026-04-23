@@ -21,8 +21,8 @@ describe('sanitizePersisted', () => {
     });
     expect(result).toEqual({
       tabs: [
-        { id: 'a', url: 'https://example.com' },
-        { id: 'c', url: 'about:blank' },
+        { id: 'a', url: 'https://example.com', isMobile: true },
+        { id: 'c', url: 'about:blank', isMobile: true },
       ],
       activeId: 'c',
     });
@@ -64,7 +64,35 @@ describe('sanitizePersisted', () => {
       activeId: '',
     });
     expect(result).toEqual({
-      tabs: [{ id: 'a', url: 'https://example.com' }],
+      tabs: [{ id: 'a', url: 'https://example.com', isMobile: true }],
+      activeId: 'a',
+    });
+  });
+
+  it('preserves isMobile when present', () => {
+    const result = sanitizePersisted({
+      tabs: [{ id: 'a', url: 'https://a.com', isMobile: false }],
+      activeId: 'a',
+    });
+    expect(result).toEqual({
+      tabs: [{ id: 'a', url: 'https://a.com', isMobile: false }],
+      activeId: 'a',
+    });
+  });
+
+  it('defaults missing isMobile to true (M2 forward-compat)', () => {
+    const result = sanitizePersisted({
+      tabs: [
+        { id: 'a', url: 'https://a.com' },
+        { id: 'b', url: 'https://b.com', isMobile: 'yes' }, // non-boolean should default
+      ],
+      activeId: 'a',
+    });
+    expect(result).toEqual({
+      tabs: [
+        { id: 'a', url: 'https://a.com', isMobile: true },
+        { id: 'b', url: 'https://b.com', isMobile: true },
+      ],
       activeId: 'a',
     });
   });
