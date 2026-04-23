@@ -17,6 +17,7 @@
     "isolatedModules": true,
     "types": ["vite/client"],
     "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
     "paths": {
       "@shared/*": ["src/shared/*"],
       "@renderer/*": ["src/renderer/src/*"]
