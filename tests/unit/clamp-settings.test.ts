@@ -102,6 +102,23 @@ describe('clampSettings', () => {
   });
 });
 
+describe('clampAppearance', () => {
+  it('accepts valid theme values', () => {
+    expect(clampSettings({ appearance: { theme: 'system' } }, DEFAULTS))
+      .toEqual({ appearance: { theme: 'system' } });
+    expect(clampSettings({ appearance: { theme: 'dark' } }, DEFAULTS))
+      .toEqual({ appearance: { theme: 'dark' } });
+    expect(clampSettings({ appearance: { theme: 'light' } }, DEFAULTS))
+      .toEqual({ appearance: { theme: 'light' } });
+  });
+
+  it('falls back invalid theme → system', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(clampSettings({ appearance: { theme: 'sepia' as any } }, DEFAULTS))
+      .toEqual({ appearance: { theme: 'system' } });
+  });
+});
+
 describe('clampWindow — M9 migration', () => {
   it('migrates preset=custom → iphone14pro with canonical dims', () => {
     const out = clampSettings(

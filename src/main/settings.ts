@@ -20,6 +20,8 @@ export type {
   EdgeDockSettings,
   LifecycleSettings,
   BrowsingSettings,
+  AppearanceSettings,
+  ThemeChoice,
   Settings,
 } from '@shared/types';
 
@@ -36,4 +38,5 @@ export const DEFAULTS: Settings = {
   edgeDock: { enabled: true, animationMs: 200, triggerStripPx: 3 },
   lifecycle: { restoreTabsOnLaunch: true },
   browsing: { defaultIsMobile: true, mobileUserAgent: MOBILE_UA },
+  appearance: { theme: 'system' },
 };

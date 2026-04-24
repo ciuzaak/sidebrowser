@@ -60,6 +60,7 @@ function fillMissingSections(persisted: Partial<Settings>): Settings {
     edgeDock: persisted.edgeDock ?? DEFAULTS.edgeDock,
     lifecycle: persisted.lifecycle ?? DEFAULTS.lifecycle,
     browsing: persisted.browsing ?? DEFAULTS.browsing,
+    appearance: persisted.appearance ?? DEFAULTS.appearance,
   };
 }
 
@@ -89,6 +90,9 @@ function mergeSettingsPatch(current: Settings, patch: SettingsPatch): Settings {
     browsing: patch.browsing
       ? { ...current.browsing, ...patch.browsing }
       : current.browsing,
+    appearance: patch.appearance
+      ? { ...current.appearance, ...patch.appearance }
+      : current.appearance,
   };
 }
 

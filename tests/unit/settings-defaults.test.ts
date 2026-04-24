@@ -38,4 +38,8 @@ describe('DEFAULTS', () => {
     expect(DEFAULTS.browsing.defaultIsMobile).toBe(true);
     expect(DEFAULTS.browsing.mobileUserAgent).toBe(MOBILE_UA);
   });
+
+  it('has correct default for appearance', () => {
+    expect(DEFAULTS.appearance).toEqual({ theme: 'system' });
+  });
 });

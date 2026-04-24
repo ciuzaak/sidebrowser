@@ -87,6 +87,12 @@ export interface BrowsingSettings {
   mobileUserAgent: string;
 }
 
+export type ThemeChoice = 'system' | 'dark' | 'light';
+
+export interface AppearanceSettings {
+  theme: ThemeChoice;
+}
+
 export interface Settings {
   window: WindowSettings;
   mouseLeave: MouseLeaveSettings;
@@ -94,6 +100,7 @@ export interface Settings {
   edgeDock: EdgeDockSettings;
   lifecycle: LifecycleSettings;
   browsing: BrowsingSettings;
+  appearance: AppearanceSettings;
 }
 
 /**
@@ -111,4 +118,5 @@ export type SettingsPatch = {
   edgeDock?: Partial<EdgeDockSettings>;
   lifecycle?: Partial<LifecycleSettings>;
   browsing?: Partial<BrowsingSettings>;
+  appearance?: Partial<AppearanceSettings>;
 };

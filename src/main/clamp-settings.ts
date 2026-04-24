@@ -30,6 +30,7 @@
  */
 
 import type {
+  AppearanceSettings,
   BrowsingSettings,
   DimSettings,
   EdgeDockSettings,
@@ -164,6 +165,19 @@ function clampBrowsing(
   return out;
 }
 
+function clampAppearance(
+  partial: Partial<AppearanceSettings>,
+): Partial<AppearanceSettings> {
+  const out: Partial<AppearanceSettings> = {};
+  if (partial.theme !== undefined) {
+    out.theme =
+      partial.theme === 'dark' || partial.theme === 'light' || partial.theme === 'system'
+        ? partial.theme
+        : 'system';
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -190,6 +204,9 @@ export function clampSettings(
     out.lifecycle = clampLifecycle(partial.lifecycle);
   }
   if (partial.browsing !== undefined) out.browsing = clampBrowsing(partial.browsing);
+  if (partial.appearance !== undefined) {
+    out.appearance = clampAppearance(partial.appearance);
+  }
 
   return out;
 }
