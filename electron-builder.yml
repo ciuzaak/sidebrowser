@@ -1,10 +1,34 @@
 appId: com.sidebrowser.app
 productName: sidebrowser
 
-# Forward-compat declaration added in M7.
-# Full NSIS / platform packaging config will be fleshed out in M8.
+directories:
+  output: release
+  buildResources: resources
+
+files:
+  - "out/**/*"
+  - "package.json"
+
+asarUnpack:
+  - "resources/**"
+
 extraResources:
   - from: resources/tray
     to: tray
     filter:
       - "**/*"
+
+win:
+  target:
+    - target: nsis
+      arch: x64
+  icon: resources/icon.ico
+  signAndEditExecutable: false
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: false
+  deleteAppDataOnUninstall: false
+  artifactName: "${productName}-Setup-${version}.exe"
