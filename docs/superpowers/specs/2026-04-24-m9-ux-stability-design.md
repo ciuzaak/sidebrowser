@@ -253,7 +253,7 @@ export interface Settings {
   mouseLeave: MouseLeaveSettings;
   dim: DimSettings;
   edgeDock: EdgeDockSettings;
-  mobile: MobileSettings;
+  browsing: BrowsingSettings;
   appearance: AppearanceSettings;  // 新增
 }
 ```
@@ -323,7 +323,7 @@ html, body { background: var(--chrome-bg); color: var(--chrome-fg); }
 
 ```ts
 nativeThemeUpdated: 'chrome:native-theme'        // M→R event
-nativeThemeGet: 'chrome:native-theme:get'        // R→M invoke，初值查询
+nativeThemeGet: 'chrome:native-theme-get'        // R→M invoke，初值查询（hyphen not colon; the ipc-contract regex enforces one-colon channels）
 ```
 
 M→R event 载荷 `{ shouldUseDarkColors: boolean }`；R→M invoke 同 return。
