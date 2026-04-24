@@ -40,7 +40,7 @@ export function TopBar({
   const disabled = !tab;
 
   return (
-    <div className={`flex w-full items-center gap-1 border-b border-neutral-800 bg-neutral-900 px-2 py-1.5 transition-opacity duration-200 ${hidden ? 'opacity-30' : 'opacity-100'}`}>
+    <div className={`flex w-full items-center gap-1 border-b border-[var(--chrome-border)] bg-[var(--chrome-bg)] px-2 py-1.5 transition-opacity duration-200 ${hidden ? 'opacity-30' : 'opacity-100'}`}>
       <IconButton
         ariaLabel="Toggle tabs"
         testId="topbar-tabs-toggle"
@@ -97,7 +97,7 @@ export function TopBar({
           spellCheck={false}
           data-testid="address-bar"
           disabled={disabled}
-          className="w-full rounded bg-neutral-800 px-2 py-1 text-sm text-neutral-100 placeholder-neutral-500 outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-50"
+          className="w-full rounded bg-[var(--chrome-input-bg)] px-2 py-1 text-sm text-[var(--chrome-fg)] placeholder-[var(--chrome-muted)] outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-50"
         />
       </form>
     </div>
@@ -127,8 +127,8 @@ function IconButton({
       disabled={disabled}
       onClick={onClick}
       className={
-        'rounded p-1 text-neutral-200 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40 ' +
-        (active ? 'bg-neutral-800 text-sky-400' : '')
+        'rounded p-1 text-[var(--chrome-fg)] hover:bg-[var(--chrome-hover)] disabled:cursor-not-allowed disabled:opacity-40 ' +
+        (active ? 'bg-[var(--chrome-hover)] text-sky-400' : '')
       }
     >
       {children}

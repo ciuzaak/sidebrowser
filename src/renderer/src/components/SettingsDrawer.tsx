@@ -48,16 +48,16 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
   return (
     <div
       data-testid="settings-drawer"
-      className="absolute inset-0 z-10 flex flex-col overflow-y-auto border-l border-neutral-800 bg-neutral-900 text-neutral-100"
+      className="absolute inset-0 z-10 flex flex-col overflow-y-auto border-l border-[var(--chrome-border)] bg-[var(--chrome-drawer-bg)] text-[var(--chrome-fg)]"
     >
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-neutral-800 bg-neutral-900 px-3 py-2">
+      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--chrome-border)] bg-[var(--chrome-drawer-bg)] px-3 py-2">
         <h2 className="text-sm font-semibold">Settings</h2>
         <button
           type="button"
           aria-label="Close settings"
           data-testid="settings-close"
           onClick={onClose}
-          className="rounded p-1 text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100"
+          className="rounded p-1 text-[var(--chrome-fg)] opacity-80 hover:bg-[var(--chrome-hover)] hover:opacity-100"
         >
           <X size={16} />
         </button>
@@ -73,7 +73,7 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
               onChange={(e: ChangeEvent<HTMLSelectElement>) =>
                 void update({ window: { preset: e.target.value as WindowPreset } })
               }
-              className="rounded bg-neutral-800 px-2 py-1 text-sm text-neutral-100 outline-none focus:ring-1 focus:ring-sky-500"
+              className="rounded bg-[var(--chrome-input-bg)] px-2 py-1 text-sm text-[var(--chrome-fg)] outline-none focus:ring-1 focus:ring-sky-500"
             >
               <option value="iphone14pro">iPhone 14 Pro (393x852)</option>
               <option value="iphonese">iPhone SE (375x667)</option>
@@ -115,7 +115,7 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
               onChange={(e: ChangeEvent<HTMLSelectElement>) =>
                 void update({ dim: { effect: e.target.value as DimEffect } })
               }
-              className="rounded bg-neutral-800 px-2 py-1 text-sm text-neutral-100 outline-none focus:ring-1 focus:ring-sky-500"
+              className="rounded bg-[var(--chrome-input-bg)] px-2 py-1 text-sm text-[var(--chrome-fg)] outline-none focus:ring-1 focus:ring-sky-500"
             >
               <option value="dark">Dark</option>
               <option value="light">Light</option>
@@ -228,7 +228,7 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
             />
           </Row>
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-neutral-300">Mobile user agent</label>
+            <label className="text-xs font-medium text-[var(--chrome-fg)] opacity-80">Mobile user agent</label>
             <input
               type="text"
               data-testid="settings-browsing-mobile-ua"
@@ -237,7 +237,7 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
                 void update({ browsing: { mobileUserAgent: e.target.value } })
               }
               spellCheck={false}
-              className="w-full rounded bg-neutral-800 px-2 py-1 font-mono text-xs text-neutral-100 outline-none focus:ring-1 focus:ring-sky-500"
+              className="w-full rounded bg-[var(--chrome-input-bg)] px-2 py-1 font-mono text-xs text-[var(--chrome-fg)] outline-none focus:ring-1 focus:ring-sky-500"
             />
           </div>
         </Section>
@@ -251,7 +251,7 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
 function Section({ title, children }: { title: string; children: ReactNode }): ReactElement {
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="mb-1 border-b border-neutral-800 pb-1 text-sm font-semibold text-neutral-100">
+      <h3 className="mb-1 border-b border-[var(--chrome-border)] pb-1 text-sm font-semibold text-[var(--chrome-fg)]">
         {title}
       </h3>
       {children}
@@ -262,7 +262,7 @@ function Section({ title, children }: { title: string; children: ReactNode }): R
 function Row({ label, children }: { label: string; children: ReactNode }): ReactElement {
   return (
     <div className="flex items-center justify-between gap-3">
-      <label className="text-xs font-medium text-neutral-300">{label}</label>
+      <label className="text-xs font-medium text-[var(--chrome-fg)] opacity-80">{label}</label>
       {children}
     </div>
   );
@@ -296,8 +296,8 @@ function Slider({
   return (
     <div className={`flex flex-col gap-1 ${dimmed ? 'opacity-60' : ''}`}>
       <div className="flex items-center justify-between">
-        <label className="text-xs font-medium text-neutral-300">{label}</label>
-        <span className="text-xs text-neutral-500">
+        <label className="text-xs font-medium text-[var(--chrome-fg)] opacity-80">{label}</label>
+        <span className="text-xs text-[var(--chrome-muted)]">
           {display}
           {unit ?? ''}
         </span>
@@ -310,7 +310,7 @@ function Slider({
         max={max}
         step={step}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="h-2 w-full appearance-none rounded bg-neutral-700 accent-sky-500"
+        className="h-2 w-full appearance-none rounded bg-[var(--chrome-input-bg)] accent-sky-500"
       />
     </div>
   );
