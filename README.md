@@ -1,44 +1,61 @@
 # sidebrowser
 
-A side-panel Electron browser with mobile emulation, persistent login, mouse-leave dim/blur, and edge auto-hide.
+A side-panel Electron browser for Windows with mobile UA emulation, persistent login, mouse-leave dim/blur, and edge auto-hide. Designed to sit alongside your main browser as a persistent side panel. Full design rationale and feature spec: `docs/superpowers/specs/2026-04-23-sidebrowser-design.md`.
 
-**Status:** In development. See `docs/superpowers/specs/2026-04-23-sidebrowser-design.md` for the full spec and `docs/superpowers/plans/` for milestone implementation plans.
+## Install
+
+Download `sidebrowser-Setup-1.0.0.exe` from GitHub releases (TBD) or build it locally:
+
+```bash
+pnpm build:installer   # produces release/sidebrowser-Setup-<version>.exe
+```
+
+Run the installer. Windows SmartScreen may show an "unknown publisher" warning on first run — click **More info** → **Run anyway** (no code signing in v1).
 
 ## Requirements
 
 - Node.js ≥ 20
 - pnpm ≥ 9
-- Windows 10/11 (v1; macOS planned for v1.5)
+- Windows 10/11 (macOS planned for v1.5)
 
-## Environment gotcha
-
-If your shell has `ELECTRON_RUN_AS_NODE=1` set (some dev tools set it globally), Electron will run in Node-compat mode and the app will fail to start. All npm scripts that spawn Electron are wrapped with `node scripts/run.mjs` which strips the variable — just use the pnpm scripts and it should Just Work. If you launch `electron-vite` directly, make sure to `unset ELECTRON_RUN_AS_NODE` first.
-
-## Development
+## Develop
 
 ```bash
-pnpm install
-pnpm dev
+pnpm install      # install dependencies
+pnpm dev          # electron-vite dev server with hot reload
+pnpm build        # bundle to out/
+pnpm test         # unit tests (Vitest)
+pnpm test:e2e     # E2E tests (Playwright/Electron) — run pnpm build first
+pnpm typecheck    # TypeScript strict check
+pnpm lint         # ESLint
 ```
 
-## Testing
+### Environment gotcha
 
-```bash
-pnpm test          # Unit tests (Vitest)
-pnpm test:e2e      # End-to-end tests (Playwright for Electron) — requires pnpm build first
-pnpm typecheck     # TypeScript type check
-pnpm lint          # ESLint
-pnpm format        # Prettier
-```
+If your shell has `ELECTRON_RUN_AS_NODE=1` set (some dev tools set it globally), Electron runs in Node-compat mode and the app fails to start. All pnpm scripts are wrapped with `node scripts/run.mjs` which strips the variable — just use the pnpm scripts and it should work. If you invoke `electron-vite` directly, run `unset ELECTRON_RUN_AS_NODE` first.
 
-## Building
+## Keyboard Shortcuts
 
-```bash
-pnpm build
-```
+| Shortcut | Action |
+|---|---|
+| `Ctrl+T` | New tab |
+| `Ctrl+W` | Close current tab |
+| `Ctrl+L` | Focus address bar |
+| `Ctrl+R` / `F5` | Reload |
+| `Alt+←` / `Alt+→` | Back / Forward |
+| `Ctrl+Tab` | Toggle tab drawer |
+| `Ctrl+,` | Toggle settings drawer |
+| `F12` | Toggle DevTools |
 
-Outputs to `out/`. Production installer packaging is wired in milestone M8.
+## Known Limitations
 
-## Project Structure
+- **Mobile emulation is UA + viewport only.** Sites with aggressive device-signal fingerprinting (Bilibili, X/Twitter) may still render their desktop layout. Full `Emulation.setDeviceMetricsOverride` is planned for v2.
+- **macOS is not supported.** Platform-specific code is stubbed; a native macOS build is planned for v1.5.
+- **Icons are placeholder.** The installer `.exe` currently ships with Electron's default icon; tray and app icons are sky-500 "S" placeholder glyphs. Polished design assets are planned for v1.1.
+- **No code signing.** Windows SmartScreen shows an "unknown publisher" warning on first install. Click "More info" → "Run anyway". A signing certificate is out of v1 scope.
+- **No in-page search, no download UI, no bookmarks.** Use Chromium's cookie-based login persistence plus OS-level bookmarks. See spec §11.
 
-See `docs/superpowers/specs/2026-04-23-sidebrowser-design.md` §4.3.
+## Documentation
+
+- Spec: `docs/superpowers/specs/2026-04-23-sidebrowser-design.md`
+- Milestone plans: `docs/superpowers/plans/`
