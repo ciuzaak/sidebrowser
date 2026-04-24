@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen } from 'electron';
+import { app, BrowserWindow, screen, nativeTheme, ipcMain } from 'electron';
 import type { Rectangle } from 'electron';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
@@ -216,6 +216,19 @@ app.whenReady().then(() => {
     });
   });
 
+  ipcMain.handle(IpcChannels.nativeThemeGet, () => ({
+    shouldUseDarkColors: nativeTheme.shouldUseDarkColors,
+  }));
+
+  const onNativeThemeUpdated = (): void => {
+    if (!win.isDestroyed()) {
+      win.webContents.send(IpcChannels.nativeThemeUpdated, {
+        shouldUseDarkColors: nativeTheme.shouldUseDarkColors,
+      });
+    }
+  };
+  nativeTheme.on('updated', onNativeThemeUpdated);
+
   // M4 direct dim wiring replaced: mouse events now route through EdgeDock.
   watcher.onLeave(() => edgeDock.dispatch({ type: 'MOUSE_LEAVE' }));
   watcher.onEnter(() => edgeDock.dispatch({ type: 'MOUSE_ENTER' }));
@@ -319,6 +332,7 @@ app.whenReady().then(() => {
     watcher.stop();
     screen.removeListener('display-metrics-changed', onDisplayChanged);
     screen.removeListener('display-removed', onDisplayChanged);
+    nativeTheme.off('updated', onNativeThemeUpdated);
   });
 
   app.on('activate', () => {

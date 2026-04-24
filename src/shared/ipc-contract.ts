@@ -49,6 +49,11 @@ export const IpcChannels = {
    * directly from the menu's `click` handler.
    */
   chromeShortcut: 'chrome:shortcut',
+
+  /** Main → renderer event. Fires when nativeTheme.shouldUseDarkColors changes. */
+  nativeThemeUpdated: 'chrome:native-theme',
+  /** Renderer → main invoke. Returns current nativeTheme.shouldUseDarkColors. */
+  nativeThemeGet: 'chrome:native-theme-get',
 } as const;
 
 /**
@@ -168,5 +173,14 @@ export interface IpcContract {
     /** M→R event; fires when a spec §15 accelerator needs a renderer-side action. */
     request: { action: ShortcutAction };
     response: void;
+  };
+
+  [IpcChannels.nativeThemeUpdated]: {
+    request: { shouldUseDarkColors: boolean };
+    response: void;
+  };
+  [IpcChannels.nativeThemeGet]: {
+    request: Record<string, never>;
+    response: { shouldUseDarkColors: boolean };
   };
 }

@@ -5,11 +5,16 @@ import { SettingsDrawer } from './components/SettingsDrawer';
 import { useSettingsBridge } from './hooks/useSettingsBridge';
 import { useTabBridge } from './hooks/useTabBridge';
 import { useWindowStateBridge } from './hooks/useWindowStateBridge';
+import { useSettingsStore } from './store/settings-store';
+import { useTheme } from './theme/useTheme';
 
 export function App(): ReactElement {
   useTabBridge();
   useWindowStateBridge();
   useSettingsBridge();
+
+  const settings = useSettingsStore((s) => s.settings);
+  useTheme(settings?.appearance.theme ?? 'system');
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);

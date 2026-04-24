@@ -92,6 +92,17 @@ const api = {
     ipcRenderer.on(IpcChannels.chromeShortcut, handler);
     return () => ipcRenderer.off(IpcChannels.chromeShortcut, handler);
   },
+
+  getNativeTheme: (): Promise<{ shouldUseDarkColors: boolean }> =>
+    ipcRenderer.invoke(IpcChannels.nativeThemeGet, {}),
+
+  onNativeThemeUpdated: (
+    cb: (v: { shouldUseDarkColors: boolean }) => void,
+  ): (() => void) => {
+    const handler = (_e: unknown, v: { shouldUseDarkColors: boolean }): void => cb(v);
+    ipcRenderer.on(IpcChannels.nativeThemeUpdated, handler);
+    return () => { ipcRenderer.removeListener(IpcChannels.nativeThemeUpdated, handler); };
+  },
 };
 
 contextBridge.exposeInMainWorld('sidebrowser', api);
