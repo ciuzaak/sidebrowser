@@ -22,6 +22,7 @@ import { IpcChannels } from '@shared/ipc-contract';
 import type { Settings, SettingsPatch } from '@shared/types';
 import { TrayManager, createElectronTrayBackend } from './tray-manager';
 import { resolveCloseAction } from './close-action-resolver';
+import { installApplicationMenu } from './keyboard-shortcuts';
 
 let isQuitting = false;
 
@@ -126,6 +127,24 @@ app.whenReady().then(() => {
     };
   });
   registerIpcRouter(win, viewManager, settingsStore);
+
+  // 2b. Hidden Application Menu — spec §15 keyboard shortcuts. Installed once
+  // globally per-process (Menu.setApplicationMenu is app-wide, not per-window),
+  // so the macOS `activate` reactivation path below intentionally doesn't
+  // re-install. Direct-action handlers delegate to ViewManager active-tab
+  // helpers; renderer-bound actions (focus address bar, toggle drawers) are
+  // fanned out via the `chrome:shortcut` broadcast.
+  installApplicationMenu({
+    onNewTab: () => { viewManager.createTab('about:blank'); },
+    onCloseActiveTab: () => { viewManager.closeActiveTab(); },
+    onReloadActive: () => { viewManager.reloadActive(); },
+    onGoBack: () => { viewManager.goBackActive(); },
+    onGoForward: () => { viewManager.goForwardActive(); },
+    onToggleDevTools: () => { viewManager.toggleDevToolsActive(); },
+    emitToRenderer: (action) => {
+      if (!win.isDestroyed()) win.webContents.send(IpcChannels.chromeShortcut, { action });
+    },
+  });
 
   // 3. Tab persistence — save on any snapshot change or per-tab URL update.
   const store = createTabStore();

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import { IpcChannels, type IpcContract } from '@shared/ipc-contract';
+import { IpcChannels, type IpcContract, type ShortcutAction } from '@shared/ipc-contract';
 import type { Settings, SettingsPatch, Tab, TabsSnapshot, WindowState } from '@shared/types';
 
 const api = {
@@ -79,6 +79,18 @@ const api = {
   /** R→M send. Tell ViewManager to hide/show the active WebContentsView beneath the chrome layer. Used by SettingsDrawer open/close in Task 10. */
   setViewSuppressed: (suppressed: boolean): void => {
     ipcRenderer.send(IpcChannels.viewSetSuppressed, { suppressed });
+  },
+
+  /**
+   * Subscribe to spec §15 renderer-bound shortcut actions broadcast by the
+   * hidden Application Menu (focus address bar, toggle tab/settings drawers).
+   * Returns an unsubscribe.
+   */
+  onShortcut: (listener: (action: ShortcutAction) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, payload: { action: ShortcutAction }): void =>
+      listener(payload.action);
+    ipcRenderer.on(IpcChannels.chromeShortcut, handler);
+    return () => ipcRenderer.off(IpcChannels.chromeShortcut, handler);
   },
 };
 

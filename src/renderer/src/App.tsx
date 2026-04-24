@@ -41,6 +41,31 @@ export function App(): ReactElement {
     window.sidebrowser.setViewSuppressed(settingsOpen);
   }, [settingsOpen]);
 
+  // Spec §15: dispatch renderer-bound shortcut actions from the hidden
+  // Application Menu. The main-side accelerator fires → IPC broadcast →
+  // this switch maps the action to local state. `toggleDrawer` and
+  // `toggleSettings` are useCallback-stable (no deps), so depending on them
+  // is safe. Address-bar focus goes via a DOM selector to avoid plumbing a
+  // ref through TopBar (YAGNI per plan §Task 3).
+  useEffect(() => {
+    return window.sidebrowser.onShortcut((action) => {
+      switch (action) {
+        case 'focus-address-bar': {
+          const input = document.querySelector<HTMLInputElement>('[data-testid="address-bar"]');
+          input?.focus();
+          input?.select();
+          return;
+        }
+        case 'toggle-tab-drawer':
+          toggleDrawer();
+          return;
+        case 'toggle-settings-drawer':
+          toggleSettings();
+          return;
+      }
+    });
+  }, [toggleDrawer, toggleSettings]);
+
   return (
     <div className="flex h-full w-full flex-col">
       <div ref={chromeRef} className="shrink-0">

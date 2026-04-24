@@ -227,6 +227,35 @@ export class ViewManager {
     return this.tabs.get(this.activeId)?.view.webContents ?? null;
   }
 
+  // ------- Active-tab convenience wrappers (spec §15 keyboard shortcuts) ----
+  // Thin delegations so callers (the hidden Application Menu handlers) don't
+  // need to know/query the active tab's id.
+
+  /** Ctrl+W handler. Closes the active tab; ViewManager auto-seeds a blank when the set becomes empty. */
+  closeActiveTab(): void {
+    if (this.activeId) this.closeTab(this.activeId);
+  }
+
+  /** Ctrl+R / F5 handler. No-op when no tab is active. */
+  reloadActive(): void {
+    this.getActiveWebContents()?.reload();
+  }
+
+  /** Alt+Left handler. Delegates to `goBack(id)` so the can-go-back guard applies. */
+  goBackActive(): void {
+    if (this.activeId) this.goBack(this.activeId);
+  }
+
+  /** Alt+Right handler. Delegates to `goForward(id)`. */
+  goForwardActive(): void {
+    if (this.activeId) this.goForward(this.activeId);
+  }
+
+  /** F12 handler. Toggles the active WebContents' DevTools; no-op when no tab is active. */
+  toggleDevToolsActive(): void {
+    this.getActiveWebContents()?.toggleDevTools();
+  }
+
   /**
    * Toggle the "suppressed" flag. While suppressed, every tab's view is
    * shrunk to `{0,0,0,0}` so a renderer-layer overlay (e.g. the M6 settings

@@ -40,7 +40,26 @@ export const IpcChannels = {
   appReady: 'app:ready',
   /** Renderer → main send. Drives ViewManager suppression while the settings drawer is open. */
   viewSetSuppressed: 'view:set-suppressed',
+
+  /**
+   * Main → renderer event. Fired by the spec §15 hidden Application Menu when
+   * an accelerator maps to a renderer-side action (focus address bar, toggle
+   * a drawer). Direct main-side actions (new tab, close tab, navigation,
+   * reload, DevTools) don't travel over this channel — they're invoked
+   * directly from the menu's `click` handler.
+   */
+  chromeShortcut: 'chrome:shortcut',
 } as const;
+
+/**
+ * Renderer-bound shortcut actions carried by {@link IpcChannels.chromeShortcut}.
+ * Kept as a named union so the main dep type, IPC contract payload, and the
+ * renderer dispatch switch all reference the same source of truth.
+ */
+export type ShortcutAction =
+  | 'focus-address-bar'
+  | 'toggle-tab-drawer'
+  | 'toggle-settings-drawer';
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];
 
@@ -142,6 +161,12 @@ export interface IpcContract {
      * WebContentsView layer.
      */
     request: { suppressed: boolean };
+    response: void;
+  };
+
+  [IpcChannels.chromeShortcut]: {
+    /** M→R event; fires when a spec §15 accelerator needs a renderer-side action. */
+    request: { action: ShortcutAction };
     response: void;
   };
 }
