@@ -1,6 +1,6 @@
 import { X } from 'lucide-react';
 import type { ChangeEvent, ReactElement, ReactNode } from 'react';
-import type { Settings } from '@shared/types';
+import type { Settings, ThemeChoice } from '@shared/types';
 import { useSettingsStore } from '../store/settings-store';
 
 /**
@@ -64,6 +64,24 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
       </header>
 
       <div className="flex flex-col gap-5 p-3">
+        {/* ── 0. Appearance ───────────────────────────────────── */}
+        <Section title="Appearance">
+          <Row label="Theme">
+            <select
+              data-testid="settings-theme"
+              value={settings.appearance.theme}
+              onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                void update({ appearance: { theme: e.target.value as ThemeChoice } })
+              }
+              className="rounded bg-[var(--chrome-input-bg)] px-2 py-1 text-sm text-[var(--chrome-fg)] outline-none focus:ring-1 focus:ring-sky-500"
+            >
+              <option value="system">System</option>
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </Row>
+        </Section>
+
         {/* ── 1. Window ───────────────────────────────────────── */}
         <Section title="Window">
           <Row label="Preset">
