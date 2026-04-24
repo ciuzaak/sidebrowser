@@ -180,13 +180,13 @@ describe('SettingsStore', () => {
     expect(cb).toHaveBeenCalledTimes(0);
   });
 
-  it('falls back to DEFAULTS when the backend get() throws (corrupt-config path)', () => {
+  it('falls back to DEFAULTS when backend.get() returns undefined (simulates createElectronBackend corrupt-file path)', () => {
     // M8 error-boundary: the production `createElectronBackend` catches
     // backend exceptions and returns undefined from `get()`. The SettingsStore
     // class itself doesn't need to try/catch (plan kept the class clean), but
     // this test locks in the contract that an undefined `get()` result — by
     // any route — lands on DEFAULTS rather than crashing construction.
-    const throwingBackend: SettingsBackend = {
+    const corruptBackend: SettingsBackend = {
       get: () => {
         // Simulate the error-path contract of createElectronBackend: on a
         // failed disk read it logs and returns undefined.
@@ -196,7 +196,7 @@ describe('SettingsStore', () => {
         /* no-op */
       },
     };
-    const store = new SettingsStore(throwingBackend);
+    const store = new SettingsStore(corruptBackend);
     expect(store.get()).toEqual(DEFAULTS);
   });
 
