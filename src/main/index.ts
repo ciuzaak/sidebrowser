@@ -199,7 +199,7 @@ app.whenReady().then(() => {
         edgeThresholdPx: s.window.edgeThresholdPx,
         animationMs: s.edgeDock.animationMs,
         triggerStripPx: s.edgeDock.triggerStripPx,
-        windowWidth: s.window.width,
+        windowWidth: win.getBounds().width,
         enabled: s.edgeDock.enabled,
       };
     },
@@ -238,19 +238,20 @@ app.whenReady().then(() => {
 
   // 6. Live-apply fan-out. Fires on every settingsStore.update(). Spec §7 +
   // plan §Task 8 live-apply matrix: dim (restyle if active), mouse-leave
-  // delay (swap via setDelayMs), window width/height (setBounds), and the
-  // renderer broadcast. EdgeDock config is a getter — it picks up fresh
+  // delay (swap via setDelayMs), window resize only on preset CHANGE (M9:
+  // decoupled from runtime bounds so user drag-resize is not reverted), and
+  // the renderer broadcast. EdgeDock config is a getter — it picks up fresh
   // values on its next dispatch without explicit poke.
+  let lastPreset = settingsStore.get().window.preset;
   settingsStore.onChanged((settings) => {
     if (dim.isActive) void dim.restyle(settings.dim);
     watcher.setDelayMs(settings.mouseLeave.delayMs);
-    const b = win.getBounds();
-    // NOTE: setBounds synchronously fires 'resize', which re-enters
-    // boundsPersister.markDirty(). The debounce coalesces the self-triggered
-    // write, and on the second tick the persisted rect already matches
-    // settings, so the loop terminates after one store.set within ~1s.
-    if (b.width !== settings.window.width || b.height !== settings.window.height) {
-      win.setBounds({ ...b, width: settings.window.width, height: settings.window.height });
+    if (settings.window.preset !== lastPreset) {
+      lastPreset = settings.window.preset;
+      const b = win.getBounds();
+      if (b.width !== settings.window.width || b.height !== settings.window.height) {
+        win.setBounds({ ...b, width: settings.window.width, height: settings.window.height });
+      }
     }
     if (!win.isDestroyed()) {
       // If a renderer isn't yet listening (e.g. a test hook calls updateSettings

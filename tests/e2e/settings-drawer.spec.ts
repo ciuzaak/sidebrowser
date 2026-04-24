@@ -177,6 +177,19 @@ async function fireLeaveNow(app: ElectronApplication): Promise<void> {
   });
 }
 
+async function updateSettings(
+  app: ElectronApplication,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  await app.evaluate(async (_electron, p) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const h = (globalThis as any).__sidebrowserTestHooks as {
+      updateSettings: (patch: unknown) => unknown;
+    };
+    h.updateSettings(p);
+  }, patch);
+}
+
 // ---------------------------------------------------------------------------
 // Test 1 — drawer open/close suppresses and restores the active WebContentsView.
 // ---------------------------------------------------------------------------
@@ -423,6 +436,108 @@ test('restoreTabsOnLaunch=false relaunches with about:blank, not persisted tab',
     }
   } finally {
     server.close();
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Test 6 — M9: width/height inputs are absent from the drawer.
+// ---------------------------------------------------------------------------
+
+test('settings-window-width and settings-window-height inputs are not rendered', async () => {
+  const userDataDir = mkdtempSync(join(tmpdir(), 'sidebrowser-e2e-settings-'));
+
+  try {
+    const app = await launch(userDataDir);
+    try {
+      const page = await getChromeWindow(app);
+      await waitForAddressBarReady(page);
+
+      await openSettingsDrawer(page);
+
+      // Both testids must be absent from the DOM.
+      await expect(page.getByTestId('settings-window-width')).toHaveCount(0);
+      await expect(page.getByTestId('settings-window-height')).toHaveCount(0);
+    } finally {
+      await app.close();
+    }
+  } finally {
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Test 7 — M9: switching preset via the UI resizes the window.
+// ---------------------------------------------------------------------------
+
+test('switching preset to pixel7 resizes window to ~412x915', async () => {
+  const userDataDir = mkdtempSync(join(tmpdir(), 'sidebrowser-e2e-settings-'));
+
+  try {
+    const app = await launch(userDataDir);
+    try {
+      const page = await getChromeWindow(app);
+      await waitForAddressBarReady(page);
+
+      await openSettingsDrawer(page);
+
+      // Switch to pixel7 via the select.
+      await page.getByTestId('settings-window-preset').selectOption('pixel7');
+
+      // Wait for the main-side setBounds to apply.
+      await expect
+        .poll(async () => (await getWindowBounds(app)).width, { timeout: 10_000 })
+        .toBeGreaterThanOrEqual(410);
+
+      const b = await getWindowBounds(app);
+      expect(b.width).toBeGreaterThanOrEqual(410);
+      expect(b.width).toBeLessThanOrEqual(414);
+      expect(b.height).toBeGreaterThanOrEqual(913);
+      expect(b.height).toBeLessThanOrEqual(917);
+    } finally {
+      await app.close();
+    }
+  } finally {
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Test 8 — M9: changing a non-preset setting does NOT resize the window.
+// ---------------------------------------------------------------------------
+
+test('changing a non-preset setting does not resize the window', async () => {
+  const userDataDir = mkdtempSync(join(tmpdir(), 'sidebrowser-e2e-settings-'));
+
+  try {
+    const app = await launch(userDataDir);
+    try {
+      const page = await getChromeWindow(app);
+      await waitForAddressBarReady(page);
+
+      // Record the initial bounds.
+      const before = await getWindowBounds(app);
+
+      // Drag-resize the window to a different size (simulates user drag).
+      await setWindowBounds(app, { ...before, width: before.width + 50, height: before.height + 50 });
+      await expect
+        .poll(async () => (await getWindowBounds(app)).width, { timeout: 5_000 })
+        .toBe(before.width + 50);
+
+      // Now change a non-preset setting via test hooks.
+      await updateSettings(app, { window: { edgeThresholdPx: 15 } });
+
+      // Wait briefly so any erroneous setBounds would have fired.
+      await new Promise((r) => setTimeout(r, 500));
+
+      // Bounds should still be the user-dragged size, not reverted to preset.
+      const after = await getWindowBounds(app);
+      expect(after.width).toBe(before.width + 50);
+      expect(after.height).toBe(before.height + 50);
+    } finally {
+      await app.close();
+    }
+  } finally {
     rmSync(userDataDir, { recursive: true, force: true });
   }
 });

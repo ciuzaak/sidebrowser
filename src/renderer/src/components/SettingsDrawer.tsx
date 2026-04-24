@@ -78,26 +78,7 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
               <option value="iphone14pro">iPhone 14 Pro (393x852)</option>
               <option value="iphonese">iPhone SE (375x667)</option>
               <option value="pixel7">Pixel 7 (412x915)</option>
-              <option value="custom">Custom</option>
             </select>
-          </Row>
-          <Row label="Width">
-            <NumberInput
-              testId="settings-window-width"
-              value={settings.window.width}
-              min={200}
-              max={1200}
-              onChange={(n) => void update({ window: { width: n } })}
-            />
-          </Row>
-          <Row label="Height">
-            <NumberInput
-              testId="settings-window-height"
-              value={settings.window.height}
-              min={200}
-              max={2000}
-              onChange={(n) => void update({ window: { height: n } })}
-            />
           </Row>
           <Slider
             label="Edge threshold"
@@ -332,30 +313,5 @@ function Slider({
         className="h-2 w-full appearance-none rounded bg-neutral-700 accent-sky-500"
       />
     </div>
-  );
-}
-
-interface NumberInputProps {
-  testId: string;
-  value: number;
-  min: number;
-  max: number;
-  onChange: (n: number) => void;
-}
-
-function NumberInput({ testId, value, min, max, onChange }: NumberInputProps): ReactElement {
-  return (
-    <input
-      type="number"
-      data-testid={testId}
-      value={value}
-      min={min}
-      max={max}
-      onChange={(e) => {
-        const n = Number(e.target.value);
-        if (Number.isFinite(n) && n >= min && n <= max) onChange(n);
-      }}
-      className="w-24 rounded bg-neutral-800 px-2 py-1 text-right text-sm text-neutral-100 outline-none focus:ring-1 focus:ring-sky-500"
-    />
   );
 }

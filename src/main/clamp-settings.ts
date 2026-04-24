@@ -12,11 +12,12 @@
  *  - Numeric fields are clamped to the spec §7 range; out-of-range values
  *    are silently snapped to the nearest endpoint rather than rejected.
  *  - Preset normalization (rule 2):
- *      * non-'custom' preset present → overwrites width/height with the
- *        preset's canonical dimensions; wins over any width/height that may
- *        also be in the same partial.
- *      * width or height present without preset → coerce preset='custom'.
- *      * preset='custom' alone → keep preset, leave width/height to current.
+ *      * M9: any non-canonical preset (including legacy 'custom') is coerced
+ *        to 'iphone14pro' with its canonical dims. width/height without preset
+ *        is dropped.
+ *      * preset present → overwrites width/height with the preset's canonical
+ *        dimensions; wins over any width/height that may also be in the same
+ *        partial.
  *  - `browsing.mobileUserAgent === ''` is dropped (empty string == "no
  *    change intent"); current value is preserved.
  *  - Booleans and string literal-unions pass through unchanged.
@@ -52,10 +53,7 @@ export type { SettingsPatch };
 // Internal constants & helpers
 // ---------------------------------------------------------------------------
 
-const PRESETS: Record<
-  Exclude<WindowSettings['preset'], 'custom'>,
-  { width: number; height: number }
-> = {
+const PRESETS: Record<WindowSettings['preset'], { width: number; height: number }> = {
   iphone14pro: { width: 393, height: 852 },
   iphonese: { width: 375, height: 667 },
   pixel7: { width: 412, height: 915 },
@@ -74,24 +72,20 @@ function clampWindow(
 ): Partial<WindowSettings> {
   const out: Partial<WindowSettings> = {};
 
-  // Rule 2 ordering matters:
-  //   1. If preset is set and ≠ 'custom' → overwrite width/height.
-  //   2. Else if width/height set without preset → coerce preset='custom'.
-  //   3. Else (preset='custom' alone) → keep preset only.
   if (partial.preset !== undefined) {
-    if (partial.preset === 'custom') {
-      out.preset = 'custom';
-    } else {
-      const dims = PRESETS[partial.preset];
-      out.preset = partial.preset;
-      out.width = dims.width;
-      out.height = dims.height;
+    // M9 migration: old configs may carry preset='custom'; coerce to default.
+    const isLegacyCustom = (partial.preset as string) === 'custom';
+    if (isLegacyCustom) {
+      console.info('[settings] migrating custom preset → iphone14pro');
     }
-  } else if (partial.width !== undefined || partial.height !== undefined) {
-    out.preset = 'custom';
-    if (partial.width !== undefined) out.width = partial.width;
-    if (partial.height !== undefined) out.height = partial.height;
+    const safePreset: WindowSettings['preset'] =
+      isLegacyCustom ? 'iphone14pro' : (partial.preset as WindowSettings['preset']);
+    const dims = PRESETS[safePreset];
+    out.preset = safePreset;
+    out.width = dims.width;
+    out.height = dims.height;
   }
+  // Width/height without preset → dropped (no longer a coerce trigger).
 
   if (partial.edgeThresholdPx !== undefined) {
     out.edgeThresholdPx = clamp(partial.edgeThresholdPx, 0, 50);

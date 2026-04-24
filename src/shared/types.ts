@@ -55,7 +55,7 @@ export function makeEmptyTab(id: string, url: string, isMobile: boolean = true):
 export interface WindowSettings {
   width: number;            // 393
   height: number;           // 852
-  preset: 'iphone14pro' | 'iphonese' | 'pixel7' | 'custom';
+  preset: 'iphone14pro' | 'iphonese' | 'pixel7';
   edgeThresholdPx: number;  // 8, 0–50
 }
 

@@ -18,13 +18,6 @@ describe('clampSettings', () => {
     });
   });
 
-  it("coerces preset to 'custom' when width is set without preset", () => {
-    const current = cur(); // preset is 'iphone14pro' by default
-    expect(clampSettings({ window: { width: 400 } }, current)).toEqual({
-      window: { preset: 'custom', width: 400 },
-    });
-  });
-
   it('clamps window.edgeThresholdPx above 50 down to 50', () => {
     expect(clampSettings({ window: { edgeThresholdPx: 100 } }, cur())).toEqual({
       window: { edgeThresholdPx: 50 },
@@ -77,12 +70,6 @@ describe('clampSettings', () => {
     });
   });
 
-  it("keeps preset='custom' without writing width/height when neither is given", () => {
-    expect(clampSettings({ window: { preset: 'custom' } }, cur())).toEqual({
-      window: { preset: 'custom' },
-    });
-  });
-
   it('passes booleans through unchanged', () => {
     expect(clampSettings({ edgeDock: { enabled: false } }, cur())).toEqual({
       edgeDock: { enabled: false },
@@ -91,7 +78,7 @@ describe('clampSettings', () => {
 
   // Extra coverage — natural edge cases called out by the plan briefing.
 
-  it("non-'custom' preset wins over an explicit width in the same partial", () => {
+  it("preset wins over an explicit width in the same partial", () => {
     expect(
       clampSettings(
         { window: { preset: 'iphonese', width: 999 } },
@@ -112,5 +99,34 @@ describe('clampSettings', () => {
     expect(clampSettings({ dim: { effect: 'dark' } }, cur())).toEqual({
       dim: { effect: 'dark' },
     });
+  });
+});
+
+describe('clampWindow — M9 migration', () => {
+  it('migrates preset=custom → iphone14pro with canonical dims', () => {
+    const out = clampSettings(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { window: { preset: 'custom' as any } },
+      DEFAULTS,
+    );
+    expect(out.window).toEqual({ preset: 'iphone14pro', width: 393, height: 852 });
+  });
+
+  it('migrates preset=custom alongside stale width/height (width/height dropped)', () => {
+    const out = clampSettings(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { window: { preset: 'custom' as any, width: 400, height: 800 } },
+      DEFAULTS,
+    );
+    expect(out.window).toEqual({ preset: 'iphone14pro', width: 393, height: 852 });
+  });
+
+  it('does NOT coerce width/height without preset to custom anymore (width/height dropped)', () => {
+    const out = clampSettings(
+      { window: { width: 400, height: 800 } },
+      DEFAULTS,
+    );
+    // width/height alone now no-op; preset is the only path to change dims.
+    expect(out.window).toEqual({});
   });
 });
