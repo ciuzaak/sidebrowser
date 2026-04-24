@@ -233,7 +233,7 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
               className="rounded bg-neutral-800 px-2 py-1 text-sm text-neutral-100 outline-none focus:ring-1 focus:ring-sky-500"
             >
               <option value="quit">Quit</option>
-              <option value="minimize-to-tray">Minimize to tray (M7)</option>
+              <option value="minimize-to-tray">Minimize to tray</option>
             </select>
           </Row>
           <Row label="Restore tabs on launch">
