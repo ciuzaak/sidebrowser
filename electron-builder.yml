@@ -24,6 +24,9 @@ win:
       arch: x64
   icon: resources/icon.ico
   signAndEditExecutable: false
+  # publisherName is NOT a WindowsConfiguration property in eb 26.x
+  # (additionalProperties: false); it moved to win.signtoolOptions.publisherName
+  # or win.azureSignOptions.publisherName. Omitted until signing is wired.
 
 nsis:
   oneClick: false
