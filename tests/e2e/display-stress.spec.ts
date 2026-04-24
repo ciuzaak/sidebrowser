@@ -172,10 +172,14 @@ test('display-stress: HIDDEN_LEFT + offscreen display change → DOCKED_NONE + s
         .toBe(true);
 
       // Step 6: Assert window bounds are inside primary workArea, centered.
-      // Executor: setWindowX(Math.round(workArea.x + (workArea.width - windowWidth) / 2))
+      // Executor: setWindowX(Math.round(workArea.x + (workArea.width - windowWidth) / 2)).
+      // Poll the bounds read to match edge-dock.spec.ts style — win.setBounds → OS report
+      // has tiny latency on Windows; polling eliminates theoretical races with the state poll.
       const expectedCenterX = Math.round(workArea.x + (workArea.width - 393) / 2);
+      await expect
+        .poll(async () => (await getWindowBounds(app)).x, { timeout: 5_000 })
+        .toBe(expectedCenterX);
       const finalBounds = await getWindowBounds(app);
-      expect(finalBounds.x).toBe(expectedCenterX);
       expect(finalBounds.x).toBeGreaterThanOrEqual(workArea.x);
       expect(finalBounds.x + finalBounds.width).toBeLessThanOrEqual(workArea.x + workArea.width);
     } finally {
@@ -242,9 +246,12 @@ test('display-stress: DOCKED_LEFT + offscreen display change → DOCKED_NONE + s
         .toBe(true);
 
       // Step 5: Assert window bounds are inside primary workArea, centered.
+      // Polled bounds read for parity with edge-dock.spec.ts (OS-report latency buffer).
       const expectedCenterX = Math.round(workArea.x + (workArea.width - 393) / 2);
+      await expect
+        .poll(async () => (await getWindowBounds(app)).x, { timeout: 5_000 })
+        .toBe(expectedCenterX);
       const finalBounds = await getWindowBounds(app);
-      expect(finalBounds.x).toBe(expectedCenterX);
       expect(finalBounds.x).toBeGreaterThanOrEqual(workArea.x);
       expect(finalBounds.x + finalBounds.width).toBeLessThanOrEqual(workArea.x + workArea.width);
     } finally {
