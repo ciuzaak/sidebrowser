@@ -77,6 +77,17 @@ export class EdgeDock {
     return this.state;
   }
 
+  /**
+   * 从 HIDDEN_LEFT / HIDDEN_RIGHT 状态强制回到 DOCKED_* 可见态。
+   * 其它状态 no-op。用于第二实例激活第一实例时的"双击即可见"。
+   */
+  forceRevealIfHidden(): void {
+    const k = this.state.kind;
+    if (k === 'HIDDEN_LEFT' || k === 'HIDDEN_RIGHT') {
+      this.dispatch({ type: 'MOUSE_ENTER' });
+    }
+  }
+
   private runEffect(fx: EdgeDockEffect): void {
     switch (fx.type) {
       case 'APPLY_DIM':

@@ -23,6 +23,14 @@ import type { Settings, SettingsPatch } from '@shared/types';
 import { TrayManager, createElectronTrayBackend } from './tray-manager';
 import { resolveCloseAction } from './close-action-resolver';
 import { installApplicationMenu } from './keyboard-shortcuts';
+import { handleSecondInstance } from './single-instance';
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+  // app.quit() is async; exit immediately so the rest of app setup (createWindow, etc.) doesn't run.
+  process.exit(0);
+}
 
 let isQuitting = false;
 
@@ -205,6 +213,17 @@ app.whenReady().then(() => {
         enabled: s.edgeDock.enabled,
       };
     },
+  });
+
+  app.on('second-instance', () => {
+    handleSecondInstance({
+      isDestroyed: () => win.isDestroyed(),
+      isMinimized: () => win.isMinimized(),
+      restore: () => win.restore(),
+      show: () => win.show(),
+      focus: () => win.focus(),
+      forceRevealIfHidden: () => edgeDock.forceRevealIfHidden(),
+    });
   });
 
   // M4 direct dim wiring replaced: mouse events now route through EdgeDock.
