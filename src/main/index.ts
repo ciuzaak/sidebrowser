@@ -33,6 +33,7 @@ function createWindow(initialBounds: Rectangle): BrowserWindow {
     width: initialBounds.width,
     height: initialBounds.height,
     title: 'sidebrowser',
+    alwaysOnTop: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       sandbox: true,
@@ -40,6 +41,7 @@ function createWindow(initialBounds: Rectangle): BrowserWindow {
       nodeIntegration: false,
     },
   });
+  win.setAlwaysOnTop(true, 'screen-saver');
 
   if (process.env['ELECTRON_RENDERER_URL']) {
     void win.loadURL(process.env['ELECTRON_RENDERER_URL']);
