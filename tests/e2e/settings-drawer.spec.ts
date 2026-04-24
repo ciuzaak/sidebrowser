@@ -541,3 +541,59 @@ test('changing a non-preset setting does not resize the window', async () => {
     rmSync(userDataDir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Test 9 — reset button appears when value differs from default, resets on click.
+// ---------------------------------------------------------------------------
+
+test('reset button appears when value differs from default and resets on click', async () => {
+  const userDataDir = mkdtempSync(join(tmpdir(), 'sidebrowser-e2e-settings-'));
+
+  try {
+    const app = await launch(userDataDir);
+    try {
+      const page = await getChromeWindow(app);
+      await waitForAddressBarReady(page);
+
+      // Change theme to 'dark' via test hook (bypasses UI so we can assert the
+      // reset button independently of the select interaction).
+      await updateSettings(app, { appearance: { theme: 'dark' } });
+
+      // Wait for the renderer to receive the broadcast.
+      await expect
+        .poll(
+          async () =>
+            ((await getSettings(app)) as unknown as { appearance: { theme: string } }).appearance.theme,
+          { timeout: 10_000 },
+        )
+        .toBe('dark');
+
+      // Open the drawer.
+      await openSettingsDrawer(page);
+
+      // The reset-theme button should be visible (not invisible) because
+      // current value ('dark') differs from the default ('system').
+      const resetBtn = page.getByTestId('reset-theme');
+      await expect(resetBtn).not.toHaveClass(/invisible/);
+
+      // Click the reset button.
+      await resetBtn.click();
+
+      // The main store should now report theme='system'.
+      await expect
+        .poll(
+          async () =>
+            ((await getSettings(app)) as unknown as { appearance: { theme: string } }).appearance.theme,
+          { timeout: 10_000 },
+        )
+        .toBe('system');
+
+      // The reset button should now be invisible (value equals default).
+      await expect(resetBtn).toHaveClass(/invisible/);
+    } finally {
+      await app.close();
+    }
+  } finally {
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});

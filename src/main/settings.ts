@@ -5,11 +5,10 @@
  * main, preload, and renderer can all import them. They are re-exported below
  * for back-compat with existing `from './settings'` imports.
  *
- * M6 will add a SettingsStore (electron-store + IPC) on top of these defaults.
+ * DEFAULTS and MOBILE_UA now live in `@shared/settings-defaults` so the
+ * renderer can import them without crossing the main/renderer boundary.
+ * This file re-exports DEFAULTS for back-compat with main-side callers.
  */
-
-import type { Settings } from '@shared/types';
-import { MOBILE_UA } from './user-agents';
 
 // Back-compat re-exports so existing `import type { DimSettings } from './settings'`
 // callers keep working without edits.
@@ -25,18 +24,4 @@ export type {
   Settings,
 } from '@shared/types';
 
-export const DEFAULTS: Settings = {
-  window: { width: 393, height: 852, preset: 'iphone14pro', edgeThresholdPx: 8 },
-  mouseLeave: { delayMs: 100 },
-  dim: {
-    effect: 'blur',
-    blurPx: 8,
-    darkBrightness: 0.3,
-    lightBrightness: 1.5,
-    transitionMs: 150,
-  },
-  edgeDock: { enabled: true, animationMs: 200, triggerStripPx: 3 },
-  lifecycle: { restoreTabsOnLaunch: true },
-  browsing: { defaultIsMobile: true, mobileUserAgent: MOBILE_UA },
-  appearance: { theme: 'system' },
-};
+export { DEFAULTS } from '@shared/settings-defaults';

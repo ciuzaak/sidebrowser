@@ -1,6 +1,7 @@
-import { X } from 'lucide-react';
+import { RotateCcw, X } from 'lucide-react';
 import type { ChangeEvent, ReactElement, ReactNode } from 'react';
 import type { Settings, ThemeChoice } from '@shared/types';
+import { DEFAULTS } from '@shared/settings-defaults';
 import { useSettingsStore } from '../store/settings-store';
 
 /**
@@ -66,7 +67,16 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
       <div className="flex flex-col gap-5 p-3">
         {/* ── 0. Appearance ───────────────────────────────────── */}
         <Section title="Appearance">
-          <Row label="Theme">
+          <Row
+            label="Theme"
+            rightSlot={
+              <ResetIcon
+                show={settings.appearance.theme !== DEFAULTS.appearance.theme}
+                onClick={() => void update({ appearance: { theme: DEFAULTS.appearance.theme } })}
+                testId="reset-theme"
+              />
+            }
+          >
             <select
               data-testid="settings-theme"
               value={settings.appearance.theme}
@@ -84,7 +94,16 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
 
         {/* ── 1. Window ───────────────────────────────────────── */}
         <Section title="Window">
-          <Row label="Preset">
+          <Row
+            label="Preset"
+            rightSlot={
+              <ResetIcon
+                show={settings.window.preset !== DEFAULTS.window.preset}
+                onClick={() => void update({ window: { preset: DEFAULTS.window.preset } })}
+                testId="reset-window-preset"
+              />
+            }
+          >
             <select
               data-testid="settings-window-preset"
               value={settings.window.preset}
@@ -107,6 +126,13 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
             max={50}
             step={1}
             onChange={(n) => void update({ window: { edgeThresholdPx: n } })}
+            rightSlot={
+              <ResetIcon
+                show={settings.window.edgeThresholdPx !== DEFAULTS.window.edgeThresholdPx}
+                onClick={() => void update({ window: { edgeThresholdPx: DEFAULTS.window.edgeThresholdPx } })}
+                testId="reset-window-edge-threshold"
+              />
+            }
           />
         </Section>
 
@@ -121,12 +147,28 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
             max={2000}
             step={50}
             onChange={(n) => void update({ mouseLeave: { delayMs: n } })}
+            rightSlot={
+              <ResetIcon
+                show={settings.mouseLeave.delayMs !== DEFAULTS.mouseLeave.delayMs}
+                onClick={() => void update({ mouseLeave: { delayMs: DEFAULTS.mouseLeave.delayMs } })}
+                testId="reset-mouseleave-delay"
+              />
+            }
           />
         </Section>
 
         {/* ── 3. Dim ──────────────────────────────────────────── */}
         <Section title="Dim">
-          <Row label="Effect">
+          <Row
+            label="Effect"
+            rightSlot={
+              <ResetIcon
+                show={settings.dim.effect !== DEFAULTS.dim.effect}
+                onClick={() => void update({ dim: { effect: DEFAULTS.dim.effect } })}
+                testId="reset-dim-effect"
+              />
+            }
+          >
             <select
               data-testid="settings-dim-effect"
               value={settings.dim.effect}
@@ -151,6 +193,13 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
             step={1}
             dimmed={settings.dim.effect !== 'blur'}
             onChange={(n) => void update({ dim: { blurPx: n } })}
+            rightSlot={
+              <ResetIcon
+                show={settings.dim.blurPx !== DEFAULTS.dim.blurPx}
+                onClick={() => void update({ dim: { blurPx: DEFAULTS.dim.blurPx } })}
+                testId="reset-dim-blur"
+              />
+            }
           />
           <Slider
             label="Dark brightness"
@@ -161,6 +210,13 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
             step={0.05}
             dimmed={settings.dim.effect !== 'dark'}
             onChange={(n) => void update({ dim: { darkBrightness: n } })}
+            rightSlot={
+              <ResetIcon
+                show={settings.dim.darkBrightness !== DEFAULTS.dim.darkBrightness}
+                onClick={() => void update({ dim: { darkBrightness: DEFAULTS.dim.darkBrightness } })}
+                testId="reset-dim-dark-brightness"
+              />
+            }
           />
           <Slider
             label="Light brightness"
@@ -171,6 +227,13 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
             step={0.1}
             dimmed={settings.dim.effect !== 'light'}
             onChange={(n) => void update({ dim: { lightBrightness: n } })}
+            rightSlot={
+              <ResetIcon
+                show={settings.dim.lightBrightness !== DEFAULTS.dim.lightBrightness}
+                onClick={() => void update({ dim: { lightBrightness: DEFAULTS.dim.lightBrightness } })}
+                testId="reset-dim-light-brightness"
+              />
+            }
           />
           <Slider
             label="Transition"
@@ -181,12 +244,28 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
             max={1000}
             step={50}
             onChange={(n) => void update({ dim: { transitionMs: n } })}
+            rightSlot={
+              <ResetIcon
+                show={settings.dim.transitionMs !== DEFAULTS.dim.transitionMs}
+                onClick={() => void update({ dim: { transitionMs: DEFAULTS.dim.transitionMs } })}
+                testId="reset-dim-transition"
+              />
+            }
           />
         </Section>
 
         {/* ── 4. Edge dock ────────────────────────────────────── */}
         <Section title="Edge dock">
-          <Row label="Enabled">
+          <Row
+            label="Enabled"
+            rightSlot={
+              <ResetIcon
+                show={settings.edgeDock.enabled !== DEFAULTS.edgeDock.enabled}
+                onClick={() => void update({ edgeDock: { enabled: DEFAULTS.edgeDock.enabled } })}
+                testId="reset-edgedock-enabled"
+              />
+            }
+          >
             <input
               type="checkbox"
               data-testid="settings-edgedock-enabled"
@@ -204,6 +283,13 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
             max={1000}
             step={50}
             onChange={(n) => void update({ edgeDock: { animationMs: n } })}
+            rightSlot={
+              <ResetIcon
+                show={settings.edgeDock.animationMs !== DEFAULTS.edgeDock.animationMs}
+                onClick={() => void update({ edgeDock: { animationMs: DEFAULTS.edgeDock.animationMs } })}
+                testId="reset-edgedock-animation"
+              />
+            }
           />
           <Slider
             label="Trigger strip"
@@ -214,12 +300,30 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
             max={10}
             step={1}
             onChange={(n) => void update({ edgeDock: { triggerStripPx: n } })}
+            rightSlot={
+              <ResetIcon
+                show={settings.edgeDock.triggerStripPx !== DEFAULTS.edgeDock.triggerStripPx}
+                onClick={() => void update({ edgeDock: { triggerStripPx: DEFAULTS.edgeDock.triggerStripPx } })}
+                testId="reset-edgedock-trigger-strip"
+              />
+            }
           />
         </Section>
 
         {/* ── 5. Session ──────────────────────────────────────── */}
         <Section title="Session">
-          <Row label="Restore tabs on launch">
+          <Row
+            label="Restore tabs on launch"
+            rightSlot={
+              <ResetIcon
+                show={settings.lifecycle.restoreTabsOnLaunch !== DEFAULTS.lifecycle.restoreTabsOnLaunch}
+                onClick={() =>
+                  void update({ lifecycle: { restoreTabsOnLaunch: DEFAULTS.lifecycle.restoreTabsOnLaunch } })
+                }
+                testId="reset-lifecycle-restore-tabs"
+              />
+            }
+          >
             <input
               type="checkbox"
               data-testid="settings-lifecycle-restore-tabs"
@@ -234,7 +338,18 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
 
         {/* ── 6. Browsing ─────────────────────────────────────── */}
         <Section title="Browsing">
-          <Row label="Default new tab = mobile">
+          <Row
+            label="Default new tab = mobile"
+            rightSlot={
+              <ResetIcon
+                show={settings.browsing.defaultIsMobile !== DEFAULTS.browsing.defaultIsMobile}
+                onClick={() =>
+                  void update({ browsing: { defaultIsMobile: DEFAULTS.browsing.defaultIsMobile } })
+                }
+                testId="reset-browsing-default-mobile"
+              />
+            }
+          >
             <input
               type="checkbox"
               data-testid="settings-browsing-default-mobile"
@@ -246,7 +361,16 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
             />
           </Row>
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-[var(--chrome-fg)] opacity-80">Mobile user agent</label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs font-medium text-[var(--chrome-fg)] opacity-80">Mobile user agent</label>
+              <ResetIcon
+                show={settings.browsing.mobileUserAgent !== DEFAULTS.browsing.mobileUserAgent}
+                onClick={() =>
+                  void update({ browsing: { mobileUserAgent: DEFAULTS.browsing.mobileUserAgent } })
+                }
+                testId="reset-browsing-mobile-ua"
+              />
+            </div>
             <input
               type="text"
               data-testid="settings-browsing-mobile-ua"
@@ -277,11 +401,22 @@ function Section({ title, children }: { title: string; children: ReactNode }): R
   );
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }): ReactElement {
+function Row({
+  label,
+  children,
+  rightSlot,
+}: {
+  label: string;
+  children: ReactNode;
+  rightSlot?: ReactNode;
+}): ReactElement {
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex items-center justify-between gap-2">
       <label className="text-xs font-medium text-[var(--chrome-fg)] opacity-80">{label}</label>
-      {children}
+      <div className="flex items-center gap-2">
+        {children}
+        {rightSlot}
+      </div>
     </div>
   );
 }
@@ -297,6 +432,7 @@ interface SliderProps {
   /** Render the slider at reduced opacity (e.g. inactive dim effect controls). Still interactive. */
   dimmed?: boolean;
   onChange: (n: number) => void;
+  rightSlot?: ReactNode;
 }
 
 function Slider({
@@ -309,16 +445,20 @@ function Slider({
   unit,
   dimmed,
   onChange,
+  rightSlot,
 }: SliderProps): ReactElement {
   const display = step < 1 ? value.toFixed(2) : String(value);
   return (
     <div className={`flex flex-col gap-1 ${dimmed ? 'opacity-60' : ''}`}>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <label className="text-xs font-medium text-[var(--chrome-fg)] opacity-80">{label}</label>
-        <span className="text-xs text-[var(--chrome-muted)]">
-          {display}
-          {unit ?? ''}
-        </span>
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-[var(--chrome-muted)]">
+            {display}
+            {unit ?? ''}
+          </span>
+          {rightSlot}
+        </div>
       </div>
       <input
         type="range"
@@ -331,5 +471,30 @@ function Slider({
         className="h-2 w-full appearance-none rounded bg-[var(--chrome-input-bg)] accent-sky-500"
       />
     </div>
+  );
+}
+
+function ResetIcon({
+  show,
+  onClick,
+  testId,
+}: {
+  show: boolean;
+  onClick: () => void;
+  testId?: string;
+}): ReactElement {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Reset to default"
+      aria-label="Reset to default"
+      tabIndex={show ? 0 : -1}
+      aria-hidden={!show}
+      data-testid={testId}
+      className={`shrink-0 rounded p-1 text-[var(--chrome-muted)] hover:bg-[var(--chrome-hover)] hover:text-[var(--chrome-fg)] ${show ? '' : 'invisible'}`}
+    >
+      <RotateCcw size={14} />
+    </button>
   );
 }
