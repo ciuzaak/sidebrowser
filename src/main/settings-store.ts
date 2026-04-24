@@ -167,20 +167,56 @@ export function createElectronBackend(): SettingsBackend {
   // which throws outside an Electron context. `createRequire` itself is a
   // pure node:module helper and safe to import at the top level.
   const requireCjs = createRequire(import.meta.url);
-  const StoreModule = requireCjs('electron-store') as
-    | { default: new (opts?: unknown) => ElectronStoreInstance }
-    | (new (opts?: unknown) => ElectronStoreInstance);
-  const StoreCtor =
-    typeof StoreModule === 'function'
-      ? StoreModule
-      : StoreModule.default;
-  const store = new StoreCtor({
-    defaults: { settings: DEFAULTS },
-  }) as ElectronStoreInstance;
+  //
+  // M8 error-boundary hardening: wrap construction + get + set in try/catch so
+  // a corrupt on-disk config JSON (or any electron-store runtime failure)
+  // degrades to in-memory defaults instead of crashing the main-process
+  // bootstrap. We do NOT delete the corrupt file — the next successful
+  // `update()` will overwrite it naturally (electron-store ≥8 defaults
+  // `clearInvalidConfig: true` and handles most parse errors internally; this
+  // try/catch is a belt-and-suspenders guard and guarantees the DoD log line).
+  //
+  // `store === null` means construction failed: `get` returns undefined so
+  // `SettingsStore` ctor falls back to DEFAULTS, and `set` is a no-op until
+  // the file recovers on next launch.
+  let store: ElectronStoreInstance | null = null;
+  try {
+    const StoreModule = requireCjs('electron-store') as
+      | { default: new (opts?: unknown) => ElectronStoreInstance }
+      | (new (opts?: unknown) => ElectronStoreInstance);
+    const StoreCtor =
+      typeof StoreModule === 'function'
+        ? StoreModule
+        : StoreModule.default;
+    store = new StoreCtor({
+      defaults: { settings: DEFAULTS },
+    }) as ElectronStoreInstance;
+  } catch (err) {
+    console.error(
+      '[sidebrowser] settings store construction failed; falling back to defaults',
+      err,
+    );
+  }
   return {
-    get: () => store.get('settings') as Settings | undefined,
+    get: () => {
+      if (!store) return undefined;
+      try {
+        return store.get('settings') as Settings | undefined;
+      } catch (err) {
+        console.error(
+          '[sidebrowser] settings corrupt; falling back to defaults',
+          err,
+        );
+        return undefined;
+      }
+    },
     set: (value: Settings) => {
-      store.set('settings', value);
+      if (!store) return;
+      try {
+        store.set('settings', value);
+      } catch (err) {
+        console.error('[sidebrowser] settings write failed', err);
+      }
     },
   };
 }

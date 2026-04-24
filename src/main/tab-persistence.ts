@@ -1,6 +1,12 @@
 import Store from 'electron-store';
 
-const SAFE_SCHEME = /^(https?|about|file|data):/i;
+// M8: dropped `data:` from the whitelist to align with the new ViewManager-level
+// `sanitizeUrl` guard (src/main/url-validator.ts). A persisted `data:` URL
+// could otherwise replay through seedTabs → createTab, where the sanitizer
+// would then kick it to about:blank — the net effect is the same, but
+// dropping here keeps the two whitelists consistent and avoids logging a
+// redundant sanitize hit at replay time.
+const SAFE_SCHEME = /^(https?|about|file):/i;
 const DEBOUNCE_MS = 1000;
 
 /** The persisted shape. Keep it minimal — transient state (title, loading, history flags) is not saved. */
@@ -92,7 +98,45 @@ export function createPersistedTabSaver(store: Store<StoreSchema>): {
   };
 }
 
-/** Factory for the electron-store instance. Isolated for testability. */
+/**
+ * Factory for the electron-store instance. Isolated for testability.
+ *
+ * M8 error-boundary hardening: try/catch Store construction so a corrupt
+ * `sidebrowser-tabs.json` on disk degrades gracefully instead of crashing
+ * the main-process bootstrap. On failure we return an in-memory fallback
+ * implementing only the `get('tabs')` / `set('tabs', …)` surface that
+ * `loadPersistedTabs` and `createPersistedTabSaver` actually use — the next
+ * successful session will overwrite the corrupt file via the saver's flush.
+ *
+ * The cast to `Store<StoreSchema>` is intentional: the fake only ships the
+ * two methods we actually call on this instance anywhere in the codebase;
+ * electron-store's broader API surface is unused.
+ */
 export function createTabStore(): Store<StoreSchema> {
-  return new Store<StoreSchema>({ name: 'sidebrowser-tabs' });
+  try {
+    return new Store<StoreSchema>({ name: 'sidebrowser-tabs' });
+  } catch (err) {
+    console.error(
+      '[sidebrowser] tab store construction failed; persistence disabled for this session',
+      err,
+    );
+    return createFallbackTabStore();
+  }
+}
+
+/**
+ * In-memory no-op store used when electron-store construction throws.
+ * Only `get('tabs')` and `set('tabs', …)` are ever called against the
+ * returned instance (see `loadPersistedTabs` + `createPersistedTabSaver`);
+ * the cast papers over the unused rest of the Store surface.
+ */
+function createFallbackTabStore(): Store<StoreSchema> {
+  const memory: { tabs?: unknown } = {};
+  const fake = {
+    get: (key: 'tabs') => memory[key],
+    set: (key: 'tabs', value: unknown): void => {
+      memory[key] = value;
+    },
+  };
+  return fake as unknown as Store<StoreSchema>;
 }

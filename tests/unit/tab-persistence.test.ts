@@ -44,15 +44,20 @@ describe('sanitizePersisted', () => {
     expect(result).toBeNull();
   });
 
-  it('accepts file:// and data: URLs', () => {
+  it('accepts file:// URLs but rejects data: URLs (M8: data: dropped from whitelist)', () => {
+    // M8 tightened SAFE_SCHEME to exclude `data:` — aligns persistence with
+    // the new ViewManager-level sanitizeUrl guard whose whitelist is
+    // http/https/file/about only.
     const result = sanitizePersisted({
       tabs: [
         { id: 'a', url: 'file:///C:/x.html' },
-        { id: 'b', url: 'data:text/html,<p>hi</p>' },
+        { id: 'b', url: 'data:text/html,<p>hi</p>' }, // dropped
       ],
       activeId: 'a',
     });
-    expect(result?.tabs).toHaveLength(2);
+    expect(result?.tabs).toEqual([
+      { id: 'a', url: 'file:///C:/x.html', isMobile: true },
+    ]);
   });
 
   it('drops tabs with empty-string id and ignores empty-string activeId', () => {

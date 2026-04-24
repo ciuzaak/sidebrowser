@@ -2,6 +2,7 @@ import { WebContentsView, type BrowserWindow } from 'electron';
 import { nanoid } from 'nanoid';
 import { getPersistentSession } from './session-manager';
 import { desktopUa } from './user-agents';
+import { sanitizeUrl } from './url-validator';
 import type { Tab, TabsSnapshot } from '@shared/types';
 import { makeEmptyTab } from '@shared/types';
 
@@ -98,6 +99,11 @@ export class ViewManager {
    *  `isMobile` defaults to `settings.browsing.defaultIsMobile` when omitted; an explicit
    *  caller value (e.g. the restore path preserving per-tab UA) always wins. */
   createTab(url: string = 'about:blank', id: string = nanoid(), isMobile?: boolean): Tab {
+    // Whitelist guard (spec §10). Covers user-initiated createTab via IPC, the
+    // setWindowOpenHandler popup path, AND the seedTabs replay path transitively
+    // (seedTabs → createTab), so persisted javascript:/data:/chrome: URLs can't
+    // reach the renderer even if they slipped past tab-persistence SAFE_SCHEME.
+    url = sanitizeUrl(url);
     const defaults = this.getBrowsingDefaults();
     const resolvedIsMobile = isMobile ?? defaults.defaultIsMobile;
     const view = new WebContentsView({
@@ -170,6 +176,10 @@ export class ViewManager {
   navigate(id: string, url: string): void {
     const managed = this.tabs.get(id);
     if (!managed) return;
+    // Whitelist guard — spec §10. Final gate even though the address-bar
+    // `normalizeUrlInput` already ran in shared/url.ts; keeps javascript:/data:
+    // out of the renderer regardless of entry point.
+    url = sanitizeUrl(url);
     this.updateTab(id, { url, isLoading: true });
     void managed.view.webContents.loadURL(url).catch((err: unknown) => {
       console.error('[sidebrowser] navigate loadURL failed:', err);
