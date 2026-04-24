@@ -1,0 +1,10 @@
+appId: com.sidebrowser.app
+productName: sidebrowser
+
+# Forward-compat declaration added in M7.
+# Full NSIS / platform packaging config will be fleshed out in M8.
+extraResources:
+  - from: resources/tray
+    to: tray
+    filter:
+      - "**/*"
