@@ -23,6 +23,9 @@ win:
     - target: nsis
       arch: x64
   icon: resources/icon.ico
+  # workaround: winCodeSign symlink extraction fails without Windows Developer
+  # Mode; skipping rcedit means the .exe uses Electron's default icon. Revisit
+  # when code signing is wired (signtoolOptions) or Dev Mode is available.
   signAndEditExecutable: false
   # publisherName is NOT a WindowsConfiguration property in eb 26.x
   # (additionalProperties: false); it moved to win.signtoolOptions.publisherName
