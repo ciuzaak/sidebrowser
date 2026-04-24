@@ -2,9 +2,19 @@
 
 A side-panel Electron browser for Windows with mobile UA emulation, persistent login, mouse-leave dim/blur, and edge auto-hide. Designed to sit alongside your main browser as a persistent side panel. Full design rationale and feature spec: `docs/superpowers/specs/2026-04-23-sidebrowser-design.md`.
 
+## Features
+
+- Edge auto-hide: dock to left/right edge, window collapses to a 3 px trigger strip and reveals on hover.
+- Mobile UA emulation (per-tab): default iPhone Safari UA, viewport-sized for mobile layouts.
+- Persistent login: all tabs share a `persist:sidebrowser` session — cookies survive restarts.
+- Mouse-leave dim/blur: configurable dark / light / blur / none filter when cursor leaves the window.
+- Always-on-top: sidebrowser stays above other windows including fullscreen browsers.
+- Single-instance: launching a second copy focuses the existing window.
+- **三档主题（System / Dark / Light）：** Settings → Appearance 可切换 Chrome UI 配色；System 跟随 OS 深色模式；页面内容不受影响。
+
 ## Install
 
-Download `sidebrowser-Setup-1.0.0.exe` from GitHub releases (TBD) or build it locally:
+Download `sidebrowser-Setup-1.1.0.exe` from GitHub releases (TBD) or build it locally:
 
 ```bash
 pnpm build:installer   # produces release/sidebrowser-Setup-<version>.exe
@@ -51,7 +61,9 @@ If your shell has `ELECTRON_RUN_AS_NODE=1` set (some dev tools set it globally),
 
 - **Mobile emulation is UA + viewport only.** Sites with aggressive device-signal fingerprinting (Bilibili, X/Twitter) may still render their desktop layout. Full `Emulation.setDeviceMetricsOverride` is planned for v2.
 - **macOS is not supported.** Platform-specific code is stubbed; a native macOS build is planned for v1.5.
-- **Icons are placeholder.** The installer `.exe` currently ships with Electron's default icon; tray and app icons are sky-500 "S" placeholder glyphs. Polished design assets are planned for v1.1.
+- **关闭窗口即退出应用（无系统托盘）。**
+- **窗口始终置顶（always-on-top）——对 DirectX exclusive fullscreen（极少数老游戏 / 部分 DRM 视频）仍会被遮挡，这是 OS 限制。**
+- **Icons are placeholder.** The installer `.exe` ships with a sky-500 "S" placeholder glyph; polished design assets are planned for v1.2.
 - **No code signing.** Windows SmartScreen shows an "unknown publisher" warning on first install. Click "More info" → "Run anyway". A signing certificate is out of v1 scope.
 - **No in-page search, no download UI, no bookmarks.** Use Chromium's cookie-based login persistence plus OS-level bookmarks. See spec §11.
 
