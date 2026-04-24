@@ -463,7 +463,7 @@ SettingsDrawer slider onChange
 | M4 | 鼠标离开 → 滤镜 | cursor-watcher、DimController、设置四种 effect + 强度 | 单测 reducer；E2E 模拟鼠标出窗检查 CSS 注入 |
 | M5 | 贴边自动缩 | 贴边检测、EdgeDock 状态机、动画插值、3px 触发条 | E2E：贴边 → mouseleave → 动画完 → 断言 x=-w+3；hover 触发条 → 还原 |
 | M6 | 设置抽屉 UI | 右侧覆盖式抽屉、所有设置项实时生效 | E2E：改模糊值 → 立即可见变化 |
-| M7 | 托盘 + 关闭行为 | Tray icon、minimize-to-tray、右键菜单 | 手动 + E2E |
+| M7 | 托盘 + 关闭行为 | Tray icon、minimize-to-tray、右键菜单 | E2E 覆盖 close-action 分支（hide vs destroy）；托盘 icon 本身手动冒烟 |
 | M8 | 加固 + 打包 | 错误边界全量过、display-changed 兜底、electron-builder 打 NSIS 安装包 | `pnpm build` 产出可安装 exe |
 
 **M0–M2 完成即一个"持久登录多 tab 浏览器"**，M3–M5 是侧边浮窗差异化核心，M6–M8 是打磨。
