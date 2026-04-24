@@ -12,6 +12,12 @@ files:
 asarUnpack:
   - "resources/**"
 
+# Runs after win-unpacked/ is assembled, before NSIS packaging. Patches the
+# main app .exe icon via standalone rcedit — replaces the electron-builder
+# default path (disabled below via signAndEditExecutable: false). See
+# scripts/after-pack.mjs for the why.
+afterPack: ./scripts/after-pack.mjs
+
 win:
   target:
     - target: nsis
