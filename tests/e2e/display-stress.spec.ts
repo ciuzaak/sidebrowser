@@ -77,19 +77,6 @@ async function fireLeaveNow(app: ElectronApplication): Promise<void> {
   await callHook<void>(app, 'fireLeaveNow');
 }
 
-async function setCloseAction(
-  app: ElectronApplication,
-  v: 'quit' | 'minimize-to-tray',
-): Promise<void> {
-  await app.evaluate(async (_e, val) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const h = (globalThis as any).__sidebrowserTestHooks as {
-      setCloseAction: (v: string) => unknown;
-    };
-    h.setCloseAction(val);
-  }, v);
-}
-
 async function getIsWindowVisible(app: ElectronApplication): Promise<boolean> {
   return callHook<boolean>(app, 'getIsWindowVisible');
 }
@@ -116,10 +103,6 @@ test('display-stress: HIDDEN_LEFT + offscreen display change → DOCKED_NONE + s
     try {
       const page = await getChromeWindow(app);
       await waitForAddressBarReady(page);
-
-      // Default closeAction is 'minimize-to-tray' — override to 'quit' so
-      // app.close() in teardown doesn't hang waiting on a tray hide.
-      await setCloseAction(app, 'quit');
 
       const workArea = await getPrimaryWorkArea(app);
 
@@ -207,10 +190,6 @@ test('display-stress: DOCKED_LEFT + offscreen display change → DOCKED_NONE + s
     try {
       const page = await getChromeWindow(app);
       await waitForAddressBarReady(page);
-
-      // Default closeAction is 'minimize-to-tray' — override to 'quit' so
-      // app.close() in teardown doesn't hang waiting on a tray hide.
-      await setCloseAction(app, 'quit');
 
       const workArea = await getPrimaryWorkArea(app);
 

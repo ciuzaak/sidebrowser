@@ -34,6 +34,6 @@ export const DEFAULTS: Settings = {
     transitionMs: 150,
   },
   edgeDock: { enabled: true, animationMs: 200, triggerStripPx: 3 },
-  lifecycle: { closeAction: 'minimize-to-tray', restoreTabsOnLaunch: true },
+  lifecycle: { restoreTabsOnLaunch: true },
   browsing: { defaultIsMobile: true, mobileUserAgent: MOBILE_UA },
 };

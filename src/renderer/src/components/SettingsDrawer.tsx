@@ -36,7 +36,6 @@ interface SettingsDrawerProps {
 
 type DimEffect = Settings['dim']['effect'];
 type WindowPreset = Settings['window']['preset'];
-type CloseAction = Settings['lifecycle']['closeAction'];
 
 export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactElement | null {
   const settings = useSettingsStore((s) => s.settings);
@@ -219,23 +218,8 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
           />
         </Section>
 
-        {/* ── 5. Lifecycle ────────────────────────────────────── */}
-        <Section title="Lifecycle">
-          <Row label="On close">
-            <select
-              data-testid="settings-lifecycle-close-action"
-              value={settings.lifecycle.closeAction}
-              onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-                void update({
-                  lifecycle: { closeAction: e.target.value as CloseAction },
-                })
-              }
-              className="rounded bg-neutral-800 px-2 py-1 text-sm text-neutral-100 outline-none focus:ring-1 focus:ring-sky-500"
-            >
-              <option value="quit">Quit</option>
-              <option value="minimize-to-tray">Minimize to tray</option>
-            </select>
-          </Row>
+        {/* ── 5. Session ──────────────────────────────────────── */}
+        <Section title="Session">
           <Row label="Restore tabs on launch">
             <input
               type="checkbox"

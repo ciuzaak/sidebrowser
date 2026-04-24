@@ -12,12 +12,6 @@ files:
 asarUnpack:
   - "resources/**"
 
-extraResources:
-  - from: resources/tray
-    to: tray
-    filter:
-      - "**/*"
-
 win:
   target:
     - target: nsis

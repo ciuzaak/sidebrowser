@@ -147,7 +147,6 @@ function clampLifecycle(
   partial: Partial<LifecycleSettings>,
 ): Partial<LifecycleSettings> {
   const out: Partial<LifecycleSettings> = {};
-  if (partial.closeAction !== undefined) out.closeAction = partial.closeAction;
   if (partial.restoreTabsOnLaunch !== undefined) {
     out.restoreTabsOnLaunch = partial.restoreTabsOnLaunch;
   }

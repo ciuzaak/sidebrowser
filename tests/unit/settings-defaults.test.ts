@@ -30,7 +30,6 @@ describe('DEFAULTS', () => {
 
   it('has correct spec §7 default values for lifecycle and browsing', () => {
     // lifecycle
-    expect(DEFAULTS.lifecycle.closeAction).toBe('minimize-to-tray');
     expect(DEFAULTS.lifecycle.restoreTabsOnLaunch).toBe(true);
 
     // browsing — assert UA equals the imported constant so a future UA bump

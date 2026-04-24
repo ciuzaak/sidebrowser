@@ -78,7 +78,6 @@ export interface EdgeDockSettings {
 }
 
 export interface LifecycleSettings {
-  closeAction: 'quit' | 'minimize-to-tray';
   restoreTabsOnLaunch: boolean;
 }
 

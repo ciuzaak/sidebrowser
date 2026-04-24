@@ -20,8 +20,6 @@ import {
 } from './window-bounds';
 import { IpcChannels } from '@shared/ipc-contract';
 import type { Settings, SettingsPatch } from '@shared/types';
-import { TrayManager, createElectronTrayBackend } from './tray-manager';
-import { resolveCloseAction } from './close-action-resolver';
 import { installApplicationMenu } from './keyboard-shortcuts';
 import { handleSecondInstance } from './single-instance';
 
@@ -31,8 +29,6 @@ if (!gotLock) {
   // app.quit() is async; exit immediately so the rest of app setup (createWindow, etc.) doesn't run.
   process.exit(0);
 }
-
-let isQuitting = false;
 
 function createWindow(initialBounds: Rectangle): BrowserWindow {
   const win = new BrowserWindow({
@@ -107,12 +103,6 @@ interface ElectronStoreInstance {
     key: 'bounds',
     value: { x: number; y: number; width: number; height: number },
   ): void;
-}
-
-function resolveTrayIconPath(): string {
-  return app.isPackaged
-    ? join(process.resourcesPath, 'tray', 'tray-32.png')
-    : join(__dirname, '../../resources/tray/tray-32.png');
 }
 
 app.whenReady().then(() => {
@@ -246,20 +236,6 @@ app.whenReady().then(() => {
     boundsPersister.markDirty(win.getBounds());
   });
 
-  // M7: close-action handler — intercept window close and hide instead of
-  // destroy when closeAction='minimize-to-tray' and app is not quitting.
-  win.on('close', (e) => {
-    const action = resolveCloseAction({
-      closeAction: settingsStore.get().lifecycle.closeAction,
-      isQuitting,
-    });
-    if (action === 'hide') {
-      e.preventDefault();
-      win.hide();
-    }
-    // 'destroy' → default close flow continues
-  });
-
   // 6. Live-apply fan-out. Fires on every settingsStore.update(). Spec §7 +
   // plan §Task 8 live-apply matrix: dim (restyle if active), mouse-leave
   // delay (swap via setDelayMs), window width/height (setBounds), and the
@@ -332,11 +308,8 @@ app.whenReady().then(() => {
       updateSettings: (p: SettingsPatch): Settings => settingsStore.update(p),
       getActiveViewBounds: () => viewManager.getActiveBoundsForTest(),
       flushWindowBounds: () => { boundsPersister.flush(); },
-      // M7 hooks.
       requestWindowClose: () => win.close(),
       getIsWindowVisible: () => !win.isDestroyed() && win.isVisible(),
-      setCloseAction: (v: 'quit' | 'minimize-to-tray') =>
-        settingsStore.update({ lifecycle: { closeAction: v } }),
     };
   } else {
     watcher.start();
@@ -371,20 +344,9 @@ app.whenReady().then(() => {
     }
   });
 
-  // M7: system tray — instantiate after win is ready, before before-quit handler.
-  const iconPath = resolveTrayIconPath();
-  const tray = new TrayManager({
-    backend: createElectronTrayBackend(iconPath),
-    iconPath,
-    onShow: () => { win.show(); win.focus(); },
-    onQuit: () => app.quit(),
-  });
-
   // 9. Before-quit: flush both bounds debounce and tab-save debounce so the
   // last rect/tab-state mutation always hits disk.
   app.on('before-quit', () => {
-    isQuitting = true;
-    tray.destroy();
     boundsPersister.flush();
     saver.flush();
   });
