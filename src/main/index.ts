@@ -22,6 +22,8 @@ import { IpcChannels } from '@shared/ipc-contract';
 import type { Settings, SettingsPatch } from '@shared/types';
 import { installApplicationMenu } from './keyboard-shortcuts';
 import { handleSecondInstance } from './single-instance';
+import { installMobileHeaderRewriter } from './mobile-emulation';
+import { getPersistentSession } from './session-manager';
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -126,6 +128,12 @@ app.whenReady().then(() => {
       mobileUserAgent: s.browsing.mobileUserAgent,
     };
   });
+  // M10: Sec-CH-UA-* 头改写。挂在 persistent session 上，按 viewManager 的 per-tab
+  // isMobile 状态决定改不改。必须在 ViewManager 之后、第一个 createTab 之前——
+  // seedTabs 在 did-finish-load 才跑，这里安全。
+  installMobileHeaderRewriter(getPersistentSession(), (wcId) =>
+    viewManager.getMobileEmulationState(wcId),
+  );
   registerIpcRouter(win, viewManager, settingsStore);
 
   // 2b. Hidden Application Menu — spec §15 keyboard shortcuts. Installed once
