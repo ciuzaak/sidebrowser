@@ -395,29 +395,23 @@ git commit -m "feat(main): add applyMobileEmulation/removeMobileEmulation wrappe
 
 **Files:** Modify `src/main/view-manager.ts`。
 
-### 设计
+### 实际 spike 结论（2026-04-27 执行后回填）
 
-把 `applyMobileEmulation` 接到 createTab，**仅 createTab，不动 setMobile**（Task 5 再加）。然后启 `pnpm dev`，开任意页面（about:blank 即可），按 F12 在 DevTools console 跑诊断脚本——确认四个信号是否全翻。
+预想的失败模式（信号没翻 → 升级 CDP）**没出现**——出现的是另一个失败模式：**`wc.enableDeviceEmulation` 在刚 `new` 出来还没 `loadURL` 的 WebContentsView 上同步死锁主进程**，等不存在的渲染端 ack。表现：所有 e2e（不只是新增的）都报 `getChromeWindow: chrome window (window.sidebrowser) not found within 10000ms`，主进程被冻死。
 
-**这是 spike：信号没全翻就 STOP，回报用户**。spec §6 的回退路径：
-- 第一档失败：把 `screenSize` / `viewSize` 改传当前窗口 contentBounds 的真实尺寸再试
-- 还失败：spike 失败，停下，回到设计阶段考虑混合 CDP 方案（接受 F12 互斥）
+**Spike 实测路径：**
+1. 按设计 §6 把 `applyMobileEmulation` 同步接到 `setUserAgent` 之后、`loadURL` 之前 → e2e 全挂
+2. 把参数从 0/0 改成真实 contentBounds → 仍挂（参数无关）
+3. 加 `try/catch` + 文件日志，发现 `[BEFORE]` 写入但 `[AFTER]` 没写 → 死锁定位
+4. 改成 `wc.once('did-start-loading', () => applyMobileEmulation(...))` → 全部 e2e 通过 ✓
 
-- [ ] **Step 1: createTab 加 applyMobileEmulation 调用**
+**结论：** 同步调用方式不可行；deferred 到 `did-start-loading` 是正解。设计 §6 已 amend。`applyMobileEmulation` 函数签名也加了必传 `screenSize` 参数（0/0 也死锁）。
 
-[src/main/view-manager.ts:117-126](src/main/view-manager.ts#L117-L126) 现状：
+### 设计（修订后）
 
-```ts
-this.window.contentView.addChildView(view);
-// Per spec §5.4: set UA before loadURL so the very first request uses the
-// correct (mobile-by-default) UA. desktopUa() reads app.userAgentFallback,
-// which requires app.whenReady() to have fired — all createTab call paths
-// (seedTabs under did-finish-load, setWindowOpenHandler, tab:create IPC)
-// originate post-whenReady, so this is safe.
-view.webContents.setUserAgent(
-  resolvedIsMobile ? defaults.mobileUserAgent : desktopUa(),
-);
-```
+把 `applyMobileEmulation` 接到 createTab，但**通过 `wc.once('did-start-loading', ...)` 监听器 defer**。仅 createTab，不动 setMobile（Task 5）。
+
+- [ ] **Step 1: createTab 加 applyMobileEmulation 调用（deferred to did-start-loading）**
 
 文件顶部加 import：
 
@@ -433,8 +427,15 @@ view.webContents.setUserAgent(
 );
 // M10: 翻 Chromium 内部 mobile flag。setUserAgent 只改 UA 字符串，
 // 不影响 (pointer:coarse) / userAgentData.mobile / 触摸——见 M10 design doc §1。
+//
+// 必须 defer 到 'did-start-loading'：在 fresh webContents 上同步调
+// enableDeviceEmulation 会死锁主进程（等不存在的渲染端 ack）。did-start-loading
+// 在渲染进程已起来、但首个 HTTP 响应到达前触发，emulation 能赶上首屏渲染。
 if (resolvedIsMobile) {
-  applyMobileEmulation(view.webContents);
+  view.webContents.once('did-start-loading', () => {
+    const b = this.window.getContentBounds();
+    applyMobileEmulation(view.webContents, { width: b.width, height: b.height });
+  });
 }
 ```
 
@@ -483,45 +484,22 @@ Expected: sidebrowser 起来，看到默认 about:blank tab。F12 打开 DevTool
 }
 ```
 
-- [ ] **Step 5: spike 决策点**
+- [ ] **Step 5: 信号验证延后到 Task 10 手动冒烟**
 
-- **如果四个关键信号（`uaDataMobile` / `pointerCoarse` / `hoverNone` / `hasTouch`）全部 true**：spike 成功，继续 Task 6。Step 6 直接进 commit。
-- **如果有任一关键信号是 false**：
-  - 第一次降级：把 Step 1 那段 applyMobileEmulation 调用之前临时改写——不调 mobile-emulation.ts 的版本，改成本地内联：
-    ```ts
-    if (resolvedIsMobile) {
-      const b = this.window.getContentBounds();
-      view.webContents.enableDeviceEmulation({
-        screenPosition: 'mobile',
-        screenSize: { width: b.width, height: b.height },
-        viewPosition: { x: 0, y: 0 },
-        deviceScaleFactor: 0,
-        viewSize: { width: b.width, height: b.height },
-        scale: 1,
-      });
-    }
-    ```
-    重新 `pnpm build && pnpm dev`，再跑 Step 4 的诊断。
-  - 第二次降级仍有信号 false：**STOP，回报用户**。结论用文字写清「哪几个信号没翻」+「试了 0/0 和真实尺寸两套都不行」+「需要决定是否接受混合 CDP 方案（F12 互斥）」。**不要继续 Task 5+**。
+E2E 跨不到 webContents 内部状态——`navigator.userAgentData.mobile` / `(pointer: coarse)` 等是否真翻成 mobile，由 Task 10 的 X.com 底部 tab 栏作为终极判据。Task 4 内只验"e2e 全绿且没死锁"，spike 成功。
 
-- [ ] **Step 6: spike 通过后回滚临时降级（如有）+ commit**
+如果 Task 10 X.com 仍显示 narrow desktop（mobile flag 没翻）：升级到混合 CDP 方案——保留 `enableDeviceEmulation` 用于触摸/媒体查询，再用 `webContents.debugger.attach` 调 CDP `Emulation.setUserAgentOverride` 带 `userAgentMetadata` 兜底 `userAgentData`（接受 F12 与 mobile 模式互斥）。
 
-如果 Step 5 走的是 0/0 直接通过：直接进 commit。
-如果走的是真实尺寸降级：把 view-manager.ts 里临时内联的代码改回调 `applyMobileEmulation(view.webContents)`，并把 `mobile-emulation.ts::applyMobileEmulation` 的参数从 0/0 改成读取 wc 所属 BrowserWindow 的 contentBounds——在函数签名上加一个 `screenSize: { width: number; height: number }` 入参，由 caller 传进来（保持函数纯，不让它依赖 wc 拿不到的 BrowserWindow 引用）。**这种情况下，Task 3 的 commit 也要 amend** 或者补一个 followup commit记录参数 shape 变化——选 followup commit（per global guardrails 不 amend）。
+- [ ] **Step 6: Commit**
 
 ```
-git add src/main/view-manager.ts
-git commit -m "feat(main): wire applyMobileEmulation into ViewManager.createTab"
+git add src/main/view-manager.ts src/main/mobile-emulation.ts
+git commit -m "feat(main): wire applyMobileEmulation into createTab via did-start-loading"
 ```
 
-如果有 mobile-emulation.ts 的参数 shape 调整（降级路径）：
+Commit message 里说明 spike 结论：同步调用死锁、defer 到 did-start-loading、screenSize 必传。
 
-```
-git add src/main/mobile-emulation.ts
-git commit -m "fix(main): pass real screenSize to enableDeviceEmulation when 0/0 doesn't flip mobile flag"
-```
-
-**完成 Task 4 时主动汇报：spike 结果（哪条路径通过、四个信号的实测值）**——后续 Task 是否能按 plan 走依赖这一点。
+**完成 Task 4 时主动汇报：spike 路径（同步死锁 → did-start-loading defer），e2e 通过状态。**
 
 ---
 
