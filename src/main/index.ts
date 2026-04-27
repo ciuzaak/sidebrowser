@@ -333,6 +333,13 @@ app.whenReady().then(() => {
       flushWindowBounds: () => { boundsPersister.flush(); },
       requestWindowClose: () => win.close(),
       getIsWindowVisible: () => !win.isDestroyed() && win.isVisible(),
+      // M11 zoom hooks.
+      getActiveZoomFactor: (): number => viewManager.getActiveWebContents()?.getZoomFactor() ?? 1.0,
+      emitZoomChange: (dir: 'in' | 'out'): void => {
+        const wc = viewManager.getActiveWebContents();
+        if (wc) wc.emit('zoom-changed', null, dir);
+      },
+      triggerResetZoom: (): void => { viewManager.resetActiveZoom(); },
     };
   } else {
     watcher.start();
