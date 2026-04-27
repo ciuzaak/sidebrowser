@@ -5,9 +5,14 @@
  * - Empty / whitespace → `about:blank`
  * - Already-qualified scheme (`http`, `https`, `about`, `chrome`, `file`, `data`) → passthrough
  * - Looks like a hostname (has a dot and no whitespace in the token) → prepend `https://`
- * - Otherwise → treat as search query, route to DuckDuckGo
+ * - Otherwise → treat as search query, substitute into `searchUrlTemplate`
+ *   (caller resolves the active engine's template from `Settings.search`).
+ *
+ * `searchUrlTemplate` MUST contain `{query}`. The caller's contract guarantees
+ * this — `clampSearch` rejects any engine whose template lacks the placeholder.
+ * url.ts is a pure string-transform layer and does not re-validate.
  */
-export function normalizeUrlInput(raw: string): string {
+export function normalizeUrlInput(raw: string, searchUrlTemplate: string): string {
   const input = raw.trim();
   if (input === '') return 'about:blank';
 
@@ -21,5 +26,5 @@ export function normalizeUrlInput(raw: string): string {
     return `https://${input}`;
   }
 
-  return `https://duckduckgo.com/?q=${encodeURIComponent(input)}`;
+  return searchUrlTemplate.replace('{query}', encodeURIComponent(input));
 }

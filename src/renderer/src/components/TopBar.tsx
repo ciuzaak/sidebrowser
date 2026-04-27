@@ -2,6 +2,7 @@ import { useState, type FormEvent, type ReactElement } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, Loader2, Layers, Smartphone, Monitor, Settings } from 'lucide-react';
 import { useActiveTab } from '../store/tab-store';
 import { useWindowStateStore } from '../store/window-state-store';
+import { useSettingsStore } from '../store/settings-store';
 import { normalizeUrlInput } from '@shared/url';
 
 interface TopBarProps {
@@ -19,6 +20,7 @@ export function TopBar({
 }: TopBarProps): ReactElement {
   const tab = useActiveTab();
   const hidden = useWindowStateStore((s) => s.hidden);
+  const settings = useSettingsStore((s) => s.settings);
   const [draft, setDraft] = useState<string>('');
   const [syncedUrl, setSyncedUrl] = useState<string>(tab?.url ?? '');
 
@@ -32,7 +34,12 @@ export function TopBar({
   const submit = (e: FormEvent): void => {
     e.preventDefault();
     if (!tab) return;
-    const url = normalizeUrlInput(draft);
+    const search = settings?.search;
+    // settings 未 hydrate 时兜底；hydrate 后用 active engine
+    const tpl =
+      search?.engines.find((eng) => eng.id === search.activeId)?.urlTemplate ??
+      'https://www.google.com/search?q={query}';
+    const url = normalizeUrlInput(draft, tpl);
     void window.sidebrowser.navigate(tab.id, url);
   };
 
