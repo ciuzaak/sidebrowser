@@ -8,13 +8,15 @@
 
 换句话说，这是一个"AI 主导开发"的实验项目，拿来给好奇这套工作流的人看的——不是产品级品质，是个人玩具，但它能用。
 
-当前版本：**v1.1.0（M9 milestone）**，Windows only。macOS 预计 v1.5 支持。
+当前版本：**v1.2.0（M11 milestone）**，Windows only。macOS 预计 v1.5 支持。
 
 ## 核心功能
 
 - **贴边自动隐藏**（左/右均可）：窗口收起后留 3px 触发条，鼠标悬停即呼出
 - **鼠标离开自动变暗/模糊**：离开窗口后触发暗化 + 模糊滤镜，强度和效果均可在设置里调
-- **手机 UA 模拟**（per-tab 可切换）：默认 iOS Safari UA，让大多数网页按手机版渲染
+- **手机模拟（M10 hybrid CDP）**：UA + Client Hints 头 + Chromium device emulation + CDP touch/pointer override，让 X.com / B 站等靠 Client Hints 路由的站点也按真移动版渲染
+- **可定制搜索引擎（M11）**：默认 Google，内置 4 项（Google / DuckDuckGo / Bing / 百度）+ 用户可添加/删除自定义条目（含 `{query}` 占位符的 URL 模板）
+- **网页缩放（M11）**：Ctrl+滚轮调整当前 tab 大小（每 tab 独立、50–300% / ±10% 步进），Ctrl+0 复位 100%
 - **登录态持久化**：所有 tab 共享 `persist:sidebrowser` session partition，cookies 跨重启保留
 - **始终置顶**：能盖住 F11 全屏浏览器和视频播放器
 - **单实例锁**：已有实例时双击不会再开一个
@@ -23,7 +25,7 @@
 
 ## 安装
 
-从 GitHub Releases 下载 `sidebrowser-Setup-1.1.0.exe` 直接运行。
+从 GitHub Releases 下载 `sidebrowser-Setup-1.2.0.exe` 直接运行。
 
 首次安装 Windows SmartScreen 会弹"未知发布者"警告，这是正常的（没做代码签名）。点**"更多信息"→"仍要运行"**即可。
 
@@ -32,7 +34,7 @@
 ```bash
 pnpm install
 pnpm build:installer
-# 产出 release/sidebrowser-Setup-1.1.0.exe
+# 产出 release/sidebrowser-Setup-1.2.0.exe
 ```
 
 运行环境要求：Node.js ≥ 20，pnpm ≥ 9，Windows 10/11。
@@ -62,17 +64,20 @@ pnpm lint         # ESLint
 | `Alt+←` / `Alt+→` | 后退 / 前进 |
 | `Ctrl+Tab` | 打开/关闭 tab 抽屉 |
 | `Ctrl+,` | 打开/关闭设置抽屉 |
+| `Ctrl+滚轮` | 缩放当前 tab（desktop 模式）|
+| `Ctrl+0` | 复位当前 tab 缩放至 100% |
 | `F12` | 打开/关闭 DevTools |
 
 ## 已知限制
 
-- **反移动端检测的站依然按桌面版渲染。** B 站、X/Twitter 等会主动识别设备信号，仅靠 UA + viewport 不够，完整的 `Emulation.setDeviceMetricsOverride` 计划在 v2。
+- **极端反移动端检测的站可能仍识别为桌面。** M10 用 hybrid CDP 翻 `userAgentData.mobile` / `(pointer:coarse)` / `(hover:none)` / `'ontouchstart' in window` + Sec-CH-UA-* 头，覆盖了大多数靠 UA + Client Hints + 媒体查询路由的站点（包括 X.com、B 站等）。但极端的 device fingerprinting（细到 GPU 型号 / 字体集 / 时钟偏移）仍可能被识别。
+- **Mobile tab（per-tab Mobile 开启时）的 Ctrl+滚轮 / Ctrl+0 不工作。** Chromium 的 device emulation 模式吃掉 Ctrl+wheel 事件（解释成模拟 pinch），且 `setZoomFactor` 被 emulation 锁死的 viewport scale 覆盖。Workaround：点 TopBar 的 Smartphone/Monitor 按钮切到 desktop 模式即可缩放。完整修复路径规划到 M11.1。
 - **不支持 macOS。** v1.5 计划加。
 - **关闭窗口即退出，没有系统托盘。**
 - **始终置顶对 DirectX exclusive fullscreen 无效**（极少数老游戏 / 部分 DRM 视频），这是 OS 层限制。
 - **无代码签名**，首次安装 SmartScreen 会叫，点"仍要运行"。
 - **无页内搜索、无下载 UI、无书签管理**。这些交给浏览器本身解决。
-- **图标是占位符**，v1.2 会换正式设计。
+- **图标是占位符**，后续版本会换正式设计。
 
 ## 技术栈
 
@@ -82,7 +87,8 @@ Electron + React 19 + TypeScript + Vitest + Playwright + electron-vite + Tailwin
 
 - 主设计 spec：`docs/superpowers/specs/2026-04-23-sidebrowser-design.md`
 - Milestone 计划文档：`docs/superpowers/plans/`
-- 最新 milestone spec（M9）：`docs/superpowers/specs/2026-04-24-m9-ux-stability-design.md`
+- M10 spec（mobile emulation 增强）：`docs/superpowers/specs/2026-04-27-mobile-emulation-clienthints-design.md`
+- M11 spec（搜索引擎 + 网页缩放）：`docs/superpowers/specs/2026-04-27-M11-search-and-zoom-design.md`
 
 ## 鸣谢
 
