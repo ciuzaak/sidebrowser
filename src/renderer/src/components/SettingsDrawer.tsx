@@ -576,11 +576,12 @@ function SearchEngineEditor({ engines, onAdd, onDelete }: SearchEngineEditorProp
   const [name, setName] = useState('');
   const [urlTemplate, setUrlTemplate] = useState('');
 
-  const valid = name.trim() !== '' && urlTemplate.includes('{query}');
+  const trimmedTemplate = urlTemplate.trim();
+  const valid = name.trim() !== '' && trimmedTemplate.includes('{query}');
 
   const submit = (): void => {
     if (!valid) return;
-    onAdd({ id: nanoid(), name: name.trim(), urlTemplate, builtin: false });
+    onAdd({ id: nanoid(), name: name.trim(), urlTemplate: trimmedTemplate, builtin: false });
     setName('');
     setUrlTemplate('');
     setExpanded(false);
