@@ -37,10 +37,15 @@ import type {
   LifecycleSettings,
   MouseLeaveSettings,
   SearchSettings,
+  SearchEngine,
   Settings,
   SettingsPatch,
   WindowSettings,
 } from '@shared/types';
+import {
+  BUILTIN_SEARCH_ENGINES,
+  BUILTIN_SEARCH_ENGINE_IDS,
+} from '@shared/settings-defaults';
 
 /**
  * `SettingsPatch` lives in `@shared/types` (moved in Task 4) because both the
@@ -180,18 +185,65 @@ function clampAppearance(
 }
 
 /**
- * STUB — Task 3 用 TDD 实现完整 6 不变量。当前实现仅"原样透传"足够让编译过 +
- * 现有 Settings/IPC 链路在新 section 下不崩溃；UI 还没接到 search 上，所以 stub
- * 行为暂时不会被外部调用。Task 3 完成后这里会被完全替换。
+ * Search section 的信任边界：所有从 IPC 入侵的 search patch 都过这一层。
+ * 6 步顺序对应 spec §4.1 的不变量。`current` 用于 activeId 跨 patch 校验
+ * （patch 删了当前 active 但没传 activeId 时，按 current.activeId 重新校验）。
  */
 function clampSearch(
   partial: Partial<SearchSettings>,
-  // current 在正式实现里会用，stub 阶段先标记为 unused 以满足 strict 编译
-  _current: SearchSettings,
+  current: SearchSettings,
 ): Partial<SearchSettings> {
   const out: Partial<SearchSettings> = {};
-  if (partial.engines !== undefined) out.engines = partial.engines;
-  if (partial.activeId !== undefined) out.activeId = partial.activeId;
+
+  // engines 字段处理
+  if (partial.engines !== undefined) {
+    // 1. 过滤无效条目
+    const valid = partial.engines.filter(
+      (e) =>
+        typeof e.name === 'string' &&
+        e.name.trim() !== '' &&
+        typeof e.urlTemplate === 'string' &&
+        e.urlTemplate.includes('{query}'),
+    );
+
+    // 2/3. 修正 builtin 标记 + 覆写内置项不可变字段
+    const normalized: SearchEngine[] = valid.map((e) => {
+      if (BUILTIN_SEARCH_ENGINE_IDS.has(e.id)) {
+        const canonical = BUILTIN_SEARCH_ENGINES.find((b) => b.id === e.id)!;
+        return { id: e.id, name: canonical.name, urlTemplate: canonical.urlTemplate, builtin: true };
+      }
+      return { id: e.id, name: e.name, urlTemplate: e.urlTemplate, builtin: false };
+    });
+
+    // 4. 按 id 去重，先到先得
+    const seen = new Set<string>();
+    const deduped = normalized.filter((e) => {
+      if (seen.has(e.id)) return false;
+      seen.add(e.id);
+      return true;
+    });
+
+    // 5. 重建 engines：4 个 builtins（按 BUILTIN_SEARCH_ENGINES 表序、canonical
+    // 内容）+ deduped 里所有 customs（保留用户输入序）。
+    // 因为步骤 3 已经把 deduped 里的 builtin 条目 canonical 化过，这里直接用表
+    // 重建 builtin section 是等价的（且自动覆盖"内置缺失需要补回"的情况）。
+    const customs = deduped.filter((e) => !e.builtin);
+    const orderedBuiltins = BUILTIN_SEARCH_ENGINES.map((b) => ({ ...b }));
+    out.engines = [...orderedBuiltins, ...customs];
+  }
+
+  // 6. activeId 校验
+  // 计算最终的 ids 集合：若本次 patch 改了 engines 用 out.engines；否则用 current.engines。
+  const finalEngines = out.engines ?? current.engines;
+  const finalIds = new Set(finalEngines.map((e) => e.id));
+
+  if (partial.activeId !== undefined) {
+    out.activeId = finalIds.has(partial.activeId) ? partial.activeId : 'google';
+  } else if (out.engines !== undefined && !finalIds.has(current.activeId)) {
+    // patch 删除了当前 active，但没显式传 activeId → 兜底 fallback
+    out.activeId = 'google';
+  }
+
   return out;
 }
 
@@ -201,11 +253,8 @@ function clampSearch(
 
 export function clampSettings(
   partial: SettingsPatch,
-  // `current` is part of the public signature for forward compatibility (e.g.
-  // future "diff against current to skip no-op writes" optimization). It is
-  // currently unused — preset coercion only ever reads from `partial`. The
-  // leading underscore opts out of `@typescript-eslint/no-unused-vars`.
-  _current: Settings,
+  // `current` is now consumed by clampSearch for activeId cross-patch validation.
+  current: Settings,
 ): SettingsPatch {
   const out: SettingsPatch = {};
 
@@ -225,7 +274,7 @@ export function clampSettings(
     out.appearance = clampAppearance(partial.appearance);
   }
   if (partial.search !== undefined) {
-    out.search = clampSearch(partial.search, _current.search);
+    out.search = clampSearch(partial.search, current.search);
   }
 
   return out;
