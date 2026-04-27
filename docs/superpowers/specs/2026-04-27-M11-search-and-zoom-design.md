@@ -387,6 +387,25 @@ UI 不必特殊处理：删除 → main 收到新 engines（少了一项）→ `
 - **搜索建议（搜索框下拉补全）** — 与浏览器历史一并归到 v2
 - **Ctrl++ / Ctrl+- 通过键盘 zoom** — 用户只要求 Ctrl+滚轮，不扩范围；要加只是 `keyboard-shortcuts.ts` 加两条，留给后续
 
+## 11.1 Mobile tab 的 zoom 已知不工作（M11 实测后发现）
+
+**Mobile tab（isMobile=true）上 Ctrl+滚轮和 Ctrl+0 都不生效。**
+
+**机制：**
+1. M10 的 `applyMobileEmulation` (`src/main/mobile-emulation.ts:81`) 调用 `wc.enableDeviceEmulation({ ..., scale: 1 })` 锁死 viewport scale=1.0。
+2. M10.5 的 `attachCdpEmulation` 在 `did-navigate` 上每次重发 `Emulation.setDeviceMetricsOverride({ ..., mobile: true })`，会把 `setZoomFactor` 置回。
+3. **Chromium 的 device emulation 模式吃掉 Ctrl+滚轮事件**（解释成"模拟设备 pinch"），`webContents.on('zoom-changed')` 根本不发 — 我们的整条 zoom-changed → setZoomFactor 链子从源头就没触发。
+
+**用户 workaround：** 在 mobile tab 里点 TopBar 的 Smartphone/Monitor 按钮切到 desktop 模式即可正常 zoom。
+
+**根治路径（留给 M11.1 单独里程碑）：**
+- 让 mobile tab 的 zoom 走 device emulation 的 `scale` 字段联动（`enableDeviceEmulation({ scale: zoomFactor })` + CDP `setDeviceMetricsOverride({ scale: zoomFactor })`），不走 `setZoomFactor`。
+- 事件源换成"在 mobile tab 注入 wheel listener" — preload script 或 `wc.executeJavaScript` 注入一段全局监听捕获 `wheel + ctrlKey`，preventDefault 后通过 `console.log(JSON.stringify(...))` + `wc.on('console-message')` 把事件回报到 main，main 改 emulation scale 重新发 enableDeviceEmulation。
+- Ctrl+0 复位时同步把 emulation scale 设回 1.0。
+- 重新评估 `zoomFactors: Map<tabId, number>` 在 mobile path 下的语义（值仍然是 zoom factor，但应用方式不同）。
+
+需求方不阻塞 M11 发布，M11.1 时再单独 brainstorm + spec + plan。
+
 ---
 
 ## 12. 文件改动清单（实现导航用）
