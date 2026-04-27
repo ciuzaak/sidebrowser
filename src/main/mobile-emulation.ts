@@ -56,18 +56,31 @@ export function parseUaForMetadata(ua: string): UaMetadata {
 /**
  * 翻 Chromium 内部 mobile flag —— 触摸 / (pointer:coarse) / (hover:none) /
  * userAgentData.mobile / 'ontouchstart' in window 一并按移动设备表现。
- * screenSize / viewSize 都传 0/0 让 Chromium 用真实窗口尺寸（用户调过窗口大小不冲突）。
- * deviceScaleFactor 0 = 用 OS 默认 DPR，不强行 @3x。
+ *
+ * **调用约束（M10 plan Task 4 spike 实测）：** caller 必须保证 `wc` 处于"渲染进程
+ * 已起来"状态，否则 enableDeviceEmulation 会同步死锁主进程等不存在的渲染端 ack。
+ * 安全的调用点：
+ *   - `wc.once('did-start-loading', ...)` 之后（渲染进程已 spawn，首个 HTTP 响应
+ *     之前——首屏 layout 就能用上 mobile flag）
+ *   - `wc.once('did-finish-load', ...)` 之后（更晚但更稳，需要紧跟一次 reload）
+ *   - 已经加载过页面的 wc（任何已 navigate 过的 wc，例如 setMobile toggle 路径）
+ * 不安全：刚 `new WebContentsView(...)` 出来、loadURL 还没调用的 wc。
+ *
+ * `screenSize` 传 host 窗口的 contentBounds（不传 0/0——0/0 在 Electron 41 下也
+ * 复现死锁）。`viewSize` 同步用相同值。`deviceScaleFactor: 0` = 用 OS 默认 DPR。
  *
  * 重复调用是覆盖式（最新参数生效），不会叠加。
  */
-export function applyMobileEmulation(wc: WebContents): void {
+export function applyMobileEmulation(
+  wc: WebContents,
+  screenSize: { width: number; height: number },
+): void {
   wc.enableDeviceEmulation({
     screenPosition: 'mobile',
-    screenSize: { width: 0, height: 0 },
+    screenSize,
     viewPosition: { x: 0, y: 0 },
     deviceScaleFactor: 0,
-    viewSize: { width: 0, height: 0 },
+    viewSize: screenSize,
     scale: 1,
   });
 }

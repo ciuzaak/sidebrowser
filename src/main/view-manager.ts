@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid';
 import { getPersistentSession } from './session-manager';
 import { desktopUa } from './user-agents';
 import { sanitizeUrl } from './url-validator';
+import { applyMobileEmulation } from './mobile-emulation';
 import type { Tab, TabsSnapshot } from '@shared/types';
 import { makeEmptyTab } from '@shared/types';
 
@@ -123,6 +124,19 @@ export class ViewManager {
     view.webContents.setUserAgent(
       resolvedIsMobile ? defaults.mobileUserAgent : desktopUa(),
     );
+    // M10: 翻 Chromium 内部 mobile flag。setUserAgent 只改 UA 字符串，
+    // 不影响 (pointer:coarse) / userAgentData.mobile / 触摸——见 M10 design doc §1。
+    //
+    // 必须 defer 到 'did-start-loading'：在 fresh webContents 上同步调
+    // enableDeviceEmulation 会死锁主进程（等不存在的渲染端 ack）。did-start-loading
+    // 在渲染进程已起来、但首个 HTTP 响应到达前触发，emulation 能赶上首屏渲染。
+    // 见 M10 plan Task 4 spike findings。
+    if (resolvedIsMobile) {
+      view.webContents.once('did-start-loading', () => {
+        const b = this.window.getContentBounds();
+        applyMobileEmulation(view.webContents, { width: b.width, height: b.height });
+      });
+    }
 
     const managed: ManagedTab = {
       view,
