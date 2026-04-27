@@ -3,11 +3,12 @@
  *
  * 集中三件事：
  *   1. UA → Client Hints metadata 推导（parseUaForMetadata，纯函数）
- *   2. Chromium 内部 mobile flag 开关（applyMobileEmulation / removeMobileEmulation，Task 3 加）
+ *   2. Chromium 内部 mobile flag 开关（applyMobileEmulation / removeMobileEmulation）
  *   3. session-level Sec-CH-UA-* 头改写（installMobileHeaderRewriter，Task 7 加）
  *
  * 设计文档：docs/superpowers/specs/2026-04-27-mobile-emulation-clienthints-design.md
  */
+import type { WebContents } from 'electron';
 
 export interface UaMetadata {
   /** Client Hints platform value, e.g. "iOS"、"Android"、"Windows"、"macOS"、"Linux"。出 sf-string 时用 `"${platform}"` 包引号。 */
@@ -50,4 +51,31 @@ export function parseUaForMetadata(ua: string): UaMetadata {
     return { platform: 'Linux', platformVersion: '', mobile: false };
   }
   return { platform: 'iOS', platformVersion: '', mobile: true };
+}
+
+/**
+ * 翻 Chromium 内部 mobile flag —— 触摸 / (pointer:coarse) / (hover:none) /
+ * userAgentData.mobile / 'ontouchstart' in window 一并按移动设备表现。
+ * screenSize / viewSize 都传 0/0 让 Chromium 用真实窗口尺寸（用户调过窗口大小不冲突）。
+ * deviceScaleFactor 0 = 用 OS 默认 DPR，不强行 @3x。
+ *
+ * 重复调用是覆盖式（最新参数生效），不会叠加。
+ */
+export function applyMobileEmulation(wc: WebContents): void {
+  wc.enableDeviceEmulation({
+    screenPosition: 'mobile',
+    screenSize: { width: 0, height: 0 },
+    viewPosition: { x: 0, y: 0 },
+    deviceScaleFactor: 0,
+    viewSize: { width: 0, height: 0 },
+    scale: 1,
+  });
+}
+
+/**
+ * 关掉 device emulation，回到 Chromium 默认（Windows 桌面）行为。
+ * 重复调用是空操作。
+ */
+export function removeMobileEmulation(wc: WebContents): void {
+  wc.disableDeviceEmulation();
 }
