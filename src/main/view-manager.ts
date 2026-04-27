@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid';
 import { getPersistentSession } from './session-manager';
 import { desktopUa } from './user-agents';
 import { sanitizeUrl } from './url-validator';
-import { applyMobileEmulation } from './mobile-emulation';
+import { applyMobileEmulation, removeMobileEmulation } from './mobile-emulation';
 import type { Tab, TabsSnapshot } from '@shared/types';
 import { makeEmptyTab } from '@shared/types';
 
@@ -213,18 +213,27 @@ export class ViewManager {
   }
 
   /**
-   * Toggle a tab between mobile and desktop UA. Per spec §5.4:
-   *   1. setUserAgent so the next request uses the new UA
-   *   2. updateTab so the renderer reflects the new isMobile (button state) immediately
+   * Toggle a tab between mobile and desktop UA. Per spec §5.4 + M10 design §6:
+   *   1. apply / remove device emulation so Chromium internal mobile flag flips
+   *      (touch / pointer:coarse / hover:none / userAgentData.mobile). Safe to call
+   *      synchronously here — wc has already navigated, renderer is alive.
+   *   2. setUserAgent so the next request uses the new UA
+   *   3. updateTab so the renderer reflects the new isMobile (button state) immediately
    *      and clears the stale favicon (page-favicon-updated will re-populate post-reload)
-   *   3. reloadIgnoringCache so the page re-fetches under the new UA without
-   *      serving a cached response tied to the previous UA
+   *   4. reloadIgnoringCache so the page re-fetches under the new UA + Client Hints
+   *      without serving a cached response tied to the previous UA
    */
   setMobile(id: string, isMobile: boolean): void {
     const managed = this.tabs.get(id);
     if (!managed) return;
     const wc = managed.view.webContents;
     const defaults = this.getBrowsingDefaults();
+    if (isMobile) {
+      const b = this.window.getContentBounds();
+      applyMobileEmulation(wc, { width: b.width, height: b.height });
+    } else {
+      removeMobileEmulation(wc);
+    }
     wc.setUserAgent(isMobile ? defaults.mobileUserAgent : desktopUa());
     this.updateTab(id, { isMobile, favicon: null });
     wc.reloadIgnoringCache();
