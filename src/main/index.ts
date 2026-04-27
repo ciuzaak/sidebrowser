@@ -149,6 +149,7 @@ app.whenReady().then(() => {
     onGoBack: () => { viewManager.goBackActive(); },
     onGoForward: () => { viewManager.goForwardActive(); },
     onToggleDevTools: () => { viewManager.toggleDevToolsActive(); },
+    onResetZoom: () => { viewManager.resetActiveZoom(); },
     emitToRenderer: (action) => {
       if (!win.isDestroyed()) win.webContents.send(IpcChannels.chromeShortcut, { action });
     },

@@ -16,6 +16,7 @@ function makeDeps(): ShortcutDeps & {
     onGoBack: ReturnType<typeof vi.fn>;
     onGoForward: ReturnType<typeof vi.fn>;
     onToggleDevTools: ReturnType<typeof vi.fn>;
+    onResetZoom: ReturnType<typeof vi.fn>;
     emitToRenderer: ReturnType<typeof vi.fn>;
   };
 } {
@@ -25,6 +26,7 @@ function makeDeps(): ShortcutDeps & {
   const onGoBack = vi.fn();
   const onGoForward = vi.fn();
   const onToggleDevTools = vi.fn();
+  const onResetZoom = vi.fn();
   const emitToRenderer = vi.fn();
   return {
     onNewTab,
@@ -33,6 +35,7 @@ function makeDeps(): ShortcutDeps & {
     onGoBack,
     onGoForward,
     onToggleDevTools,
+    onResetZoom,
     emitToRenderer,
     spies: {
       onNewTab,
@@ -41,6 +44,7 @@ function makeDeps(): ShortcutDeps & {
       onGoBack,
       onGoForward,
       onToggleDevTools,
+      onResetZoom,
       emitToRenderer,
     },
   };
@@ -71,8 +75,8 @@ function getSubmenu(
 
 describe('buildShortcutMenuTemplate', () => {
   // ── Test 1: Structure ─────────────────────────────────────────────────────
-  it('returns exactly one hidden top-level item with 10 submenu entries', () => {
-    // Spec §15 defines 8 logical shortcuts. The menu template has 10 physical
+  it('returns exactly one hidden top-level item with 11 submenu entries', () => {
+    // Spec §15 defines 9 logical shortcuts. The menu template has 11 physical
     // entries because:
     //  - Ctrl+R and F5 are two separate items that share onReloadActive
     //    (Electron cannot accept OR-accelerators on a single item).
@@ -85,7 +89,7 @@ describe('buildShortcutMenuTemplate', () => {
     expect(top.visible).toBe(false);
 
     const submenu = getSubmenu(template);
-    expect(submenu).toHaveLength(10);
+    expect(submenu).toHaveLength(11);
   });
 
   // ── Test 2: Accelerators ──────────────────────────────────────────────────
@@ -105,6 +109,7 @@ describe('buildShortcutMenuTemplate', () => {
       ['Forward', 'Alt+Right'],
       ['Toggle Tab Drawer', 'CmdOrCtrl+Tab'],
       ['Toggle Settings', 'CmdOrCtrl+,'],
+      ['Reset Zoom', 'CmdOrCtrl+0'],
       ['Toggle DevTools', 'F12'],
     ];
     expect(submenu).toHaveLength(expected.length);
@@ -129,7 +134,8 @@ describe('buildShortcutMenuTemplate', () => {
       [4, 'onReloadActive'],
       [5, 'onGoBack'],
       [6, 'onGoForward'],
-      [9, 'onToggleDevTools'],
+      [9, 'onResetZoom'],
+      [10, 'onToggleDevTools'],
     ];
     for (const [idx] of directCases) {
       const item = submenu[idx];
@@ -142,6 +148,7 @@ describe('buildShortcutMenuTemplate', () => {
     expect(deps.spies.onReloadActive).toHaveBeenCalledTimes(2); // Ctrl+R + F5
     expect(deps.spies.onGoBack).toHaveBeenCalledTimes(1);
     expect(deps.spies.onGoForward).toHaveBeenCalledTimes(1);
+    expect(deps.spies.onResetZoom).toHaveBeenCalledTimes(1);
     expect(deps.spies.onToggleDevTools).toHaveBeenCalledTimes(1);
   });
 
@@ -171,6 +178,7 @@ describe('buildShortcutMenuTemplate', () => {
     expect(deps.spies.onReloadActive).not.toHaveBeenCalled();
     expect(deps.spies.onGoBack).not.toHaveBeenCalled();
     expect(deps.spies.onGoForward).not.toHaveBeenCalled();
+    expect(deps.spies.onResetZoom).not.toHaveBeenCalled();
     expect(deps.spies.onToggleDevTools).not.toHaveBeenCalled();
   });
 
@@ -184,6 +192,7 @@ describe('buildShortcutMenuTemplate', () => {
     expect(deps.spies.onGoBack).not.toHaveBeenCalled();
     expect(deps.spies.onGoForward).not.toHaveBeenCalled();
     expect(deps.spies.onToggleDevTools).not.toHaveBeenCalled();
+    expect(deps.spies.onResetZoom).not.toHaveBeenCalled();
     expect(deps.spies.emitToRenderer).not.toHaveBeenCalled();
   });
 });

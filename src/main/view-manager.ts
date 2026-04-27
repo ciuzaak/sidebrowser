@@ -328,6 +328,15 @@ export class ViewManager {
     this.getActiveWebContents()?.toggleDevTools();
   }
 
+  /** Ctrl+0 handler. Resets the active tab's zoom to 100%. No-op when no tab is active. */
+  resetActiveZoom(): void {
+    if (!this.activeId) return;
+    const wc = this.getActiveWebContents();
+    if (!wc) return;
+    this.zoomFactors.set(this.activeId, 1.0);
+    wc.setZoomFactor(1.0);
+  }
+
   /**
    * Toggle the "suppressed" flag. While suppressed, every tab's view is
    * shrunk to `{0,0,0,0}` so a renderer-layer overlay (e.g. the M6 settings

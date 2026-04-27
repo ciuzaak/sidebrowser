@@ -18,14 +18,14 @@
  *     calls `Menu.setApplicationMenu`. Must be invoked exactly once, inside
  *     `app.whenReady()` — `setApplicationMenu` is app-wide, not per-window.
  *
- * Spec §15 lists 8 *logical* shortcut rows but the template has **10 physical
+ * Spec §15 lists 9 *logical* shortcut rows but the template has **11 physical
  * entries**:
  *
  *   - Ctrl+R and F5 both map to `onReloadActive` but must be two separate
  *     menu items because Electron cannot accept OR-accelerators on a single
  *     item.
  *   - F12 (Toggle DevTools) is listed on its own row and so counts as the
- *     eighth logical shortcut and the tenth physical entry.
+ *     ninth logical shortcut and the eleventh physical entry.
  *
  * The `CmdOrCtrl` prefix (as opposed to raw `Ctrl`) is the standard Electron
  * idiom. v1 ships Windows-only but the convention keeps a future macOS port
@@ -53,6 +53,8 @@ export interface ShortcutDeps {
   onGoForward: () => void;
   /** F12 — toggles the active tab's DevTools. */
   onToggleDevTools: () => void;
+  /** Ctrl+0 — resets the active tab's zoom to 100%. */
+  onResetZoom: () => void;
   /** Fires a spec §15 renderer-bound action (address-bar focus, drawer toggles). */
   emitToRenderer: (action: ShortcutAction) => void;
 }
@@ -72,6 +74,7 @@ export function buildShortcutMenuTemplate(deps: ShortcutDeps): MenuItemConstruct
     { label: 'Forward',           accelerator: 'Alt+Right',     click: () => deps.onGoForward() },
     { label: 'Toggle Tab Drawer', accelerator: 'CmdOrCtrl+Tab', click: () => deps.emitToRenderer('toggle-tab-drawer') },
     { label: 'Toggle Settings',   accelerator: 'CmdOrCtrl+,',   click: () => deps.emitToRenderer('toggle-settings-drawer') },
+    { label: 'Reset Zoom',        accelerator: 'CmdOrCtrl+0',   click: () => deps.onResetZoom() },
     { label: 'Toggle DevTools',   accelerator: 'F12',           click: () => deps.onToggleDevTools() },
   ];
 
