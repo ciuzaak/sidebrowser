@@ -6,6 +6,8 @@ import { sanitizeUrl } from './url-validator';
 import {
   applyMobileEmulation,
   removeMobileEmulation,
+  attachCdpEmulation,
+  detachCdpEmulation,
   parseUaForMetadata,
   type UaMetadata,
 } from './mobile-emulation';
@@ -129,17 +131,22 @@ export class ViewManager {
     view.webContents.setUserAgent(
       resolvedIsMobile ? defaults.mobileUserAgent : desktopUa(),
     );
-    // M10: 翻 Chromium 内部 mobile flag。setUserAgent 只改 UA 字符串，
-    // 不影响 (pointer:coarse) / userAgentData.mobile / 触摸——见 M10 design doc §1。
+    // M10 / M10.5: 三层 mobile 模拟。
+    //   1. enableDeviceEmulation：翻 Chromium 内部 mobile flag（viewport meta 解析等）
+    //   2. CDP setUserAgentOverride/setTouchEmulation/setEmitTouchEventsForMouse：
+    //      翻 navigator.userAgentData.mobile / (pointer:coarse) / (hover:none) /
+    //      'ontouchstart' in window / 触摸事件——这些 enableDeviceEmulation 不动
+    //   3. webRequest（在 index.ts 挂）：改 Sec-CH-UA-* HTTP 头
     //
     // 必须 defer 到 'did-start-loading'：在 fresh webContents 上同步调
-    // enableDeviceEmulation 会死锁主进程（等不存在的渲染端 ack）。did-start-loading
-    // 在渲染进程已起来、但首个 HTTP 响应到达前触发，emulation 能赶上首屏渲染。
-    // 见 M10 plan Task 4 spike findings。
+    // enableDeviceEmulation 会死锁主进程（M10 Task 4 spike findings）。CDP attach
+    // 也需要 wc 渲染端在线，同样 defer。
     if (resolvedIsMobile) {
       view.webContents.once('did-start-loading', () => {
         const b = this.window.getContentBounds();
         applyMobileEmulation(view.webContents, { width: b.width, height: b.height });
+        const ua = this.getBrowsingDefaults().mobileUserAgent;
+        void attachCdpEmulation(view.webContents, parseUaForMetadata(ua), ua);
       });
     }
 
@@ -236,7 +243,9 @@ export class ViewManager {
     if (isMobile) {
       const b = this.window.getContentBounds();
       applyMobileEmulation(wc, { width: b.width, height: b.height });
+      void attachCdpEmulation(wc, parseUaForMetadata(defaults.mobileUserAgent), defaults.mobileUserAgent);
     } else {
+      detachCdpEmulation(wc);
       removeMobileEmulation(wc);
     }
     wc.setUserAgent(isMobile ? defaults.mobileUserAgent : desktopUa());
@@ -427,12 +436,30 @@ export class ViewManager {
     const onFavicon = (_e: Electron.Event, favicons: string[]): void =>
       this.updateTab(id, { favicon: favicons[0] ?? null });
 
+    // M10.5: F12 DevTools 与 wc.debugger CDP attach 互斥（同一通道单客户端）。
+    // 用户开 F12 → 主动 detach 我们的 CDP 让 DevTools 接管；关 F12 → 如果 tab
+    // 仍是 mobile，重新 attach 恢复 emulation。重 attach 后页面已经渲染过，CDP
+    // override 对当前 DOM 不会重新触发——用户需要手动 reload 才能让页面重新评估
+    // userAgentData / 媒体查询。这是 design §16 接受的代价。
+    const onDevtoolsOpened = (): void => {
+      detachCdpEmulation(wc);
+    };
+    const onDevtoolsClosed = (): void => {
+      const tab = this.tabs.get(id)?.tab;
+      if (tab?.isMobile) {
+        const ua = this.getBrowsingDefaults().mobileUserAgent;
+        void attachCdpEmulation(wc, parseUaForMetadata(ua), ua);
+      }
+    };
+
     wc.on('did-start-loading', onStart);
     wc.on('did-stop-loading', onStop);
     wc.on('did-navigate', onNavigate);
     wc.on('did-navigate-in-page', onNavigate);
     wc.on('page-title-updated', onTitle);
     wc.on('page-favicon-updated', onFavicon);
+    wc.on('devtools-opened', onDevtoolsOpened);
+    wc.on('devtools-closed', onDevtoolsClosed);
     wc.setWindowOpenHandler(({ url }) => {
       // M2: open popups as new tabs rather than redirecting current (fixes M1 OAuth breakage).
       // Note: Electron has no API to unregister setWindowOpenHandler — it's implicitly cleaned
@@ -449,6 +476,8 @@ export class ViewManager {
       wc.off('did-navigate-in-page', onNavigate);
       wc.off('page-title-updated', onTitle);
       wc.off('page-favicon-updated', onFavicon);
+      wc.off('devtools-opened', onDevtoolsOpened);
+      wc.off('devtools-closed', onDevtoolsClosed);
     };
   }
 }
