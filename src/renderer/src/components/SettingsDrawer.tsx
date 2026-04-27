@@ -1,7 +1,9 @@
-import { RotateCcw, X } from 'lucide-react';
+import { RotateCcw, X, Plus } from 'lucide-react';
+import { useState } from 'react';
 import type { ChangeEvent, ReactElement, ReactNode } from 'react';
-import type { Settings, ThemeChoice } from '@shared/types';
-import { DEFAULTS } from '@shared/settings-defaults';
+import type { Settings, ThemeChoice, SearchEngine } from '@shared/types';
+import { DEFAULTS, BUILTIN_SEARCH_ENGINES } from '@shared/settings-defaults';
+import { nanoid } from 'nanoid';
 import { useSettingsStore } from '../store/settings-store';
 
 /**
@@ -383,6 +385,61 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
             />
           </div>
         </Section>
+
+        {/* ── 7. Search ────────────────────────────────────────── */}
+        <Section
+          title="Search"
+          rightHeader={
+            <ResetIcon
+              show={
+                settings.search.engines.length > BUILTIN_SEARCH_ENGINES.length ||
+                settings.search.activeId !== 'google'
+              }
+              onClick={() =>
+                void update({
+                  search: {
+                    engines: BUILTIN_SEARCH_ENGINES.map((e) => ({ ...e })),
+                    activeId: 'google',
+                  },
+                })
+              }
+              testId="reset-search"
+            />
+          }
+        >
+          <Row label="Active engine">
+            <select
+              data-testid="settings-search-active"
+              value={settings.search.activeId}
+              onChange={(e) =>
+                void update({ search: { activeId: e.target.value } })
+              }
+              className="rounded bg-[var(--chrome-input-bg)] px-2 py-1 text-sm text-[var(--chrome-fg)] outline-none focus:ring-1 focus:ring-sky-500"
+            >
+              {settings.search.engines.map((eng) => (
+                <option key={eng.id} value={eng.id}>
+                  {eng.name}
+                </option>
+              ))}
+            </select>
+          </Row>
+
+          <SearchEngineEditor
+            engines={settings.search.engines}
+            onAdd={(eng) =>
+              void update({
+                search: { engines: [...settings.search.engines, eng] },
+              })
+            }
+            onDelete={(id) =>
+              void update({
+                search: {
+                  engines: settings.search.engines.filter((e) => e.id !== id),
+                },
+              })
+            }
+          />
+        </Section>
       </div>
     </div>
   );
@@ -390,12 +447,21 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
 
 // ── internal helpers ──────────────────────────────────────────────────
 
-function Section({ title, children }: { title: string; children: ReactNode }): ReactElement {
+function Section({
+  title,
+  children,
+  rightHeader,
+}: {
+  title: string;
+  children: ReactNode;
+  rightHeader?: ReactNode;
+}): ReactElement {
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="mb-1 border-b border-[var(--chrome-border)] pb-1 text-sm font-semibold text-[var(--chrome-fg)]">
-        {title}
-      </h3>
+      <div className="mb-1 flex items-center justify-between border-b border-[var(--chrome-border)] pb-1">
+        <h3 className="text-sm font-semibold text-[var(--chrome-fg)]">{title}</h3>
+        {rightHeader}
+      </div>
       {children}
     </section>
   );
@@ -496,5 +562,119 @@ function ResetIcon({
     >
       <RotateCcw size={14} />
     </button>
+  );
+}
+
+interface SearchEngineEditorProps {
+  engines: SearchEngine[];
+  onAdd: (engine: SearchEngine) => void;
+  onDelete: (id: string) => void;
+}
+
+function SearchEngineEditor({ engines, onAdd, onDelete }: SearchEngineEditorProps): ReactElement {
+  const [expanded, setExpanded] = useState(false);
+  const [name, setName] = useState('');
+  const [urlTemplate, setUrlTemplate] = useState('');
+
+  const valid = name.trim() !== '' && urlTemplate.includes('{query}');
+
+  const submit = (): void => {
+    if (!valid) return;
+    onAdd({ id: nanoid(), name: name.trim(), urlTemplate, builtin: false });
+    setName('');
+    setUrlTemplate('');
+    setExpanded(false);
+  };
+
+  const cancel = (): void => {
+    setName('');
+    setUrlTemplate('');
+    setExpanded(false);
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-medium text-[var(--chrome-fg)] opacity-80">Engines</label>
+      <ul data-testid="settings-search-engines" className="flex flex-col gap-1">
+        {engines.map((eng) => (
+          <li
+            key={eng.id}
+            className="flex items-center justify-between rounded px-2 py-1 text-sm hover:bg-[var(--chrome-hover)]"
+          >
+            <span className="text-[var(--chrome-fg)]">{eng.name}</span>
+            {eng.builtin ? (
+              <span className="text-xs text-[var(--chrome-muted)]">built-in</span>
+            ) : (
+              <button
+                type="button"
+                aria-label={`Delete ${eng.name}`}
+                data-testid={`settings-search-delete-${eng.id}`}
+                onClick={() => onDelete(eng.id)}
+                className="rounded p-1 text-[var(--chrome-muted)] hover:bg-[var(--chrome-hover)] hover:text-[var(--chrome-fg)]"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {!expanded ? (
+        <button
+          type="button"
+          data-testid="settings-search-add-toggle"
+          onClick={() => setExpanded(true)}
+          className="flex items-center gap-1 self-start rounded p-1 text-xs text-[var(--chrome-muted)] hover:bg-[var(--chrome-hover)] hover:text-[var(--chrome-fg)]"
+        >
+          <Plus size={14} /> Add custom engine
+        </button>
+      ) : (
+        <div className="flex flex-col gap-1.5 rounded border border-[var(--chrome-border)] bg-[var(--chrome-input-bg)] p-2">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-[var(--chrome-fg)] opacity-80">Name</label>
+            <input
+              type="text"
+              data-testid="settings-search-add-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              spellCheck={false}
+              className="rounded bg-[var(--chrome-bg)] px-2 py-1 text-sm text-[var(--chrome-fg)] outline-none focus:ring-1 focus:ring-sky-500"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-[var(--chrome-fg)] opacity-80">URL template</label>
+            <input
+              type="text"
+              data-testid="settings-search-add-template"
+              value={urlTemplate}
+              onChange={(e) => setUrlTemplate(e.target.value)}
+              placeholder="https://example.com/search?q={query}"
+              spellCheck={false}
+              className="rounded bg-[var(--chrome-bg)] px-2 py-1 font-mono text-xs text-[var(--chrome-fg)] outline-none focus:ring-1 focus:ring-sky-500"
+            />
+            <span className="text-xs text-[var(--chrome-muted)]">Must contain {'{query}'}</span>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              data-testid="settings-search-add-cancel"
+              onClick={cancel}
+              className="rounded px-2 py-1 text-xs text-[var(--chrome-fg)] hover:bg-[var(--chrome-hover)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              data-testid="settings-search-add-confirm"
+              onClick={submit}
+              disabled={!valid}
+              className="rounded bg-sky-600 px-2 py-1 text-xs text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
