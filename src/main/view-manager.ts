@@ -14,6 +14,25 @@ import {
 import type { Tab, TabsSnapshot } from '@shared/types';
 import { makeEmptyTab } from '@shared/types';
 
+// ---------------------------------------------------------------------------
+// Zoom helpers — M11 Task 8
+// ---------------------------------------------------------------------------
+
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 3.0;
+const ZOOM_STEP = 0.1;
+
+/**
+ * Pure helper for the zoom-changed handler. Computed step bounded by [0.5, 3.0]
+ * so the handler can be unit-tested without a real WebContents.
+ */
+export function nextZoomFactor(current: number, dir: 'in' | 'out'): number {
+  const delta = dir === 'in' ? +ZOOM_STEP : -ZOOM_STEP;
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, current + delta));
+}
+
+// ---------------------------------------------------------------------------
+
 /**
  * Getter closure the main bootstrap injects so ViewManager can read live
  * browsing defaults (UA + mobile flag) from SettingsStore at each createTab
@@ -47,6 +66,11 @@ export class ViewManager {
   private activeId: string | null = null;
   private chromeHeightPx = 0;
   private suppressed = false;
+  /**
+   * Per-tab zoom factor (1.0 = 100%). Default 1.0 is implicit (`get(...) ?? 1.0`).
+   * Map entries are removed on closeTab. Not persisted by design (spec §6.1).
+   */
+  private readonly zoomFactors = new Map<string, number>();
   private readonly tabUpdatedListeners = new Set<TabUpdatedListener>();
   private readonly snapshotListeners = new Set<SnapshotListener>();
   private readonly getBrowsingDefaults: BrowsingDefaultsGetter;
@@ -169,6 +193,7 @@ export class ViewManager {
   closeTab(id: string): void {
     const managed = this.tabs.get(id);
     if (!managed) return;
+    this.zoomFactors.delete(id);
 
     managed.detach();
     this.window.contentView.removeChildView(managed.view);
@@ -440,6 +465,12 @@ export class ViewManager {
         const b = this.window.getContentBounds();
         void attachCdpEmulation(wc, parseUaForMetadata(ua), ua, { width: b.width, height: b.height });
       }
+      // M11 zoom reapply: Chromium resets zoomFactor to 1.0 on did-navigate;
+      // reapply our stored value so per-tab zoom survives navigation.
+      const z = this.zoomFactors.get(id);
+      if (z !== undefined && z !== 1.0) {
+        wc.setZoomFactor(z);
+      }
     };
     const onTitle = (_e: Electron.Event, title: string): void => this.updateTab(id, { title });
     // Electron's page-favicon-updated supplies all discovered <link rel=icon>
@@ -472,6 +503,16 @@ export class ViewManager {
     wc.on('page-favicon-updated', onFavicon);
     wc.on('devtools-opened', onDevtoolsOpened);
     wc.on('devtools-closed', onDevtoolsClosed);
+
+    // M11: Ctrl+wheel zoom via Chromium's native zoom-changed event.
+    const onZoomChanged = (_e: Electron.Event, dir: 'in' | 'out'): void => {
+      const cur = this.zoomFactors.get(id) ?? 1.0;
+      const next = nextZoomFactor(cur, dir);
+      this.zoomFactors.set(id, next);
+      wc.setZoomFactor(next);
+    };
+    wc.on('zoom-changed', onZoomChanged);
+
     wc.setWindowOpenHandler(({ url }) => {
       // M2: open popups as new tabs rather than redirecting current (fixes M1 OAuth breakage).
       // Note: Electron has no API to unregister setWindowOpenHandler — it's implicitly cleaned
@@ -490,6 +531,7 @@ export class ViewManager {
       wc.off('page-favicon-updated', onFavicon);
       wc.off('devtools-opened', onDevtoolsOpened);
       wc.off('devtools-closed', onDevtoolsClosed);
+      wc.off('zoom-changed', onZoomChanged);
     };
   }
 }
