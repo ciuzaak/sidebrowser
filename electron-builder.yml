@@ -5,6 +5,14 @@ directories:
   output: release
   buildResources: resources
 
+# Trim Chromium locale .pak files. The chrome UI is English; right-click /
+# context-menu / error-page strings use the OS locale (zh-CN on Chinese
+# systems, en-US fallback elsewhere). Default is 100+ langs at ~47 MB
+# unpacked; trimming to 2 saves ~44 MB unpacked / ~15-20 MB in the .exe.
+electronLanguages:
+  - en-US
+  - zh-CN
+
 files:
   - "out/**/*"
   - "package.json"
