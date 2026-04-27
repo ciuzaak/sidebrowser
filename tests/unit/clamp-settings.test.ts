@@ -336,4 +336,21 @@ describe('clampSettings — search section', () => {
   it('returns no search field when partial.search === undefined', () => {
     expect(clampSettings({}, cur()).search).toBeUndefined();
   });
+
+  it('drops null and non-object entries in engines array (trust-boundary guard)', () => {
+    const result = clampSettings(
+      {
+        search: {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          engines: [null, undefined, 'string', { id: 'x' }, { id: 'y', name: 'Y', urlTemplate: 'https://y.com/?q={query}', builtin: false }] as any,
+        },
+      },
+      cur(),
+    );
+    // Only the last entry is well-formed (id+name+template+builtin); plus 4 builtins restored.
+    // null/undefined/'string' / { id:'x' only } all dropped.
+    expect(result.search!.engines!.length).toBe(5);
+    expect(result.search!.engines!.map((e) => e.id))
+      .toEqual([...BUILTIN_SEARCH_ENGINES.map((e) => e.id), 'y']);
+  });
 });

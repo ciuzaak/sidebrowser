@@ -200,6 +200,9 @@ function clampSearch(
     // 1. 过滤无效条目
     const valid = partial.engines.filter(
       (e) =>
+        e !== null &&
+        typeof e === 'object' &&
+        typeof e.id === 'string' &&
         typeof e.name === 'string' &&
         e.name.trim() !== '' &&
         typeof e.urlTemplate === 'string' &&
@@ -237,6 +240,9 @@ function clampSearch(
   const finalEngines = out.engines ?? current.engines;
   const finalIds = new Set(finalEngines.map((e) => e.id));
 
+  // Note: 'google' is always present in finalIds because step 5 unconditionally
+  // restores all 4 builtins. If BUILTIN_SEARCH_ENGINES order changes or 'google'
+  // is removed, this fallback assumption needs revisiting.
   if (partial.activeId !== undefined) {
     out.activeId = finalIds.has(partial.activeId) ? partial.activeId : 'google';
   } else if (out.engines !== undefined && !finalIds.has(current.activeId)) {
