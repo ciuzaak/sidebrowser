@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest';
-import { parseUaForMetadata } from '../../src/main/mobile-emulation';
+import { describe, it, expect, vi } from 'vitest';
+import {
+  parseUaForMetadata,
+  installMobileHeaderRewriter,
+  type UaMetadata,
+} from '../../src/main/mobile-emulation';
+import type { Session } from 'electron';
 import { MOBILE_UA } from '../../src/shared/settings-defaults';
 
 describe('parseUaForMetadata', () => {
@@ -92,5 +97,100 @@ describe('parseUaForMetadata', () => {
 
   it('iPhone match wins over Mac OS X (UA contains both: iPhone Safari includes "like Mac OS X")', () => {
     expect(parseUaForMetadata(MOBILE_UA).platform).toBe('iOS');
+  });
+});
+
+interface FakeRequestDetails {
+  webContentsId: number;
+  requestHeaders: Record<string, string>;
+}
+type CapturedListener = (
+  details: FakeRequestDetails,
+  cb: (resp: { cancel?: boolean; requestHeaders?: Record<string, string> }) => void,
+) => void;
+
+/** Build a Session-shaped fake whose webRequest.onBeforeSendHeaders captures
+ *  the listener so tests can invoke it directly. */
+function makeFakeSession(): { session: Session; getListener: () => CapturedListener | null } {
+  let listener: CapturedListener | null = null;
+  const session = {
+    webRequest: {
+      onBeforeSendHeaders: (cb: CapturedListener) => {
+        listener = cb;
+      },
+    },
+  } as unknown as Session;
+  return { session, getListener: () => listener };
+}
+
+const mobileMeta = (): UaMetadata => ({
+  platform: 'iOS',
+  platformVersion: '17.4',
+  mobile: true,
+});
+
+describe('installMobileHeaderRewriter', () => {
+  it('injects Sec-CH-UA-Mobile / Platform / Platform-Version when state returns metadata', () => {
+    const { session, getListener } = makeFakeSession();
+    installMobileHeaderRewriter(session, () => mobileMeta());
+
+    const cbResult = vi.fn();
+    getListener()!(
+      { webContentsId: 42, requestHeaders: { 'X-Existing': 'keep-me' } },
+      cbResult,
+    );
+
+    expect(cbResult).toHaveBeenCalledOnce();
+    const arg = cbResult.mock.calls[0]![0] as { requestHeaders: Record<string, string> };
+    expect(arg.requestHeaders['Sec-CH-UA-Mobile']).toBe('?1');
+    expect(arg.requestHeaders['Sec-CH-UA-Platform']).toBe('"iOS"');
+    expect(arg.requestHeaders['Sec-CH-UA-Platform-Version']).toBe('"17.4"');
+    expect(arg.requestHeaders['X-Existing']).toBe('keep-me');
+  });
+
+  it('omits Platform-Version header when platformVersion is empty', () => {
+    const { session, getListener } = makeFakeSession();
+    installMobileHeaderRewriter(session, () => ({
+      platform: 'iOS',
+      platformVersion: '',
+      mobile: true,
+    }));
+
+    const cbResult = vi.fn();
+    getListener()!({ webContentsId: 42, requestHeaders: {} }, cbResult);
+
+    const arg = cbResult.mock.calls[0]![0] as { requestHeaders: Record<string, string> };
+    expect(arg.requestHeaders['Sec-CH-UA-Mobile']).toBe('?1');
+    expect(arg.requestHeaders['Sec-CH-UA-Platform']).toBe('"iOS"');
+    expect('Sec-CH-UA-Platform-Version' in arg.requestHeaders).toBe(false);
+  });
+
+  it('passes through (callback empty {}) when state returns null', () => {
+    const { session, getListener } = makeFakeSession();
+    installMobileHeaderRewriter(session, () => null);
+
+    const cbResult = vi.fn();
+    getListener()!(
+      { webContentsId: 99, requestHeaders: { 'User-Agent': 'X' } },
+      cbResult,
+    );
+
+    expect(cbResult).toHaveBeenCalledWith({});
+  });
+
+  it('passes platform from metadata verbatim (e.g. Android)', () => {
+    const { session, getListener } = makeFakeSession();
+    installMobileHeaderRewriter(session, () => ({
+      platform: 'Android',
+      platformVersion: '14',
+      mobile: true,
+    }));
+
+    const cbResult = vi.fn();
+    getListener()!({ webContentsId: 1, requestHeaders: {} }, cbResult);
+
+    const arg = cbResult.mock.calls[0]![0] as { requestHeaders: Record<string, string> };
+    expect(arg.requestHeaders['Sec-CH-UA-Platform']).toBe('"Android"');
+    expect(arg.requestHeaders['Sec-CH-UA-Platform-Version']).toBe('"14"');
   });
 });

@@ -8,7 +8,7 @@
  *
  * 设计文档：docs/superpowers/specs/2026-04-27-mobile-emulation-clienthints-design.md
  */
-import type { WebContents } from 'electron';
+import type { Session, WebContents } from 'electron';
 
 export interface UaMetadata {
   /** Client Hints platform value, e.g. "iOS"、"Android"、"Windows"、"macOS"、"Linux"。出 sf-string 时用 `"${platform}"` 包引号。 */
@@ -91,4 +91,40 @@ export function applyMobileEmulation(
  */
 export function removeMobileEmulation(wc: WebContents): void {
   wc.disableDeviceEmulation();
+}
+
+/**
+ * 在 persistent session 上挂一次 onBeforeSendHeaders 处理器。
+ * `getMobileEmulationState` 是 ViewManager 暴露的 lookup（M10 Task 6）：
+ *   - null       → 该 wcId 是 desktop tab / 不是 tab，头不动
+ *   - UaMetadata → mobile tab，按元数据改 Sec-CH-UA-Mobile/Platform/Platform-Version
+ *
+ * 只动这三个头。Sec-CH-UA（品牌列表）让 Chromium 发真实值；User-Agent 由
+ * wc.setUserAgent 处理；Sec-CH-UA-Arch / Bitness / Model / Full-Version-List
+ * 不动（design §3）。
+ *
+ * 注册一次即可——session 是 app 全局单例，所有 tab 共享。注册时机：app.whenReady()
+ * 之后、ViewManager 创建之后、第一次 createTab 之前（详见 M10 Task 8）。
+ */
+export function installMobileHeaderRewriter(
+  session: Session,
+  getMobileEmulationState: (wcId: number) => UaMetadata | null,
+): void {
+  session.webRequest.onBeforeSendHeaders((details, callback) => {
+    // webContentsId 不存在的请求（例如某些 service worker / preload-阶段请求）
+    // 没法关联到 tab，直接放行不动头。
+    const wcId = details.webContentsId;
+    const meta = wcId === undefined ? null : getMobileEmulationState(wcId);
+    if (!meta) {
+      callback({});
+      return;
+    }
+    const headers = { ...details.requestHeaders };
+    headers['Sec-CH-UA-Mobile'] = meta.mobile ? '?1' : '?0';
+    headers['Sec-CH-UA-Platform'] = `"${meta.platform}"`;
+    if (meta.platformVersion) {
+      headers['Sec-CH-UA-Platform-Version'] = `"${meta.platformVersion}"`;
+    }
+    callback({ requestHeaders: headers });
+  });
 }
