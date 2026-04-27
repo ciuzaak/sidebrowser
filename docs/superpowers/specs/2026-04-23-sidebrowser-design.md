@@ -502,6 +502,7 @@ SettingsDrawer slider onChange
 | `Alt+←` / `Alt+→` | 后退 / 前进 | 应用内 |
 | `Ctrl+Tab` | 打开 tab 抽屉 | 应用内 |
 | `Ctrl+,` | 打开/关闭设置抽屉 | 应用内 |
+| `Ctrl+0` | 复位当前 tab 缩放至 100% | 应用内 |
 | `F12` | 打开当前 tab 的 DevTools | 应用内 |
 
 v1 **不**注册全局快捷键（避免与用户其他软件冲突）。召唤应用只能通过触发条（M9 已移除托盘图标）。
