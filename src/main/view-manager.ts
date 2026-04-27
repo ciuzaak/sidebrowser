@@ -3,7 +3,12 @@ import { nanoid } from 'nanoid';
 import { getPersistentSession } from './session-manager';
 import { desktopUa } from './user-agents';
 import { sanitizeUrl } from './url-validator';
-import { applyMobileEmulation, removeMobileEmulation } from './mobile-emulation';
+import {
+  applyMobileEmulation,
+  removeMobileEmulation,
+  parseUaForMetadata,
+  type UaMetadata,
+} from './mobile-emulation';
 import type { Tab, TabsSnapshot } from '@shared/types';
 import { makeEmptyTab } from '@shared/types';
 
@@ -310,6 +315,25 @@ export class ViewManager {
     if (!this.activeId) return null;
     const m = this.tabs.get(this.activeId);
     return m ? m.view.getBounds() : null;
+  }
+
+  /**
+   * Lookup helper for installMobileHeaderRewriter (M10 Task 7).
+   * 返回值语义：
+   *   null       → 该 wcId 对应 desktop tab / 不是 tab（chrome renderer 自己），头不动
+   *   UaMetadata → mobile tab，按这份元数据改 Sec-CH-UA-Mobile/Platform/Platform-Version
+   *
+   * 每次 webRequest 命中都跑一次。parse 是几个 regex，tab 数 ≤ 几个，UA 字符串
+   * 可被用户在 settings 改，实时 parse 比缓存失效逻辑简单（design §8）。
+   */
+  getMobileEmulationState(wcId: number): UaMetadata | null {
+    for (const [, m] of this.tabs) {
+      if (m.view.webContents.id === wcId) {
+        if (!m.tab.isMobile) return null;
+        return parseUaForMetadata(this.getBrowsingDefaults().mobileUserAgent);
+      }
+    }
+    return null;
   }
 
   getWebContentsByUrlSubstring(substring: string): Electron.WebContents | null {
