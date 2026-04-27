@@ -1,10 +1,13 @@
 /**
- * Mobile emulation 模块 — M10。
+ * Mobile emulation 模块 — M10 / M10.5（hybrid CDP）。
  *
- * 集中三件事：
+ * 集中四件事：
  *   1. UA → Client Hints metadata 推导（parseUaForMetadata，纯函数）
  *   2. Chromium 内部 mobile flag 开关（applyMobileEmulation / removeMobileEmulation）
- *   3. session-level Sec-CH-UA-* 头改写（installMobileHeaderRewriter，Task 7 加）
+ *   3. session-level Sec-CH-UA-* 头改写（installMobileHeaderRewriter）
+ *   4. CDP debugger-based emulation（attachCdpEmulation / detachCdpEmulation）
+ *      —— 翻 enableDeviceEmulation 不动的 JS 信号：navigator.userAgentData、
+ *      (pointer:coarse) / (hover:none) 媒体查询、'ontouchstart' in window、触摸事件
  *
  * 设计文档：docs/superpowers/specs/2026-04-27-mobile-emulation-clienthints-design.md
  */
@@ -91,6 +94,75 @@ export function applyMobileEmulation(
  */
 export function removeMobileEmulation(wc: WebContents): void {
   wc.disableDeviceEmulation();
+}
+
+/**
+ * CDP-based 移动模拟，补足 enableDeviceEmulation 不动的 JS 信号——
+ * `navigator.userAgentData.mobile/platform/platformVersion`、`(pointer: coarse)` /
+ * `(hover: none)` 媒体查询、`'ontouchstart' in window`、touch 事件。
+ *
+ * 跟 `webContents.debugger` 通道共用同一个 CDP session——同一时间只能挂一个客户端，
+ * 跟 F12 DevTools **互斥**。共存策略由 caller 通过 `devtools-opened` /
+ * `devtools-closed` 事件管理（M10.5 设计 §16）。
+ *
+ * 失败模式（`debugger.attach` 抛错）：通常是已经被另一个客户端挂着（例如 F12 已开）。
+ * 函数会吞 attach 失败、记录在 console.error；caller 不需要做 try/catch。
+ *
+ * 重复 attach 是 no-op（先检查 `isAttached()`）。CDP 命令是异步 promise，
+ * 函数返回 awaitable promise；caller 可以 `void`（fire-and-forget）或 `await`。
+ */
+export async function attachCdpEmulation(
+  wc: WebContents,
+  metadata: UaMetadata,
+  ua: string,
+): Promise<void> {
+  if (wc.debugger.isAttached()) return;
+  try {
+    wc.debugger.attach('1.3');
+  } catch (err) {
+    console.error('[sidebrowser] attachCdpEmulation: debugger.attach failed:', err);
+    return;
+  }
+  try {
+    await wc.debugger.sendCommand('Emulation.setUserAgentOverride', {
+      userAgent: ua,
+      platform: metadata.platform,
+      userAgentMetadata: {
+        brands: [],
+        fullVersionList: [],
+        platform: metadata.platform,
+        platformVersion: metadata.platformVersion,
+        architecture: '',
+        model: '',
+        mobile: metadata.mobile,
+      },
+    });
+    await wc.debugger.sendCommand('Emulation.setTouchEmulationEnabled', {
+      enabled: true,
+      maxTouchPoints: 5,
+    });
+    await wc.debugger.sendCommand('Emulation.setEmitTouchEventsForMouse', {
+      enabled: true,
+      configuration: 'mobile',
+    });
+  } catch (err) {
+    console.error('[sidebrowser] attachCdpEmulation: sendCommand failed:', err);
+    // 命令失败时仍保留 attach（部分生效好过完全失效）
+  }
+}
+
+/**
+ * 解除 CDP debugger attach；CDP 设的所有 override 自动失效。
+ * 重复 detach 是 no-op。wc 已 close 时静默吞错。
+ */
+export function detachCdpEmulation(wc: WebContents): void {
+  if (wc.isDestroyed()) return;
+  if (!wc.debugger.isAttached()) return;
+  try {
+    wc.debugger.detach();
+  } catch (err) {
+    console.error('[sidebrowser] detachCdpEmulation: debugger.detach failed:', err);
+  }
 }
 
 /**
