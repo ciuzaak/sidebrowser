@@ -93,6 +93,29 @@ export interface AppearanceSettings {
   theme: ThemeChoice;
 }
 
+/**
+ * 一个搜索引擎条目。Builtins 用稳定字符串 id（'google'/'duckduckgo'/'bing'/'baidu'），
+ * 自定义条目由 renderer 在 + 时用 nanoid 生成 id。`urlTemplate` 必须含 `{query}` 占位符
+ * 才能通过 main 侧 `clampSearch` 校验。`builtin` 字段以 main 侧的 `BUILTIN_SEARCH_ENGINE_IDS`
+ * 为权威——外部传入的 builtin 标记会被 clamp 修正。
+ */
+export interface SearchEngine {
+  id: string;
+  name: string;
+  urlTemplate: string;
+  builtin: boolean;
+}
+
+/**
+ * Search section（spec §3.1）。`engines` 数组前 N 个永远是 builtins（按
+ * `BUILTIN_SEARCH_ENGINES` 表的顺序），自定义追加在后。`activeId` 必须存在
+ * 于 `engines` 的 id 集合中，否则 main 侧 fallback 到 'google'。
+ */
+export interface SearchSettings {
+  engines: SearchEngine[];
+  activeId: string;
+}
+
 export interface Settings {
   window: WindowSettings;
   mouseLeave: MouseLeaveSettings;
@@ -101,6 +124,7 @@ export interface Settings {
   lifecycle: LifecycleSettings;
   browsing: BrowsingSettings;
   appearance: AppearanceSettings;
+  search: SearchSettings;
 }
 
 /**
@@ -119,4 +143,5 @@ export type SettingsPatch = {
   lifecycle?: Partial<LifecycleSettings>;
   browsing?: Partial<BrowsingSettings>;
   appearance?: Partial<AppearanceSettings>;
+  search?: Partial<SearchSettings>;
 };

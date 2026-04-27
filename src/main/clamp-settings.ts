@@ -36,6 +36,7 @@ import type {
   EdgeDockSettings,
   LifecycleSettings,
   MouseLeaveSettings,
+  SearchSettings,
   Settings,
   SettingsPatch,
   WindowSettings,
@@ -178,6 +179,22 @@ function clampAppearance(
   return out;
 }
 
+/**
+ * STUB — Task 3 用 TDD 实现完整 6 不变量。当前实现仅"原样透传"足够让编译过 +
+ * 现有 Settings/IPC 链路在新 section 下不崩溃；UI 还没接到 search 上，所以 stub
+ * 行为暂时不会被外部调用。Task 3 完成后这里会被完全替换。
+ */
+function clampSearch(
+  partial: Partial<SearchSettings>,
+  // current 在正式实现里会用，stub 阶段先标记为 unused 以满足 strict 编译
+  _current: SearchSettings,
+): Partial<SearchSettings> {
+  const out: Partial<SearchSettings> = {};
+  if (partial.engines !== undefined) out.engines = partial.engines;
+  if (partial.activeId !== undefined) out.activeId = partial.activeId;
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -206,6 +223,9 @@ export function clampSettings(
   if (partial.browsing !== undefined) out.browsing = clampBrowsing(partial.browsing);
   if (partial.appearance !== undefined) {
     out.appearance = clampAppearance(partial.appearance);
+  }
+  if (partial.search !== undefined) {
+    out.search = clampSearch(partial.search, _current.search);
   }
 
   return out;

@@ -61,6 +61,7 @@ function fillMissingSections(persisted: Partial<Settings>): Settings {
     lifecycle: persisted.lifecycle ?? DEFAULTS.lifecycle,
     browsing: persisted.browsing ?? DEFAULTS.browsing,
     appearance: persisted.appearance ?? DEFAULTS.appearance,
+    search: persisted.search ?? DEFAULTS.search,
   };
 }
 
@@ -93,6 +94,7 @@ function mergeSettingsPatch(current: Settings, patch: SettingsPatch): Settings {
     appearance: patch.appearance
       ? { ...current.appearance, ...patch.appearance }
       : current.appearance,
+    search: patch.search ? { ...current.search, ...patch.search } : current.search,
   };
 }
 
