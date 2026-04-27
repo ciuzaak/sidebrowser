@@ -72,6 +72,7 @@
 │  ├── EdgeDock        — 贴边检测、隐藏/唤出状态机 + 动画         │
 │  ├── DimController   — 鼠标离开时对活跃 tab 应用滤镜            │
 │  ├── SessionManager  — 持久化 session、Cookies、UA 切换         │
+│  ├── MobileEmulation — Chromium device emulation + CH 头改写  │
 │  ├── SettingsStore   — electron-store JSON                    │
 │  └── IpcRouter       — main ↔ renderer 的类型化 IPC            │
 └──────────────────────────────────────────────────────────────┘
@@ -266,7 +267,7 @@ interface Tab {
   ```
 - 桌面 UA：Electron 默认。
 - 切换：`webContents.setUserAgent(ua)` + `reloadIgnoringCache()`，保留 URL。
-- v1 **不用** CDP `Emulation.setDeviceMetricsOverride`——窗口本身就是手机尺寸，视口天然移动化，UA 切换对绝大多数站足够。
+- 现代站点（X.com 等）通过 Client Hints (`Sec-CH-UA-Mobile`、`Sec-CH-UA-Platform`、`navigator.userAgentData.*`) 与触摸/指针媒体查询决定布局，UA 字符串只是其中一个信号。`setUserAgent` 不足以让站点切真移动版。SessionManager（`mobile-emulation.ts` 模块，M10 引入）补两件事：(a) `wc.enableDeviceEmulation({ screenPosition: 'mobile' })` 翻 Chromium 内部 mobile flag → 触摸 / `(pointer:coarse)` / `(hover:none)` / `userAgentData.mobile` 全部按移动设备表现；(b) `session.webRequest.onBeforeSendHeaders` 改 `Sec-CH-UA-Mobile/Platform/Platform-Version`。Client Hints 元数据按 UA 字符串自动推导（iPhone/iPad → iOS、Android → Android、其他 → fallback iOS），用户改 `mobileUserAgent` 时自动同步。不用 CDP `webContents.debugger`，避免与 F12 DevTools 互斥。详见 [M10 design doc](../specs/2026-04-27-mobile-emulation-clienthints-design.md)。
 
 ---
 
@@ -425,7 +426,6 @@ SettingsDrawer slider onChange
 - 扩展程序
 - 自定义右键菜单（v2 加复制粘贴）
 - 页面内搜索（Ctrl+F）
-- CDP `Emulation.setDeviceMetricsOverride`
 - 组合式滤镜效果（v1 单选）
 
 ---
