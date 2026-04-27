@@ -297,21 +297,65 @@ E2E **不直接断言** `(pointer: coarse)` / `userAgentData.mobile`：那是 we
 | 风险 | 影响 | 缓解 |
 |---|---|---|
 | ~~`enableDeviceEmulation` 在 Electron 41 下不翻信号~~（spike 后已知不是这个问题） | — | 实测 spike 揭示真实问题是 IPC 同步死锁，已通过 `did-start-loading` defer 解决（§6.1） |
-| `enableDeviceEmulation` 翻了内部 mobile flag 但 X.com 仍按 narrow-desktop 渲染 | Approach A 不够 | Task 10 手动冒烟（x.com 底部 tab 栏）确认。如果仍是 narrow-desktop，升级到混合方案：保留 `enableDeviceEmulation` 用于触摸/媒体查询，再用 CDP `webContents.debugger` 调 `Emulation.setUserAgentOverride` 带 `userAgentMetadata` 兜底 `userAgentData`（接受 F12 与 mobile 模式互斥的代价） |
+| ~~`enableDeviceEmulation` 翻了内部 mobile flag 但 X.com 仍按 narrow-desktop 渲染~~ | — | M10 落地后实测：4 信号全 false，X.com 客户端 hydration 后退回桌面版。已升级到混合 CDP（§16），4 信号全 true |
 | webRequest 改头被某些站的 CSP / Strict-Transport 等机制干扰 | 部分站仍走桌面版 | onBeforeSendHeaders 是请求出站前改，不影响 CSP（CSP 是响应方向）。如果遇到问题，逐站排查 |
 | 用户自定义 UA 是某种没匹配的字符串（如 KaiOS / Tizen） | platform 落 fallback iOS，可能与 UA 不一致 | fallback 至少保 mobile=true，多数站点的"narrow desktop" vs "real mobile"分流主要看 mobile bit，platform 不一致一般不致命。极端站点出问题时建议用户改回支持的 UA |
 | 集成 / E2E 测试在 CI 上的 webRequest mock 不真实 | 测试通过 ≠ 真实环境工作 | 手动冒烟（X.com）作为最后一道关，由用户在合并前跑 |
 | `did-start-loading` defer 的 race：`once` 监听器附加 vs `loadURL` 发出 | 理论上若 loadURL 在 once 注册前就发了 did-start-loading，emulation 永远不上 | 实测安全——同步代码块内 `once` 先注册再 `loadURL`，事件总在下一 tick 才发 |
+| F12 与 CDP debugger 互斥：用户开 F12 时 mobile emulation 失效 | mobile tab 上开 F12 调试时，userAgentData / 触摸 / 媒体查询会回到桌面默认；UA 字符串 + Sec-CH-UA-* 头不受影响 | 用户关闭 F12 后 ViewManager 自动重 attach（`devtools-closed` 事件）。当前页面已渲染过的 frame 需要手动 reload 才能让新 frame 重新评估 mobile 信号 |
+| CDP `setTouchEmulationEnabled` 后 `'ontouchstart' in window` 在 fresh 导航中不生效 | 第一次 navigation 后 hasTouch 可能仍为 false（race：CDP 命令未完成时 render frame 已创建） | `did-navigate` 监听器幂等地重发 CDP 命令；下次 navigation 的 frame 创建前 CDP state 已就绪。E2E 加 1.5s settle wait 复现真实用户输入 URL 的延迟 |
+
+## 16. M10.5 Hybrid CDP 升级
+
+M10 落地后实测发现 §15 风险表第 2 行触发：`enableDeviceEmulation({ screenPosition: 'mobile' })` 只翻 blink 内部 mobile flag（影响 viewport meta 解析、滚动等），但**不**翻 JS 侧的 4 个 mobile 信号——`navigator.userAgentData.mobile` / `(pointer:coarse)` / `(hover:none)` / `'ontouchstart' in window` 全是 desktop 默认值。X.com 等站点服务端看 UA + Sec-CH-UA-* 给出移动 HTML，但客户端 hydration 时基于这 4 个信号重新评估，发现是桌面 → re-render 成桌面，导致"有时移动、有时桌面"的不稳定。
+
+升级方案保留 M10 全部基础设施（UA 字符串 + webRequest 头改写 + `enableDeviceEmulation`），叠加 4 条 CDP 命令：
+
+```ts
+wc.debugger.attach('1.3');
+wc.debugger.sendCommand('Emulation.setUserAgentOverride', {
+  userAgent: ua, platform,
+  userAgentMetadata: { brands: [], fullVersionList: [], platform, platformVersion, mobile: true, /* ... */ },
+});
+wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
+  width, height, deviceScaleFactor: 0, mobile: true,
+});  // ← 翻 (pointer:coarse) / (hover:none) 媒体查询
+wc.debugger.sendCommand('Emulation.setTouchEmulationEnabled', {
+  enabled: true, maxTouchPoints: 1,
+});  // ← 翻 'ontouchstart' in window（需 frame 创建前到位）
+```
+
+新增 API：`attachCdpEmulation(wc, metadata, ua, screenSize)` / `detachCdpEmulation(wc)`，幂等。
+
+### 16.1 调用时机
+
+| 场景 | 时机 |
+|---|---|
+| createTab + isMobile | `did-start-loading` once handler（同 M10）：`applyMobileEmulation` + `attachCdpEmulation` |
+| setMobile(true) | 同步：apply + attach + setUserAgent + reloadIgnoringCache |
+| setMobile(false) | 同步：detach CDP + remove emulation + setUserAgent + reloadIgnoringCache |
+| 每次 `did-navigate` | 重发 CDP 命令（idempotent）—— `'ontouchstart' in window` 在 window 对象创建时一次性确定，跨进程导航需新 frame 创建前 CDP state 就绪 |
+| `devtools-opened` | `detachCdpEmulation`：F12 接管 CDP 通道 |
+| `devtools-closed` | 如 tab 仍 mobile，重 attach；当前页 frame 需手动 reload 才能恢复 4 信号 |
+
+### 16.2 DevTools 共存代价
+
+`webContents.debugger` 与 F12 是同一 CDP 通道，单客户端。互斥的代价已通过事件监听把"硬冲突"软化为"打开 F12 → emulation 临时降级到 M10 基础（UA 字符串 + Sec-CH-UA-* 头还在）"。关闭 F12 后自动恢复，但当前页面需要 reload 才能让新 frame 重新评估 4 信号。
+
+### 16.3 验证
+
+E2E `tests/e2e/mobile-js-signals.spec.ts`：通过 `__sidebrowserTestHooks.getActiveWebContents()` + `wc.executeJavaScript` 跨主进程读取 4 个信号，断言 mobile 全 true / desktop 全 false。这是 M10 设计阶段做不到的内部状态验证（chrome renderer 跨不到 WebContentsView 进程），M10.5 通过 main-process bridge 解决。
 
 ---
 
 ## Definition of Done
 
-- ✅ `mobile-emulation.ts` 模块实现 + 单测全绿
-- ✅ ViewManager 三处改动 + 集成测试覆盖 createTab/setMobile 路径
+- ✅ `mobile-emulation.ts` 模块实现 + 单测全绿（15 单测）
+- ✅ ViewManager 改动 + createTab/setMobile/devtools-opened/devtools-closed/did-navigate 路径覆盖
 - ✅ `installMobileHeaderRewriter` 在 index.ts 启动顺序中正确挂载
-- ✅ E2E 三个用例（默认 mobile 头 / 切 desktop / 改 UA 推导平台）全绿
-- ✅ 手动冒烟（用户负责）：x.com 底部 tab 栏出现、切 desktop 恢复桌面、F12 不冲突
-- ✅ Spec §5.4 / §11 / §4.1 同步修订
-- ✅ `pnpm typecheck / lint / test / test:e2e / build` 全绿
+- ✅ M10 E2E（mobile-clienthints）：Sec-CH-UA-* 头注入与 desktop 取消
+- ✅ M10.5 E2E（mobile-js-signals）：4 个 JS 信号 mobile→all true / desktop→all false
+- ✅ 手动冒烟（用户负责）：x.com 底部 tab 栏稳定出现（不再 flake）、切 desktop 恢复桌面、F12 与 mobile 临时互斥但能共存
+- ✅ Spec §5.4 / §11 / §4.1 / §16 修订
+- ✅ `pnpm typecheck / lint / test / test:e2e / build` 全绿（215 unit + 23 e2e）
 - ✅ `m10-mobile-emulation-clienthints` tag 打上（用户确认手动冒烟通过后）
