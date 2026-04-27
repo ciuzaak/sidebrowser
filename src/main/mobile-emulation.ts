@@ -105,6 +105,10 @@ export function removeMobileEmulation(wc: WebContents): void {
  * 跟 F12 DevTools **互斥**。共存策略由 caller 通过 `devtools-opened` /
  * `devtools-closed` 事件管理（M10.5 设计 §16）。
  *
+ * `screenSize` 给 `setDeviceMetricsOverride` 用——CDP 这条要求显式 width/height +
+ * `mobile: true`，是翻 `(pointer:coarse)` / `(hover:none)` 媒体查询的关键命令
+ * （Puppeteer iPhone emulation 同款 4 命令组合）。
+ *
  * 失败模式（`debugger.attach` 抛错）：通常是已经被另一个客户端挂着（例如 F12 已开）。
  * 函数会吞 attach 失败、记录在 console.error；caller 不需要做 try/catch。
  *
@@ -115,13 +119,18 @@ export async function attachCdpEmulation(
   wc: WebContents,
   metadata: UaMetadata,
   ua: string,
+  screenSize: { width: number; height: number },
 ): Promise<void> {
-  if (wc.debugger.isAttached()) return;
-  try {
-    wc.debugger.attach('1.3');
-  } catch (err) {
-    console.error('[sidebrowser] attachCdpEmulation: debugger.attach failed:', err);
-    return;
+  // 幂等：已 attach 则跳过 attach 但仍重发命令（caller 在 did-navigate 上重调本函数
+  // 保证每次 fresh JS context 都看到 touch 状态——'ontouchstart' in window 在 window
+  // 对象创建时定下来，CDP 命令必须在 frame 渲染前到位才生效）。
+  if (!wc.debugger.isAttached()) {
+    try {
+      wc.debugger.attach('1.3');
+    } catch (err) {
+      console.error('[sidebrowser] attachCdpEmulation: debugger.attach failed:', err);
+      return;
+    }
   }
   try {
     await wc.debugger.sendCommand('Emulation.setUserAgentOverride', {
@@ -137,13 +146,15 @@ export async function attachCdpEmulation(
         mobile: metadata.mobile,
       },
     });
+    await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
+      width: screenSize.width,
+      height: screenSize.height,
+      deviceScaleFactor: 0,
+      mobile: true,
+    });
     await wc.debugger.sendCommand('Emulation.setTouchEmulationEnabled', {
       enabled: true,
-      maxTouchPoints: 5,
-    });
-    await wc.debugger.sendCommand('Emulation.setEmitTouchEventsForMouse', {
-      enabled: true,
-      configuration: 'mobile',
+      maxTouchPoints: 1,
     });
   } catch (err) {
     console.error('[sidebrowser] attachCdpEmulation: sendCommand failed:', err);

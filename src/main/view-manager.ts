@@ -146,7 +146,7 @@ export class ViewManager {
         const b = this.window.getContentBounds();
         applyMobileEmulation(view.webContents, { width: b.width, height: b.height });
         const ua = this.getBrowsingDefaults().mobileUserAgent;
-        void attachCdpEmulation(view.webContents, parseUaForMetadata(ua), ua);
+        void attachCdpEmulation(view.webContents, parseUaForMetadata(ua), ua, { width: b.width, height: b.height });
       });
     }
 
@@ -243,7 +243,7 @@ export class ViewManager {
     if (isMobile) {
       const b = this.window.getContentBounds();
       applyMobileEmulation(wc, { width: b.width, height: b.height });
-      void attachCdpEmulation(wc, parseUaForMetadata(defaults.mobileUserAgent), defaults.mobileUserAgent);
+      void attachCdpEmulation(wc, parseUaForMetadata(defaults.mobileUserAgent), defaults.mobileUserAgent, { width: b.width, height: b.height });
     } else {
       detachCdpEmulation(wc);
       removeMobileEmulation(wc);
@@ -424,12 +424,23 @@ export class ViewManager {
         canGoBack: wc.navigationHistory.canGoBack(),
         canGoForward: wc.navigationHistory.canGoForward(),
       });
-    const onNavigate = (_e: Electron.Event, url: string): void =>
+    const onNavigate = (_e: Electron.Event, url: string): void => {
       this.updateTab(id, {
         url,
         canGoBack: wc.navigationHistory.canGoBack(),
         canGoForward: wc.navigationHistory.canGoForward(),
       });
+      // M10.5: 每次 fresh navigation 重发 CDP 命令——'ontouchstart' in window 是
+      // window 对象创建时一次性确定的，CDP override 必须在新 frame 渲染前到位。
+      // 跨进程导航 / cross-origin 时 renderer 会 swap，CDP browser-side state 不一定
+      // 自动传递到新 frame，重发是兜底。attachCdpEmulation 幂等。
+      const tab = this.tabs.get(id)?.tab;
+      if (tab?.isMobile && wc.debugger.isAttached()) {
+        const ua = this.getBrowsingDefaults().mobileUserAgent;
+        const b = this.window.getContentBounds();
+        void attachCdpEmulation(wc, parseUaForMetadata(ua), ua, { width: b.width, height: b.height });
+      }
+    };
     const onTitle = (_e: Electron.Event, title: string): void => this.updateTab(id, { title });
     // Electron's page-favicon-updated supplies all discovered <link rel=icon>
     // candidates in priority order; we take the first as spec §5.3 dictates.
@@ -448,7 +459,8 @@ export class ViewManager {
       const tab = this.tabs.get(id)?.tab;
       if (tab?.isMobile) {
         const ua = this.getBrowsingDefaults().mobileUserAgent;
-        void attachCdpEmulation(wc, parseUaForMetadata(ua), ua);
+        const b = this.window.getContentBounds();
+        void attachCdpEmulation(wc, parseUaForMetadata(ua), ua, { width: b.width, height: b.height });
       }
     };
 
