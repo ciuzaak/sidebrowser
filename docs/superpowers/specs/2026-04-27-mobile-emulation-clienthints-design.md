@@ -107,7 +107,7 @@ applyMobileEmulation(wc: WebContents, screenSize: { width: number; height: numbe
 ```ts
 {
   screenPosition: 'mobile',                       // 翻 Chromium 内部 mobile flag → (pointer:coarse) / (hover:none) / touch / userAgentData.mobile
-  screenSize,                                     // caller 传 host 窗口的 contentBounds（不传 0/0——见下方 spike 实测）
+  screenSize,                                     // caller 传**实际 webview 尺寸**（contentBounds.height − chromeHeightPx），见 §6.4 修订
   viewPosition:  { x: 0, y: 0 },
   deviceScaleFactor: 0,                           // 0 = 用 OS 默认 DPR，不强行 @3x
   viewSize:      screenSize,                      // 与 screenSize 一致，使页面 layout viewport 与设备屏幕一致
@@ -138,13 +138,42 @@ removeMobileEmulation(wc: WebContents): void
 
 ### 6.2 spike 实测的 0/0 参数也死锁
 
-初版设计还提议 `screenSize: { width: 0, height: 0 }` 让 Chromium 用真实窗口尺寸。**实测下也复现死锁**——参数无关，是 IPC 时机问题。统一改成 caller 传 host 窗口的 contentBounds。
+初版设计还提议 `screenSize: { width: 0, height: 0 }` 让 Chromium 用真实窗口尺寸。**实测下也复现死锁**——参数无关，是 IPC 时机问题。统一改成 caller 传非零尺寸。
 
 **幂等性：** `enableDeviceEmulation` 重复调用是覆盖式（最新参数生效）；`disableDeviceEmulation` 重复调用空操作。外层不需要判当前状态。
 
 ### 6.3 信号验证状态
 
 E2E 跨不到 webContents 内部状态——目标信号 (`navigator.userAgentData.mobile` / `(pointer: coarse)` / `(hover: none)` / `'ontouchstart' in window`) 是否真翻成 mobile，由 Task 10 的手动冒烟（X.com 底部 tab 栏）作为终极判据。
+
+### 6.4 修订：screenSize 必须传实际 webview 尺寸（M10 后期发现）
+
+**症状：** mobile tab 上 `position: fixed; bottom: 0` 元素（典型代表：x.com 移动端
+底部导航栏）在默认窗口大小下不可见，把窗口拉长 ~chrome height 才显出来。
+
+**根因：** 原版 §6 把 `screenSize` / `viewSize` 都填为 host 窗口的
+`contentBounds`——但实际渲染区是 `contentBounds.height − chromeHeightPx`（chrome
+= TopBar + TabBar）。模拟视口比真实渲染区高一截，页面以为视口 800px、实际只画
+出顶部 750px，bottom-fixed 元素正好落在被裁的 50px 里。
+
+**修订后契约：**
+
+- `screenSize` / `viewSize` 必须传**实际 webview 像素尺寸** =
+  `contentBounds.height - chromeHeightPx`（width 不变）。`ViewManager.webviewSize()`
+  统一计算，所有 emulation 调用走它。
+- `Math.max(1, height − chromeHeightPx)` 兜底，防 chromeHeightPx 短暂大于
+  contentBounds.height 时传 0/负值（spec §6.2 0 死锁）。
+- **必须在尺寸变化时重发 emulation：**
+  - 窗口 resize：`applyBounds()` 之后跑 trailing-edge 150ms debounce →
+    `reapplyMobileEmulationAll()`（全量遍历 mobile tab 重发
+    `enableDeviceEmulation` + 已 attach 的 CDP `setDeviceMetricsOverride`）。
+  - `setChromeHeight`：同步调 `reapplyMobileEmulationAll()`（一次性事件，无需
+    debounce）。
+  - 普通 `applyBounds` 调用（activate/closeTab）不重发 emulation——这些路径不变 size。
+
+**回归测试：** `tests/e2e/mobile-viewport.spec.ts` 断言 mobile tab 的
+`window.innerHeight === view.getBounds().height`，并在 setWindowBounds 把窗口
+拉长后断言它依然成立（debounce 触发）。
 
 ## 7. `installMobileHeaderRewriter` 契约
 

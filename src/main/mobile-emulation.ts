@@ -69,8 +69,12 @@ export function parseUaForMetadata(ua: string): UaMetadata {
  *   - 已经加载过页面的 wc（任何已 navigate 过的 wc，例如 setMobile toggle 路径）
  * 不安全：刚 `new WebContentsView(...)` 出来、loadURL 还没调用的 wc。
  *
- * `screenSize` 传 host 窗口的 contentBounds（不传 0/0——0/0 在 Electron 41 下也
- * 复现死锁）。`viewSize` 同步用相同值。`deviceScaleFactor: 0` = 用 OS 默认 DPR。
+ * `screenSize` 传**实际 webview 尺寸**——host 窗口 contentBounds 减去 chrome
+ * (TopBar + TabBar) 高度。**不要**传整窗 contentBounds：模拟视口比实际渲染区
+ * 高一截会让 `position: fixed; bottom: 0` 元素掉到可视区外（M10 现场：x.com
+ * mobile 底部 nav 永远不可见，把窗口拉长 chromeHeight 那点才会露出来）。
+ * height 必须 ≥1，0 在 Electron 41 下复现死锁（spec §6.2）。`viewSize` 同步
+ * 用相同值。`deviceScaleFactor: 0` = 用 OS 默认 DPR。
  *
  * 重复调用是覆盖式（最新参数生效），不会叠加。
  */

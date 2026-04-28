@@ -75,8 +75,21 @@ export class ViewManager {
   private readonly snapshotListeners = new Set<SnapshotListener>();
   private readonly getBrowsingDefaults: BrowsingDefaultsGetter;
 
+  /**
+   * Trailing-edge debounce timer for re-applying mobile emulation after a
+   * resize. Window 'resize' fires many times during a drag; the CDP
+   * `setDeviceMetricsOverride` round-trip is not free, so we coalesce.
+   */
+  private emulationReapplyTimer: ReturnType<typeof setTimeout> | null = null;
+
   /** Stored resize handler so it can be removed in destroy(). */
-  private readonly onWindowResize = (): void => this.applyBounds();
+  private readonly onWindowResize = (): void => {
+    // Bounds must track the window immediately (otherwise the active view
+    // visibly lags during drag); emulation reapply can wait for the drag to
+    // settle.
+    this.applyBounds();
+    this.scheduleEmulationReapply();
+  };
 
   constructor(
     window: BrowserWindow,
@@ -123,6 +136,10 @@ export class ViewManager {
     if (clamped === this.chromeHeightPx) return;
     this.chromeHeightPx = clamped;
     this.applyBounds();
+    // Chrome height affects the effective webview height, so any mobile tab's
+    // emulated viewport must follow. Fires at most a few times per session
+    // (TopBar mount + occasional layout reflows) — no debouncing needed.
+    this.reapplyMobileEmulationAll();
   }
 
   /** Create a new tab, auto-activate it, return the full Tab object.
@@ -167,10 +184,10 @@ export class ViewManager {
     // 也需要 wc 渲染端在线，同样 defer。
     if (resolvedIsMobile) {
       view.webContents.once('did-start-loading', () => {
-        const b = this.window.getContentBounds();
-        applyMobileEmulation(view.webContents, { width: b.width, height: b.height });
+        const size = this.webviewSize();
+        applyMobileEmulation(view.webContents, size);
         const ua = this.getBrowsingDefaults().mobileUserAgent;
-        void attachCdpEmulation(view.webContents, parseUaForMetadata(ua), ua, { width: b.width, height: b.height });
+        void attachCdpEmulation(view.webContents, parseUaForMetadata(ua), ua, size);
       });
     }
 
@@ -266,9 +283,9 @@ export class ViewManager {
     const wc = managed.view.webContents;
     const defaults = this.getBrowsingDefaults();
     if (isMobile) {
-      const b = this.window.getContentBounds();
-      applyMobileEmulation(wc, { width: b.width, height: b.height });
-      void attachCdpEmulation(wc, parseUaForMetadata(defaults.mobileUserAgent), defaults.mobileUserAgent, { width: b.width, height: b.height });
+      const size = this.webviewSize();
+      applyMobileEmulation(wc, size);
+      void attachCdpEmulation(wc, parseUaForMetadata(defaults.mobileUserAgent), defaults.mobileUserAgent, size);
     } else {
       detachCdpEmulation(wc);
       removeMobileEmulation(wc);
@@ -388,6 +405,10 @@ export class ViewManager {
 
   destroy(): void {
     this.window.removeListener('resize', this.onWindowResize);
+    if (this.emulationReapplyTimer) {
+      clearTimeout(this.emulationReapplyTimer);
+      this.emulationReapplyTimer = null;
+    }
     for (const managed of this.tabs.values()) {
       managed.detach();
       this.window.contentView.removeChildView(managed.view);
@@ -398,6 +419,62 @@ export class ViewManager {
   }
 
   // ---------- private ----------
+
+  /**
+   * Effective webview pixel area = host window content bounds minus the
+   * chrome (TopBar + TabBar) height. This is what gets passed as `screenSize`
+   * / `viewSize` to enableDeviceEmulation and as `width`/`height` to the CDP
+   * `setDeviceMetricsOverride` — the emulated viewport must match the
+   * actually-rendered region, otherwise `position: fixed; bottom: 0`
+   * elements fall outside the visible area (M10 regression: x.com bottom nav
+   * permanently hidden in default-size windows).
+   *
+   * Height clamped to ≥1 because 0 deadlocks enableDeviceEmulation on
+   * Electron 41 (mobile-emulation spec §6.2). 1 is degenerate but safe; in
+   * practice chromeHeightPx is always well below contentBounds.height.
+   */
+  private webviewSize(): { width: number; height: number } {
+    const { width, height } = this.window.getContentBounds();
+    return { width, height: Math.max(1, height - this.chromeHeightPx) };
+  }
+
+  /**
+   * Re-issue mobile emulation (Electron `enableDeviceEmulation` + CDP
+   * `setDeviceMetricsOverride`) for every mobile tab against the current
+   * `webviewSize()`. Called when the size that emulation depends on
+   * changes — window resize (debounced via `scheduleEmulationReapply`) and
+   * chrome height change. Idempotent on tabs that have no debugger attached
+   * (CDP path is skipped in that case to avoid racing F12 DevTools, which
+   * holds the same channel exclusively).
+   */
+  private reapplyMobileEmulationAll(): void {
+    const size = this.webviewSize();
+    const ua = this.getBrowsingDefaults().mobileUserAgent;
+    const meta = parseUaForMetadata(ua);
+    for (const [, managed] of this.tabs) {
+      if (!managed.tab.isMobile) continue;
+      const wc = managed.view.webContents;
+      if (wc.isDestroyed()) continue;
+      applyMobileEmulation(wc, size);
+      if (wc.debugger.isAttached()) {
+        void attachCdpEmulation(wc, meta, ua, size);
+      }
+    }
+  }
+
+  /**
+   * Trailing-edge debounce: drag-resize fires 'resize' continuously, but
+   * `setDeviceMetricsOverride` is a CDP round-trip; coalesce to one reapply
+   * 150 ms after the last event. Long enough to outlast a normal drag,
+   * short enough that the user doesn't see a stale viewport after release.
+   */
+  private scheduleEmulationReapply(): void {
+    if (this.emulationReapplyTimer) clearTimeout(this.emulationReapplyTimer);
+    this.emulationReapplyTimer = setTimeout(() => {
+      this.emulationReapplyTimer = null;
+      this.reapplyMobileEmulationAll();
+    }, 150);
+  }
 
   private applyBounds(): void {
     // Suppressed: every tab shrinks to zero so the renderer-layer drawer
@@ -471,8 +548,7 @@ export class ViewManager {
       const tab = this.tabs.get(id)?.tab;
       if (tab?.isMobile && wc.debugger.isAttached()) {
         const ua = this.getBrowsingDefaults().mobileUserAgent;
-        const b = this.window.getContentBounds();
-        void attachCdpEmulation(wc, parseUaForMetadata(ua), ua, { width: b.width, height: b.height });
+        void attachCdpEmulation(wc, parseUaForMetadata(ua), ua, this.webviewSize());
       }
       // M11 zoom reapply: Chromium resets zoomFactor to 1.0 on did-navigate;
       // reapply our stored value so per-tab zoom survives navigation.
@@ -499,8 +575,7 @@ export class ViewManager {
       const tab = this.tabs.get(id)?.tab;
       if (tab?.isMobile) {
         const ua = this.getBrowsingDefaults().mobileUserAgent;
-        const b = this.window.getContentBounds();
-        void attachCdpEmulation(wc, parseUaForMetadata(ua), ua, { width: b.width, height: b.height });
+        void attachCdpEmulation(wc, parseUaForMetadata(ua), ua, this.webviewSize());
       }
     };
 
