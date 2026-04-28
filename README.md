@@ -8,7 +8,7 @@
 
 换句话说，这是一个"AI 主导开发"的实验项目，拿来给好奇这套工作流的人看的——不是产品级品质，是个人玩具，但它能用。
 
-当前版本：**v1.2.0（M11 milestone）**，Windows only。macOS 预计 v1.5 支持。
+Windows only。macOS 预计 v1.5 支持。
 
 ## 核心功能
 
@@ -25,7 +25,7 @@
 
 ## 安装
 
-从 GitHub Releases 下载 `sidebrowser-Setup-1.2.0.exe` 直接运行。
+去 [GitHub Releases 最新发布页](https://github.com/ciuzaak/sidebrowser/releases/latest) 下载 `sidebrowser-Setup-<version>.exe` 直接运行。
 
 首次安装 Windows SmartScreen 会弹"未知发布者"警告，这是正常的（没做代码签名）。点**"更多信息"→"仍要运行"**即可。
 
@@ -34,7 +34,7 @@
 ```bash
 pnpm install
 pnpm build:installer
-# 产出 release/sidebrowser-Setup-1.2.0.exe
+# 产出 release/sidebrowser-Setup-<version>.exe，<version> 取自 package.json
 ```
 
 运行环境要求：Node.js ≥ 20，pnpm ≥ 9，Windows 10/11。
