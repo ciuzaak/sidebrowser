@@ -455,24 +455,24 @@ historyChanged: 'history:changed',       // M→R 广播
 
 ### 8.1 单元（vitest）
 
-- `history-store.test.ts`
+- `tests/unit/history-store.test.ts`
   - sanitize：丢弃缺字段 / 错 scheme / `visitCount < 1`
   - upsert：新插入返回 true；重访返回 false 且 `visitCount` 自增、`lastVisitedAt` 更新、`firstVisitedAt` 不变
   - `patchTitle('')` 不覆盖；`patchTitle('foo')` 覆盖
   - eviction：插入第 501 条触发 LRU
   - debounce：连续 3 次 upsert 只产生 1 次 backend.set
-- `history-recorder.test.ts`
+- `tests/unit/history-recorder.test.ts`
   - 跳过 about:blank / chrome: / file: / data:
   - `revokeFailed` 仅在本次是新插入时删
   - `revokeFailed` 后 `pending` 清空（再调一次不重复删）
   - `forgetTab` 清状态
-- `suggestion-ranker.test.ts`
+- `tests/unit/suggestion-ranker.test.ts`
   - tier 排序：URL 前缀 → URL substring → title substring
   - 同 tier 内 score 降序（构造 visitCount + age 组合验证）
   - 空 query 返回 `[]`
   - 大小写不敏感
   - `stripScheme` 让 "github" 匹配 `https://github.com`
-- `view-manager.test.ts`（已有）
+- `tests/unit/view-manager-history.test.ts`（新增；现有 `view-manager-zoom.test.ts` 是同套路的纯 Map/事件 mock 测试）
   - 增 case：传入 fake recorder，验证 `did-navigate` 调 `recordNavigation`、`did-fail-load (mainFrame, errorCode != -3)` 调 `revokeFailed`、`closeTab` 调 `forgetTab`
 
 ### 8.2 E2E（playwright）
@@ -557,7 +557,7 @@ input blur
 - `src/renderer/src/components/NewTab.tsx`
 - `src/renderer/src/components/AddressSuggestions.tsx`
 - `src/renderer/src/components/Favicon.tsx`
-- 测试：`src/main/history-store.test.ts`、`src/main/history-recorder.test.ts`、`src/main/suggestion-ranker.test.ts`
+- 测试：`tests/unit/history-store.test.ts`、`tests/unit/history-recorder.test.ts`、`tests/unit/suggestion-ranker.test.ts`
 - E2E：`tests/e2e/newtab.spec.ts`、`tests/e2e/autocomplete.spec.ts`
 
 **修改**
