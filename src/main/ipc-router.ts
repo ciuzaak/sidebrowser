@@ -2,6 +2,8 @@ import { ipcMain, type BrowserWindow, type IpcMainEvent } from 'electron';
 import { IpcChannels, type IpcContract } from '@shared/ipc-contract';
 import type { ViewManager } from './view-manager';
 import type { SettingsStore } from './settings-store';
+import type { HistoryStore } from './history-store';
+import { rankSuggestions, recentEntries } from './suggestion-ranker';
 
 /**
  * Wires up all ipcMain handlers in one place.
@@ -19,6 +21,7 @@ export function registerIpcRouter(
   window: BrowserWindow,
   viewManager: ViewManager,
   settingsStore: SettingsStore,
+  historyStore: HistoryStore,
 ): void {
   // M0 smoke-test ping.
   ipcMain.removeHandler(IpcChannels.appPing);
@@ -136,6 +139,55 @@ export function registerIpcRouter(
   window.once('closed', () => {
     ipcMain.removeListener(IpcChannels.viewSetSuppressed, onViewSetSuppressed);
   });
+
+  // History RPCs (M12).
+  ipcMain.removeHandler(IpcChannels.historyRecent);
+  ipcMain.handle(
+    IpcChannels.historyRecent,
+    (_event, payload: IpcContract[typeof IpcChannels.historyRecent]['request']) =>
+      historyStore.recent(payload.limit),
+  );
+
+  ipcMain.removeHandler(IpcChannels.historySuggest);
+  ipcMain.handle(
+    IpcChannels.historySuggest,
+    (_event, payload: IpcContract[typeof IpcChannels.historySuggest]['request']) => {
+      const q = payload.query.trim();
+      if (q === '') {
+        // Empty query (focus but no input): return recent 8 as Suggestions
+        // with tier=0 just so the wire shape is uniform — UI doesn't render
+        // the tier marker.
+        return recentEntries(historyStore.all(), 8).map((e) => ({
+          url: e.url,
+          title: e.title,
+          favicon: e.favicon,
+          tier: 0 as const,
+        }));
+      }
+      return rankSuggestions(historyStore.all(), q, Date.now());
+    },
+  );
+
+  // history:remove — fire-and-forget.
+  const onHistoryRemove = (
+    _event: IpcMainEvent,
+    payload: IpcContract[typeof IpcChannels.historyRemove]['request'],
+  ): void => {
+    historyStore.remove(payload.url);
+  };
+  ipcMain.on(IpcChannels.historyRemove, onHistoryRemove);
+  window.once('closed', () => {
+    ipcMain.removeListener(IpcChannels.historyRemove, onHistoryRemove);
+  });
+
+  // history:changed — broadcast on store mutation. Throttling lives in
+  // HistoryStore (16 ms); this fan-out is naturally rate-limited.
+  const offHistoryChanged = historyStore.onChanged(() => {
+    if (!window.isDestroyed()) {
+      window.webContents.send(IpcChannels.historyChanged, {});
+    }
+  });
+  window.once('closed', () => { offHistoryChanged(); });
 
   // Main → renderer broadcasts.
   viewManager.onTabUpdated((tab) => {

@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { IpcChannels, type IpcContract, type ShortcutAction } from '@shared/ipc-contract';
-import type { Settings, SettingsPatch, Tab, TabsSnapshot, WindowState } from '@shared/types';
+import type {
+  HistoryEntry, Settings, SettingsPatch, Suggestion, Tab, TabsSnapshot, WindowState,
+} from '@shared/types';
 
 const api = {
   // M0 smoke-test ping (kept for regression coverage).
@@ -102,6 +104,24 @@ const api = {
     const handler = (_e: unknown, v: { shouldUseDarkColors: boolean }): void => cb(v);
     ipcRenderer.on(IpcChannels.nativeThemeUpdated, handler);
     return () => { ipcRenderer.removeListener(IpcChannels.nativeThemeUpdated, handler); };
+  },
+
+  // History (M12)
+  historyRecent: (limit: number): Promise<HistoryEntry[]> =>
+    ipcRenderer.invoke(IpcChannels.historyRecent, { limit }),
+
+  historySuggest: (query: string): Promise<Suggestion[]> =>
+    ipcRenderer.invoke(IpcChannels.historySuggest, { query }),
+
+  historyRemove: (url: string): void => {
+    ipcRenderer.send(IpcChannels.historyRemove, { url });
+  },
+
+  /** Subscribe to history mutation pings. Returns unsubscribe. */
+  onHistoryChanged: (cb: () => void): (() => void) => {
+    const handler = (): void => cb();
+    ipcRenderer.on(IpcChannels.historyChanged, handler);
+    return () => ipcRenderer.off(IpcChannels.historyChanged, handler);
   },
 };
 

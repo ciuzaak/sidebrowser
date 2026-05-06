@@ -19,7 +19,9 @@ import {
   type WindowBoundsBackend,
 } from './window-bounds';
 import { IpcChannels } from '@shared/ipc-contract';
-import type { Settings, SettingsPatch } from '@shared/types';
+import type { HistoryEntry, Settings, SettingsPatch } from '@shared/types';
+import { HistoryStore, createElectronHistoryBackend } from './history-store';
+import { HistoryRecorder } from './history-recorder';
 import { installApplicationMenu } from './keyboard-shortcuts';
 import { handleSecondInstance } from './single-instance';
 import { installMobileHeaderRewriter } from './mobile-emulation';
@@ -119,6 +121,10 @@ app.whenReady().then(() => {
   const initial = settingsStore.get().window;
   const initialBounds = boundsPersister.loadOrDefault(initial.width, initial.height);
 
+  // 1b. History store + recorder (M12).
+  const historyStore = new HistoryStore(createElectronHistoryBackend());
+  const historyRecorder = new HistoryRecorder(historyStore);
+
   // 2. Window + ViewManager + IPC router.
   const win = createWindow(initialBounds);
   const viewManager = new ViewManager(win, () => {
@@ -127,14 +133,14 @@ app.whenReady().then(() => {
       defaultIsMobile: s.browsing.defaultIsMobile,
       mobileUserAgent: s.browsing.mobileUserAgent,
     };
-  });
+  }, historyRecorder);
   // M10: Sec-CH-UA-* 头改写。挂在 persistent session 上，按 viewManager 的 per-tab
   // isMobile 状态决定改不改。必须在 ViewManager 之后、第一个 createTab 之前——
   // seedTabs 在 did-finish-load 才跑，这里安全。
   installMobileHeaderRewriter(getPersistentSession(), (wcId) =>
     viewManager.getMobileEmulationState(wcId),
   );
-  registerIpcRouter(win, viewManager, settingsStore);
+  registerIpcRouter(win, viewManager, settingsStore, historyStore);
 
   // 2b. Hidden Application Menu — spec §15 keyboard shortcuts. Installed once
   // globally per-process (Menu.setApplicationMenu is app-wide, not per-window),
@@ -340,6 +346,9 @@ app.whenReady().then(() => {
         if (wc) wc.emit('zoom-changed', null, dir);
       },
       triggerResetZoom: (): void => { viewManager.resetActiveZoom(); },
+      // M12 history hooks.
+      seedHistory: (entries: HistoryEntry[]): void => historyStore.seed(entries),
+      getHistoryAll: (): HistoryEntry[] => historyStore.all(),
     };
   } else {
     watcher.start();
@@ -367,8 +376,8 @@ app.whenReady().then(() => {
           defaultIsMobile: s.browsing.defaultIsMobile,
           mobileUserAgent: s.browsing.mobileUserAgent,
         };
-      });
-      registerIpcRouter(newWin, newViewManager, settingsStore);
+      }, historyRecorder);
+      registerIpcRouter(newWin, newViewManager, settingsStore, historyStore);
       newWin.webContents.once('did-finish-load', () => {
         newViewManager.createTab('about:blank');
       });
@@ -380,6 +389,7 @@ app.whenReady().then(() => {
   app.on('before-quit', () => {
     boundsPersister.flush();
     saver.flush();
+    historyStore.flush();
   });
 }).catch((err: unknown) => {
   console.error('[sidebrowser] bootstrap failed:', err);
