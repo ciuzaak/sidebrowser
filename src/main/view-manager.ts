@@ -13,6 +13,67 @@ import {
 } from './mobile-emulation';
 import type { Tab, TabsSnapshot } from '@shared/types';
 import { makeEmptyTab } from '@shared/types';
+import type { HistoryRecorder } from './history-recorder';
+
+// ---------------------------------------------------------------------------
+// History recorder wiring — M12 Task 5
+// ---------------------------------------------------------------------------
+
+/**
+ * Bind history-recording listeners onto a webContents. Returns a detach
+ * closure that removes all four listeners. Kept as a free function so it is
+ * unit-testable with a fake EventEmitter — no BrowserWindow / WebContentsView
+ * required.
+ *
+ * `getCurrentUrl` is a closure (not a snapshot) because page-title-updated
+ * fires AFTER did-navigate has already updated the tab state — by the time
+ * the title arrives, the URL we want is the freshly-set one. Threading a
+ * snapshot at bind time would be wrong.
+ *
+ * `recorder = null` is a valid no-op binding (used in tests + future
+ * "history disabled" config paths).
+ */
+export function bindHistoryRecorderEvents(
+  tabId: string,
+  wc: Electron.WebContents,
+  recorder: HistoryRecorder | null,
+  getCurrentUrl: () => string,
+): () => void {
+  if (recorder === null) return () => {};
+
+  const onNavigate = (_e: Electron.Event, url: string): void => {
+    recorder.recordNavigation(tabId, url);
+  };
+  const onTitle = (_e: Electron.Event, title: string): void => {
+    recorder.patchTitle(getCurrentUrl(), title);
+  };
+  const onFavicon = (_e: Electron.Event, favicons: string[]): void => {
+    recorder.patchFavicon(getCurrentUrl(), favicons[0] ?? null);
+  };
+  const onFailLoad = (
+    _e: Electron.Event,
+    errorCode: number,
+    _desc: string,
+    _validatedURL: string,
+    isMainFrame: boolean,
+  ): void => {
+    if (!isMainFrame) return;
+    if (errorCode === -3) return;     // ABORTED — not a real failure
+    recorder.revokeFailed(tabId);
+  };
+
+  wc.on('did-navigate', onNavigate);
+  wc.on('page-title-updated', onTitle);
+  wc.on('page-favicon-updated', onFavicon);
+  wc.on('did-fail-load', onFailLoad);
+
+  return () => {
+    wc.off('did-navigate', onNavigate);
+    wc.off('page-title-updated', onTitle);
+    wc.off('page-favicon-updated', onFavicon);
+    wc.off('did-fail-load', onFailLoad);
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Zoom helpers — M11 Task 8
@@ -74,6 +135,7 @@ export class ViewManager {
   private readonly tabUpdatedListeners = new Set<TabUpdatedListener>();
   private readonly snapshotListeners = new Set<SnapshotListener>();
   private readonly getBrowsingDefaults: BrowsingDefaultsGetter;
+  private readonly recorder: HistoryRecorder | null;
 
   /**
    * Trailing-edge debounce timer for re-applying mobile emulation after a
@@ -94,9 +156,11 @@ export class ViewManager {
   constructor(
     window: BrowserWindow,
     getBrowsingDefaults: BrowsingDefaultsGetter,
+    recorder: HistoryRecorder | null = null,
   ) {
     this.window = window;
     this.getBrowsingDefaults = getBrowsingDefaults;
+    this.recorder = recorder;
     window.on('resize', this.onWindowResize);
     window.once('ready-to-show', () => this.applyBounds());
   }
@@ -211,6 +275,7 @@ export class ViewManager {
     const managed = this.tabs.get(id);
     if (!managed) return;
     this.zoomFactors.delete(id);
+    this.recorder?.forgetTab(id);
 
     managed.detach();
     this.window.contentView.removeChildView(managed.view);
@@ -597,6 +662,13 @@ export class ViewManager {
     };
     wc.on('zoom-changed', onZoomChanged);
 
+    const detachHistory = bindHistoryRecorderEvents(
+      id,
+      wc,
+      this.recorder,
+      () => this.tabs.get(id)?.tab.url ?? '',
+    );
+
     wc.setWindowOpenHandler(({ url }) => {
       // M2: open popups as new tabs rather than redirecting current (fixes M1 OAuth breakage).
       // Note: Electron has no API to unregister setWindowOpenHandler — it's implicitly cleaned
@@ -616,6 +688,7 @@ export class ViewManager {
       wc.off('devtools-opened', onDevtoolsOpened);
       wc.off('devtools-closed', onDevtoolsClosed);
       wc.off('zoom-changed', onZoomChanged);
+      detachHistory();    // M12: detach history listeners
     };
   }
 }
