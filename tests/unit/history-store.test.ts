@@ -207,6 +207,34 @@ describe('HistoryStore persistence', () => {
     expect(cb).toHaveBeenCalledTimes(1);
   });
 
+  it('seed() cancels a pending saveTimer so backend.set is called exactly once', () => {
+    const backend = createFakeBackend();
+    const store = new HistoryStore(backend);
+    store.upsert('https://old.com', 1000);     // arms saveTimer
+    expect(backend.setCount).toBe(0);
+
+    store.seed([entry('https://new.com')]);     // immediate commit; should cancel pending timer
+    expect(backend.setCount).toBe(1);
+
+    vi.advanceTimersByTime(2000);
+    expect(backend.setCount).toBe(1);           // pending timer was cancelled — no extra write
+  });
+
+  it('seed() cancels a pending notifyTimer so the new notify schedule actually fires', () => {
+    const store = new HistoryStore(createFakeBackend());
+    const cb = vi.fn();
+    store.onChanged(cb);
+
+    store.upsert('https://old.com', 1000);     // arms notifyTimer (16ms throttle)
+    // Don't advance time — leave notifyTimer pending.
+    store.seed([entry('https://new.com')]);
+
+    // Advance to trigger the notify scheduled by seed (which should have
+    // cancelled the prior pending one and rescheduled cleanly).
+    vi.advanceTimersByTime(16);
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
   it('onChanged fires on mutation; same-frame mutations coalesce to one notification', () => {
     const store = new HistoryStore(createFakeBackend());
     const cb = vi.fn();

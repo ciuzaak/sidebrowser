@@ -153,6 +153,19 @@ export class HistoryStore {
    * LRU + dedup invariants.
    */
   seed(entries: HistoryEntry[]): void {
+    // Cancel any in-flight save / notify timers so seed() has clean ownership
+    // of the next backend.set + listener notification. Without this, a pending
+    // saveTimer would produce a gratuitous second backend.set, and a pending
+    // notifyTimer would swallow our scheduleNotify() call (it's leading-edge
+    // throttled).
+    if (this.saveTimer !== null) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    if (this.notifyTimer !== null) {
+      clearTimeout(this.notifyTimer);
+      this.notifyTimer = null;
+    }
     this.entries.clear();
     for (const e of entries) this.entries.set(e.url, { ...e });
     this.commitToBackend();
