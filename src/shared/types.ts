@@ -145,3 +145,35 @@ export type SettingsPatch = {
   appearance?: Partial<AppearanceSettings>;
   search?: Partial<SearchSettings>;
 };
+
+/**
+ * 单条浏览历史。URL 是去重主键 — 重访同一 URL 只更新 lastVisitedAt + visitCount。
+ * Title / favicon 由 page-title-updated / page-favicon-updated 事件后填，
+ * 非空才覆盖（避免页面切换瞬间被空值清空）。
+ */
+export interface HistoryEntry {
+  /** 去重主键。从 did-navigate 拿到的 canonicalized URL（host 已 lowercased）。 */
+  url: string;
+  /** 页面标题。空字符串 = 还没收到 page-title-updated 事件。 */
+  title: string;
+  /** Favicon URL（http(s) 或 data:）。null = 没收到事件或页面无 favicon。 */
+  favicon: string | null;
+  /** 首次访问的 epoch ms。LRU 计数不参考此字段。 */
+  firstVisitedAt: number;
+  /** 最近一次访问的 epoch ms。LRU 用此字段，autocomplete 排序也用。 */
+  lastVisitedAt: number;
+  /** 访问次数。≥ 1。每次 did-navigate（非 SPA 内导航）+1。 */
+  visitCount: number;
+}
+
+/**
+ * 自动补全单项。HistoryEntry 的子集（剥掉 firstVisitedAt 与 visitCount，前端不直接用）。
+ * `tier` 用于调试 / 测试（v1 UI 不染色）。
+ */
+export interface Suggestion {
+  url: string;
+  title: string;
+  favicon: string | null;
+  /** 0 = URL 前缀；1 = URL substring；2 = title substring。 */
+  tier: 0 | 1 | 2;
+}

@@ -39,6 +39,13 @@ describe('IpcChannels', () => {
     expect(IpcChannels.viewSetSuppressed).toBe('view:set-suppressed');
   });
 
+  it('defines history channels', () => {
+    expect(IpcChannels.historyRecent).toBe('history:recent');
+    expect(IpcChannels.historySuggest).toBe('history:suggest');
+    expect(IpcChannels.historyRemove).toBe('history:remove');
+    expect(IpcChannels.historyChanged).toBe('history:changed');
+  });
+
   it('all channel values follow <domain>:<action> pattern', () => {
     for (const channel of Object.values(IpcChannels)) {
       expect(channel).toMatch(/^[a-z]+:[a-z-]+$/);

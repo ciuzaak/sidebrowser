@@ -1,7 +1,7 @@
 // Centralized IPC channel names and payload types.
 // All main/renderer IPC must go through this module — never use string literals inline.
 
-import type { Settings, SettingsPatch, Tab, TabsSnapshot, WindowState } from './types';
+import type { HistoryEntry, Settings, SettingsPatch, Suggestion, Tab, TabsSnapshot, WindowState } from './types';
 
 export const IpcChannels = {
   // Smoke-test channel kept from M0 for the preload API sanity check.
@@ -54,6 +54,14 @@ export const IpcChannels = {
   nativeThemeUpdated: 'chrome:native-theme',
   /** Renderer → main invoke. Returns current nativeTheme.shouldUseDarkColors. */
   nativeThemeGet: 'chrome:native-theme-get',
+  /** R→M invoke. 取最近 N 条历史，按 lastVisitedAt 倒序。 */
+  historyRecent: 'history:recent',
+  /** R→M invoke. 历史自动补全：按查询字符串返回 ≤8 条 Suggestion。 */
+  historySuggest: 'history:suggest',
+  /** R→M send. 删除一条历史；不存在的 URL 静默 no-op。 */
+  historyRemove: 'history:remove',
+  /** M→R event. 历史变更信号 — payload 空对象，renderer 自己 re-fetch。 */
+  historyChanged: 'history:changed',
 } as const;
 
 /**
@@ -182,5 +190,22 @@ export interface IpcContract {
   [IpcChannels.nativeThemeGet]: {
     request: Record<string, never>;
     response: { shouldUseDarkColors: boolean };
+  };
+  [IpcChannels.historyRecent]: {
+    request: { limit: number };
+    response: HistoryEntry[];
+  };
+  [IpcChannels.historySuggest]: {
+    request: { query: string };
+    response: Suggestion[];
+  };
+  [IpcChannels.historyRemove]: {
+    request: { url: string };
+    response: void;
+  };
+  [IpcChannels.historyChanged]: {
+    /** 仅信号；renderer 收到后自己 re-fetch。 */
+    request: Record<string, never>;
+    response: void;
   };
 }
