@@ -11,7 +11,7 @@
 
 import type { HistoryEntry, Suggestion } from '@shared/types';
 
-const SUGGEST_LIMIT = 8;
+export const SUGGEST_LIMIT = 8;
 const DAY_MS = 86_400_000;
 
 /** Lowercase the URL after stripping `http://` or `https://`, for prefix matching. */

@@ -3,7 +3,7 @@ import { IpcChannels, type IpcContract } from '@shared/ipc-contract';
 import type { ViewManager } from './view-manager';
 import type { SettingsStore } from './settings-store';
 import type { HistoryStore } from './history-store';
-import { rankSuggestions, recentEntries } from './suggestion-ranker';
+import { rankSuggestions, recentEntries, SUGGEST_LIMIT } from './suggestion-ranker';
 
 /**
  * Wires up all ipcMain handlers in one place.
@@ -157,7 +157,7 @@ export function registerIpcRouter(
         // Empty query (focus but no input): return recent 8 as Suggestions
         // with tier=0 just so the wire shape is uniform — UI doesn't render
         // the tier marker.
-        return recentEntries(historyStore.all(), 8).map((e) => ({
+        return recentEntries(historyStore.all(), SUGGEST_LIMIT).map((e) => ({
           url: e.url,
           title: e.title,
           favicon: e.favicon,
