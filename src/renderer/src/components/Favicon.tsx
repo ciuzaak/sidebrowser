@@ -11,12 +11,14 @@ interface Props {
  *
  * Rendering an `<img>` for an external favicon URL can fail — the host may be
  * down, the URL may have rotated, or the response may not be an image. We
- * track an `errored` flag and switch to the Globe icon on any of those
- * conditions, plus the trivial null-src case.
+ * track the specific `src` URL that produced an error so the fallback is
+ * automatically dismissed whenever `src` changes — even when the component
+ * instance is reused across a list (e.g., NewTab keyed by URL where the
+ * favicon updates after a page-favicon-updated event lands).
  */
 export function Favicon({ src, size = 16 }: Props): ReactElement {
-  const [errored, setErrored] = useState(false);
-  if (src === null || errored) {
+  const [erroredSrc, setErroredSrc] = useState<string | null>(null);
+  if (src === null || src === erroredSrc) {
     return <Globe size={size} className="shrink-0 text-[var(--chrome-muted)]" />;
   }
   return (
@@ -26,7 +28,7 @@ export function Favicon({ src, size = 16 }: Props): ReactElement {
       width={size}
       height={size}
       className="shrink-0"
-      onError={() => setErrored(true)}
+      onError={() => setErroredSrc(src)}
     />
   );
 }
