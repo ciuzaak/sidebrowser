@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactElement, type MouseEvent } from 'react';
-import { Globe, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import type { HistoryEntry } from '@shared/types';
+import appIconUrl from '@resources/icon.ico';
 import { useActiveTab } from '../store/tab-store';
 import { Favicon } from './Favicon';
 
@@ -41,7 +42,12 @@ export function NewTab(): ReactElement {
       className="absolute inset-0 flex flex-col items-center bg-[var(--chrome-bg)] text-[var(--chrome-fg)] overflow-y-auto"
       data-testid="newtab"
     >
-      <Globe size={64} aria-hidden="true" className="mt-12 mb-8 text-[var(--chrome-muted)]" />
+      <img
+        src={appIconUrl}
+        alt=""
+        aria-hidden="true"
+        className="mt-12 mb-8 size-[clamp(64px,16vw,256px)]"
+      />
       {entries.length === 0 ? (
         <div className="text-sm text-[var(--chrome-muted)]" data-testid="newtab-empty">
           No recent pages yet

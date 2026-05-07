@@ -20,7 +20,8 @@
     "ignoreDeprecations": "6.0",
     "paths": {
       "@shared/*": ["src/shared/*"],
-      "@renderer/*": ["src/renderer/src/*"]
+      "@renderer/*": ["src/renderer/src/*"],
+      "@resources/*": ["resources/*"]
     }
   },
   "include": ["src/renderer/**/*", "src/shared/**/*", "src/preload/api.d.ts"]
