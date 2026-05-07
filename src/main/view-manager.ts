@@ -30,6 +30,17 @@ import type { HistoryRecorder } from './history-recorder';
  * the title arrives, the URL we want is the freshly-set one. Threading a
  * snapshot at bind time would be wrong.
  *
+ * Known limitation (TODO post-v1): `did-navigate-in-page` (SPA hash nav)
+ * also updates `tab.url` via the existing onNavigate handler upstream, so
+ * `getCurrentUrl()` returns the SPA fragment URL. A page-title-updated /
+ * page-favicon-updated event arriving after a SPA hash change therefore
+ * patches against the fragment URL (which is not in the history store —
+ * only top-level navigations are recorded), so the patch silently no-ops.
+ * Net effect: a stale title/favicon for the originally-recorded full URL
+ * if the page emits its title only after a hash navigation. Not a crash;
+ * the entry remains usable for navigation. Fix would require recording
+ * the last top-level URL separately for patch routing.
+ *
  * `recorder = null` is a valid no-op binding (used in tests + future
  * "history disabled" config paths).
  */

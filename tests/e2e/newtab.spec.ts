@@ -126,8 +126,34 @@ test.describe('NewTab', () => {
       await window.getByTestId('newtab-remove').first().dispatchEvent('mousedown');
       await expect(window.getByTestId('newtab-item')).toHaveCount(1);
     } finally {
-      await app.close();
+      try { await app.close(); } catch { /* already closed */ }
       rmSync(userDataDir, { recursive: true, force: true });
+    }
+  });
+
+  test('clicking an item navigates the active tab to that URL', async () => {
+    const { server, url: targetUrl } = await startHttp();
+    const userDataDir = mkdtempSync(join(tmpdir(), 'sb-newtab-'));
+    const app = await launch(userDataDir);
+    try {
+      const window = await getChromeWindow(app);
+      // Seed exactly one entry pointing at the local HTTP server so
+      // sanitizeUrl + ViewManager actually load it (data:/javascript:
+      // would be rejected). One entry keeps the dispatch target unambiguous.
+      await seedHistory(app, [{ url: targetUrl, title: 'Target' }]);
+      await expect.poll(async () => (await window.getByTestId('newtab-item').count()), { timeout: 5_000 }).toBe(1);
+
+      await window.getByTestId('newtab-item').first().dispatchEvent('mousedown');
+
+      // Address bar reflects the loaded URL after navigation completes;
+      // NewTab unmounts because isNewTab flips false.
+      const bar = window.getByTestId('address-bar');
+      await expect.poll(async () => bar.inputValue(), { timeout: 10_000 }).toBe(targetUrl);
+      await expect(window.getByTestId('newtab')).toBeHidden();
+    } finally {
+      try { await app.close(); } catch { /* already closed */ }
+      rmSync(userDataDir, { recursive: true, force: true });
+      server.close();
     }
   });
 });
