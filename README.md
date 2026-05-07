@@ -17,6 +17,7 @@ Windows only。macOS 预计 v1.5 支持。
 - **手机模拟（M10 hybrid CDP）**：UA + Client Hints 头 + Chromium device emulation + CDP touch/pointer override，让 X.com / B 站等靠 Client Hints 路由的站点也按真移动版渲染
 - **可定制搜索引擎（M11）**：默认 Google，内置 4 项（Google / DuckDuckGo / Bing / 百度）+ 用户可添加/删除自定义条目（含 `{query}` 占位符的 URL 模板）
 - **网页缩放（M11）**：Ctrl+滚轮调整当前 tab 大小（每 tab 独立、50–300% / ±10% 步进），Ctrl+0 复位 100%
+- **新标签页 + 网址栏自动补全（M12）**：about:blank 时显示最近 12 条访问记录（点击直接打开、单条可删除）；地址栏 focus 即弹出历史下拉，输入时实时按 URL/标题过滤（最多 8 条），↑/↓ 键盘选择 + Enter 跳转 + Esc 关闭。历史按 URL 去重，500 条 LRU 上限
 - **登录态持久化**：所有 tab 共享 `persist:sidebrowser` session partition，cookies 跨重启保留
 - **始终置顶**：能盖住 F11 全屏浏览器和视频播放器
 - **单实例锁**：已有实例时双击不会再开一个
@@ -78,6 +79,7 @@ pnpm lint         # ESLint
 - **无代码签名**，首次安装 SmartScreen 会叫，点"仍要运行"。
 - **无页内搜索、无下载 UI、无书签管理**。这些交给浏览器本身解决。
 - **图标是占位符**，后续版本会换正式设计。
+- **历史无 in-app 清除按钮**。M12 v1 暂不做（YAGNI）；要清空手动删 `%APPDATA%/sidebrowser/sidebrowser-history.json` 即可。
 
 ## 技术栈
 
@@ -89,6 +91,7 @@ Electron + React 19 + TypeScript + Vitest + Playwright + electron-vite + Tailwin
 - Milestone 计划文档：`docs/superpowers/plans/`
 - M10 spec（mobile emulation 增强）：`docs/superpowers/specs/2026-04-27-mobile-emulation-clienthints-design.md`
 - M11 spec（搜索引擎 + 网页缩放）：`docs/superpowers/specs/2026-04-27-M11-search-and-zoom-design.md`
+- M12 spec（浏览历史 + NewTab + 网址栏自动补全）：`docs/superpowers/specs/2026-05-06-history-and-newtab-design.md`
 
 ## 鸣谢
 
