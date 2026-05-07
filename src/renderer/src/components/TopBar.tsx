@@ -28,6 +28,7 @@ export function TopBar({
   const [draft, setDraft] = useState<string>('');
   const [syncedUrl, setSyncedUrl] = useState<string>(tab?.url ?? '');
   const [focused, setFocused] = useState<boolean>(false);
+  const [syncedTabId, setSyncedTabId] = useState<string | null>(tab?.id ?? null);
   const suggestionsRef = useRef<AddressSuggestionsHandle | null>(null);
 
   // Sync address bar when the active tab or its url changes externally.
@@ -41,6 +42,15 @@ export function TopBar({
     setFocused(open);
     onSuggestionsOpenChange(open);
   };
+
+  // M12: when active tab changes, force-close the suggestions dropdown so the
+  // lifted suggestionsOpen flag in App.tsx doesn't strand `true` and keep the
+  // WebContentsView suppressed after the user navigates the new tab.
+  const currentTabId = tab?.id ?? null;
+  if (currentTabId !== syncedTabId) {
+    setSyncedTabId(currentTabId);
+    if (focused) setOpen(false);
+  }
 
   const submit = (e: FormEvent): void => {
     e.preventDefault();
@@ -72,8 +82,6 @@ export function TopBar({
       e.preventDefault();
       setOpen(false);
       // Keep focus + draft; user can keep typing.
-    } else if (e.key === 'Tab') {
-      // Tab leaves the input; the input's onBlur will close the dropdown.
     }
   };
 
