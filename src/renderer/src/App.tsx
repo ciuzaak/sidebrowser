@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 import { TopBar } from './components/TopBar';
 import { TabDrawer } from './components/TabDrawer';
 import { SettingsDrawer } from './components/SettingsDrawer';
+import { NewTab } from './components/NewTab';
 import { useSettingsBridge } from './hooks/useSettingsBridge';
 import { useTabBridge } from './hooks/useTabBridge';
 import { useWindowStateBridge } from './hooks/useWindowStateBridge';
 import { useSettingsStore } from './store/settings-store';
+import { useActiveTab } from './store/tab-store';
 import { useTheme } from './theme/useTheme';
 
 export function App(): ReactElement {
@@ -16,8 +18,12 @@ export function App(): ReactElement {
   const settings = useSettingsStore((s) => s.settings);
   useTheme(settings?.appearance.theme ?? 'system');
 
+  const activeTab = useActiveTab();
+  const isNewTab = activeTab?.url === 'about:blank';
+
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const chromeRef = useRef<HTMLDivElement | null>(null);
 
   const toggleDrawer = useCallback(() => setDrawerOpen((v) => !v), []);
@@ -39,19 +45,19 @@ export function App(): ReactElement {
     return () => observer.disconnect();
   }, []);
 
-  // Drawer coordinates with main's ViewManager to hide the active WebContentsView
-  // while the Settings UI is visible — React DOM cannot stack above the native
-  // view layer (spec §4.2 / plan Task 10). Fires on every open/close transition.
+  // M6 + M12: ViewManager suppression with three sources OR'd together.
+  // SettingsDrawer / AddressSuggestions / NewTab all need the WebContentsView
+  // hidden so the renderer-layer overlay can paint above. A single useEffect
+  // computes the union and pushes it; the individual sources don't fight.
+  const suppressed = settingsOpen || suggestionsOpen || isNewTab;
   useEffect(() => {
-    window.sidebrowser.setViewSuppressed(settingsOpen);
-  }, [settingsOpen]);
+    window.sidebrowser.setViewSuppressed(suppressed);
+  }, [suppressed]);
 
   // Spec §15: dispatch renderer-bound shortcut actions from the hidden
-  // Application Menu. The main-side accelerator fires → IPC broadcast →
-  // this switch maps the action to local state. `toggleDrawer` and
-  // `toggleSettings` are useCallback-stable (no deps), so depending on them
-  // is safe. Address-bar focus goes via a DOM selector to avoid plumbing a
-  // ref through TopBar (YAGNI per plan §Task 3).
+  // Application Menu. Same pattern as before — the address-bar focus action
+  // calls `.focus()` which will trigger TopBar's onFocus and open the dropdown
+  // automatically (Q2 option B).
   useEffect(() => {
     return window.sidebrowser.onShortcut((action) => {
       switch (action) {
@@ -79,11 +85,12 @@ export function App(): ReactElement {
           onToggleDrawer={toggleDrawer}
           settingsOpen={settingsOpen}
           onToggleSettings={toggleSettings}
+          onSuggestionsOpenChange={setSuggestionsOpen}
         />
         <TabDrawer open={drawerOpen} onSelect={closeDrawer} />
       </div>
-      {/* WebContentsView is overlaid by main below the chrome area. */}
       <div className="relative flex-1">
+        {isNewTab && <NewTab />}
         <SettingsDrawer open={settingsOpen} onClose={closeSettings} />
       </div>
     </div>
