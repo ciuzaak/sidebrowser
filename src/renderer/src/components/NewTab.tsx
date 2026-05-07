@@ -15,7 +15,8 @@ export function NewTab(): ReactElement {
     const load = (): void => {
       void window.sidebrowser
         .historyRecent(NEWTAB_RECENT_LIMIT)
-        .then((es) => { if (!cancelled) setEntries(es); });
+        .then((es) => { if (!cancelled) setEntries(es); })
+        .catch((err: unknown) => { console.error('[sidebrowser] NewTab historyRecent failed', err); });
     };
     load();
     const off = window.sidebrowser.onHistoryChanged(load);
@@ -40,7 +41,7 @@ export function NewTab(): ReactElement {
       className="absolute inset-0 flex flex-col items-center bg-[var(--chrome-bg)] text-[var(--chrome-fg)] overflow-y-auto"
       data-testid="newtab"
     >
-      <Globe size={64} className="mt-12 mb-8 text-[var(--chrome-muted)]" />
+      <Globe size={64} aria-hidden="true" className="mt-12 mb-8 text-[var(--chrome-muted)]" />
       {entries.length === 0 ? (
         <div className="text-sm text-[var(--chrome-muted)]" data-testid="newtab-empty">
           No recent pages yet
@@ -63,7 +64,7 @@ export function NewTab(): ReactElement {
                 type="button"
                 aria-label="Remove from history"
                 onMouseDown={(ev) => remove(ev, e.url)}
-                className="opacity-0 group-hover:opacity-100 text-[var(--chrome-muted)] hover:text-[var(--chrome-fg)] p-1"
+                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[var(--chrome-muted)] hover:text-[var(--chrome-fg)] p-1"
                 data-testid="newtab-remove"
               >
                 <X size={14} />
