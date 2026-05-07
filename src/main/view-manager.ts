@@ -499,6 +499,12 @@ export class ViewManager {
    * practice chromeHeightPx is always well below contentBounds.height.
    */
   private webviewSize(): { width: number; height: number } {
+    // Race guard: WebContents events (did-navigate) can arrive after the host
+    // window starts destroying — typical during app shutdown / E2E teardown.
+    // Returning a safe degenerate value keeps callers (CDP reapply, mobile
+    // emulation) from throwing "Object has been destroyed". Height ≥1 still
+    // avoids the enableDeviceEmulation deadlock noted above.
+    if (this.window.isDestroyed()) return { width: 0, height: 1 };
     const { width, height } = this.window.getContentBounds();
     return { width, height: Math.max(1, height - this.chromeHeightPx) };
   }
@@ -542,6 +548,9 @@ export class ViewManager {
   }
 
   private applyBounds(): void {
+    // Race guard — see webviewSize() comment. resize/closed event handlers can
+    // fire after window destruction during teardown.
+    if (this.window.isDestroyed()) return;
     // Suppressed: every tab shrinks to zero so the renderer-layer drawer
     // overlay can paint unobstructed. Background-tab bounds were already
     // zero; this extends the same treatment to the active tab.
