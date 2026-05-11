@@ -51,9 +51,9 @@ export function buildContextMenuTemplate(
   const selection = params.selectionText ?? '';
   if (selection.trim() !== '') {
     out.push(
-      { label: '复制', click: () => deps.copyToClipboard(selection) },
+      { label: 'Copy', click: () => deps.copyToClipboard(selection) },
       {
-        label: `用 ${deps.activeSearchEngineName} 搜索 "${truncateForLabel(selection)}"`,
+        label: `Search ${deps.activeSearchEngineName} for "${truncateForLabel(selection)}"`,
         click: () => deps.searchSelection(selection),
       },
       SEP,
@@ -63,22 +63,22 @@ export function buildContextMenuTemplate(
   const linkURL = params.linkURL ?? '';
   if (linkURL !== '') {
     out.push(
-      { label: '在新标签页打开链接', click: () => deps.openInNewTab(linkURL) },
-      { label: '在系统浏览器打开链接', click: () => deps.openInSystemBrowser(linkURL) },
-      { label: '复制链接地址', click: () => deps.copyToClipboard(linkURL) },
+      { label: 'Open link in new tab', click: () => deps.openInNewTab(linkURL) },
+      { label: 'Open link in system browser', click: () => deps.openInSystemBrowser(linkURL) },
+      { label: 'Copy link address', click: () => deps.copyToClipboard(linkURL) },
       SEP,
     );
   }
 
   out.push(
-    { label: '后退', enabled: deps.canGoBack, click: () => deps.navigateActive('back') },
-    { label: '前进', enabled: deps.canGoForward, click: () => deps.navigateActive('forward') },
-    { label: '刷新', click: () => deps.navigateActive('reload') },
+    { label: 'Back', enabled: deps.canGoBack, click: () => deps.navigateActive('back') },
+    { label: 'Forward', enabled: deps.canGoForward, click: () => deps.navigateActive('forward') },
+    { label: 'Reload', click: () => deps.navigateActive('reload') },
     SEP,
-    { label: '在系统浏览器打开此页', click: () => deps.openInSystemBrowser(currentTabUrl) },
-    { label: '复制此页 URL', click: () => deps.copyToClipboard(currentTabUrl) },
+    { label: 'Open page in system browser', click: () => deps.openInSystemBrowser(currentTabUrl) },
+    { label: 'Copy page URL', click: () => deps.copyToClipboard(currentTabUrl) },
     SEP,
-    { label: '查看源代码', click: () => deps.viewSource(currentTabUrl) },
+    { label: 'View source', click: () => deps.viewSource(currentTabUrl) },
   );
 
   return out;

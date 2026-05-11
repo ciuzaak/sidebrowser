@@ -240,7 +240,7 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
             }
           />
           <Slider
-            label="白度"
+            label="Light brightness"
             testId="settings-dim-light-brightness"
             value={settings.dim.lightBrightness}
             min={0}

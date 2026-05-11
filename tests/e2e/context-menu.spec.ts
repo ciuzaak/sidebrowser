@@ -76,17 +76,17 @@ test.describe('context menu (M13)', () => {
     });
 
     expect(labels.slice(0, 4)).toEqual([
-      '在新标签页打开链接',
-      '在系统浏览器打开链接',
-      '复制链接地址',
+      'Open link in new tab',
+      'Open link in system browser',
+      'Copy link address',
       '---',
     ]);
-    expect(labels).toContain('后退');
-    expect(labels).toContain('在系统浏览器打开此页');
-    expect(labels).toContain('查看源代码');
+    expect(labels).toContain('Back');
+    expect(labels).toContain('Open page in system browser');
+    expect(labels).toContain('View source');
   });
 
-  test('text selection right-click prepends 复制 + 用 Google 搜索', async () => {
+  test('text selection right-click prepends Copy + Search Google', async () => {
     const chrome = await getChromeWindow(app);
     await waitForAddressBarReady(chrome);
     await navigateActive(chrome, `${baseUrl}/page`);
@@ -102,8 +102,8 @@ test.describe('context menu (M13)', () => {
       return h.simulateContextMenu(wc, { selectionText: 'hello world example' });
     });
 
-    expect(labels[0]).toBe('复制');
-    expect(labels[1]).toBe('用 Google 搜索 "hello world example"');
+    expect(labels[0]).toBe('Copy');
+    expect(labels[1]).toBe('Search Google for "hello world example"');
     expect(labels[2]).toBe('---');
   });
 
@@ -124,14 +124,14 @@ test.describe('context menu (M13)', () => {
     });
 
     expect(labels).toEqual([
-      '后退',
-      '前进',
-      '刷新',
+      'Back',
+      'Forward',
+      'Reload',
       '---',
-      '在系统浏览器打开此页',
-      '复制此页 URL',
+      'Open page in system browser',
+      'Copy page URL',
       '---',
-      '查看源代码',
+      'View source',
     ]);
   });
 });
