@@ -23,6 +23,7 @@ import type { HistoryEntry, Settings, SettingsPatch } from '@shared/types';
 import { HistoryStore, createElectronHistoryBackend } from './history-store';
 import { HistoryRecorder } from './history-recorder';
 import { installApplicationMenu } from './keyboard-shortcuts';
+import { TabCycler } from './tab-cycler';
 import { handleSecondInstance } from './single-instance';
 import { installMobileHeaderRewriter } from './mobile-emulation';
 import { getPersistentSession } from './session-manager';
@@ -190,6 +191,20 @@ app.whenReady().then(() => {
       return s.engines.find((e) => e.id === s.activeId)?.name ?? 'Google';
     },
   });
+
+  // 2d. M13 TabCycler — replaces the old CmdOrCtrl+Tab "toggle drawer" accelerator.
+  // Attaches before-input-event on the host renderer + every tab so whichever
+  // wc has focus drives the cycle. blur ends a stuck cycle (alt-tab away mid-Ctrl-hold).
+  const cycler = new TabCycler({
+    activateNext: () => viewManager.activateRelativeTab(+1),
+    activatePrev: () => viewManager.activateRelativeTab(-1),
+    broadcastCycleState: (active) => {
+      if (!win.isDestroyed()) win.webContents.send(IpcChannels.cycleState, { active });
+    },
+  });
+  cycler.attach(win.webContents);
+  viewManager.onTabAttach((wc) => { cycler.attach(wc); });
+  win.on('blur', () => cycler.end());
 
   // 3. Tab persistence — save on any snapshot change or per-tab URL update.
   const store = createTabStore();

@@ -72,7 +72,8 @@ export function buildShortcutMenuTemplate(deps: ShortcutDeps): MenuItemConstruct
     { label: 'Reload (F5)',       accelerator: 'F5',            click: () => deps.onReloadActive() },
     { label: 'Back',              accelerator: 'Alt+Left',      click: () => deps.onGoBack() },
     { label: 'Forward',           accelerator: 'Alt+Right',     click: () => deps.onGoForward() },
-    { label: 'Toggle Tab Drawer', accelerator: 'CmdOrCtrl+Tab', click: () => deps.emitToRenderer('toggle-tab-drawer') },
+    // M13: Ctrl+Tab moved out of the Application Menu — TabCycler in main now
+    // owns it via before-input-event so we can detect Ctrl release.
     { label: 'Toggle Settings',   accelerator: 'CmdOrCtrl+,',   click: () => deps.emitToRenderer('toggle-settings-drawer') },
     { label: 'Reset Zoom',        accelerator: 'CmdOrCtrl+0',   click: () => deps.onResetZoom() },
     { label: 'Toggle DevTools',   accelerator: 'F12',           click: () => deps.onToggleDevTools() },

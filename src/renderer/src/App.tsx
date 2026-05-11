@@ -67,15 +67,12 @@ export function App(): ReactElement {
           input?.select();
           return;
         }
-        case 'toggle-tab-drawer':
-          toggleDrawer();
-          return;
         case 'toggle-settings-drawer':
           toggleSettings();
           return;
       }
     });
-  }, [toggleDrawer, toggleSettings]);
+  }, [toggleSettings]);
 
   return (
     <div className="flex h-full w-full flex-col">

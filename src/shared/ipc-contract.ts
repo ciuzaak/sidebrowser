@@ -73,7 +73,6 @@ export const IpcChannels = {
  */
 export type ShortcutAction =
   | 'focus-address-bar'
-  | 'toggle-tab-drawer'
   | 'toggle-settings-drawer';
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];

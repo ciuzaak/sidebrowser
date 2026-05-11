@@ -75,12 +75,12 @@ function getSubmenu(
 
 describe('buildShortcutMenuTemplate', () => {
   // ── Test 1: Structure ─────────────────────────────────────────────────────
-  it('returns exactly one hidden top-level item with 11 submenu entries', () => {
-    // Spec §15 defines 9 logical shortcuts. The menu template has 11 physical
-    // entries because:
-    //  - Ctrl+R and F5 are two separate items that share onReloadActive
-    //    (Electron cannot accept OR-accelerators on a single item).
-    //  - F12 DevTools is included (listed in the spec §15 table).
+  it('returns exactly one hidden top-level item with 10 submenu entries', () => {
+    // Spec §15 defined 9 logical shortcuts. M13 removed "Toggle Tab Drawer"
+    // (CmdOrCtrl+Tab) — TabCycler now owns Ctrl+Tab via before-input-event.
+    // The menu template has 10 physical entries:
+    //  - Ctrl+R and F5 are two separate items that share onReloadActive.
+    //  - F12 DevTools.
     const deps = makeDeps();
     const template = buildShortcutMenuTemplate(deps);
     expect(template).toHaveLength(1);
@@ -89,7 +89,7 @@ describe('buildShortcutMenuTemplate', () => {
     expect(top.visible).toBe(false);
 
     const submenu = getSubmenu(template);
-    expect(submenu).toHaveLength(11);
+    expect(submenu).toHaveLength(10);
   });
 
   // ── Test 2: Accelerators ──────────────────────────────────────────────────
@@ -107,7 +107,6 @@ describe('buildShortcutMenuTemplate', () => {
       ['Reload (F5)', 'F5'],
       ['Back', 'Alt+Left'],
       ['Forward', 'Alt+Right'],
-      ['Toggle Tab Drawer', 'CmdOrCtrl+Tab'],
       ['Toggle Settings', 'CmdOrCtrl+,'],
       ['Reset Zoom', 'CmdOrCtrl+0'],
       ['Toggle DevTools', 'F12'],
@@ -134,8 +133,8 @@ describe('buildShortcutMenuTemplate', () => {
       [4, 'onReloadActive'],
       [5, 'onGoBack'],
       [6, 'onGoForward'],
-      [9, 'onResetZoom'],
-      [10, 'onToggleDevTools'],
+      [8, 'onResetZoom'],
+      [9, 'onToggleDevTools'],
     ];
     for (const [idx] of directCases) {
       const item = submenu[idx];
@@ -158,10 +157,9 @@ describe('buildShortcutMenuTemplate', () => {
     const submenu = getSubmenu(buildShortcutMenuTemplate(deps));
 
     // [index, expectedAction]
-    const emitCases: Array<[number, 'focus-address-bar' | 'toggle-tab-drawer' | 'toggle-settings-drawer']> = [
+    const emitCases: Array<[number, 'focus-address-bar' | 'toggle-settings-drawer']> = [
       [2, 'focus-address-bar'],
-      [7, 'toggle-tab-drawer'],
-      [8, 'toggle-settings-drawer'],
+      [7, 'toggle-settings-drawer'],
     ];
     for (const [idx, action] of emitCases) {
       const item = submenu[idx];
@@ -169,7 +167,7 @@ describe('buildShortcutMenuTemplate', () => {
       item.click!();
       expect(deps.spies.emitToRenderer).toHaveBeenCalledWith(action);
     }
-    expect(deps.spies.emitToRenderer).toHaveBeenCalledTimes(3);
+    expect(deps.spies.emitToRenderer).toHaveBeenCalledTimes(2);
 
     // None of the direct-handler spies should fire for the emit-to-renderer
     // entries.
