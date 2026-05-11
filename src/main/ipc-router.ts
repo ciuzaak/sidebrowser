@@ -180,6 +180,16 @@ export function registerIpcRouter(
     ipcMain.removeListener(IpcChannels.historyRemove, onHistoryRemove);
   });
 
+  // history:clear — fire-and-forget. M14 NewTab Clear button. Same per-renderer
+  // trust model as history:remove above.
+  const onHistoryClear = (): void => {
+    historyStore.clearAll();
+  };
+  ipcMain.on(IpcChannels.historyClear, onHistoryClear);
+  window.once('closed', () => {
+    ipcMain.removeListener(IpcChannels.historyClear, onHistoryClear);
+  });
+
   // history:changed — broadcast on store mutation. Throttling lives in
   // HistoryStore (16 ms); this fan-out is naturally rate-limited.
   const offHistoryChanged = historyStore.onChanged(() => {

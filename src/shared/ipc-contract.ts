@@ -60,6 +60,8 @@ export const IpcChannels = {
   historySuggest: 'history:suggest',
   /** R→M send. 删除一条历史；不存在的 URL 静默 no-op。 */
   historyRemove: 'history:remove',
+  /** R→M send. 清空全部历史（M14 NewTab Clear 按钮）；同步 broadcast history:changed。 */
+  historyClear: 'history:clear',
   /** M→R event. 历史变更信号 — payload 空对象，renderer 自己 re-fetch。 */
   historyChanged: 'history:changed',
   /**
@@ -221,6 +223,10 @@ export interface IpcContract {
   };
   [IpcChannels.historyRemove]: {
     request: { url: string };
+    response: void;
+  };
+  [IpcChannels.historyClear]: {
+    request: Record<string, never>;
     response: void;
   };
   [IpcChannels.historyChanged]: {

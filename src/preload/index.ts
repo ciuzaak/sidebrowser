@@ -117,6 +117,10 @@ const api = {
     ipcRenderer.send(IpcChannels.historyRemove, { url });
   },
 
+  historyClear: (): void => {
+    ipcRenderer.send(IpcChannels.historyClear, {});
+  },
+
   /** Subscribe to history mutation pings. Returns unsubscribe. */
   onHistoryChanged: (cb: () => void): (() => void) => {
     const handler = (): void => cb();
