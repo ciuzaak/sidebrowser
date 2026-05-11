@@ -63,15 +63,19 @@ export function App(): ReactElement {
   }, []);
 
   // M13: switching to a different tab (drawer click, Ctrl+Tab cycle, main-side
-  // auto-reactivation on close) closes the SettingsDrawer. Guard the first
-  // hydration tick (null → first id) so an open drawer set before tabs hydrate
-  // is not auto-closed. The setState-in-effect is unavoidable here — we react
-  // to a store change owned outside this component to drive a sibling state.
+  // auto-reactivation on close) closes the SettingsDrawer. Guard the
+  // hydration tick: only close when transitioning between two non-null ids
+  // (a real user-initiated switch). null → first-id (snapshot hydration) and
+  // first-id → null (transient) both no-op, so settings opened before tabs
+  // hydrate stays open. setState-in-effect is unavoidable: we react to a
+  // store change owned outside this component to drive a sibling state.
   const activeId = useTabsStore((s) => s.activeId);
   const prevActiveIdRef = useRef<string | null>(activeId);
   useEffect(() => {
-    if (prevActiveIdRef.current === activeId) return;
+    const prev = prevActiveIdRef.current;
     prevActiveIdRef.current = activeId;
+    if (prev === null || activeId === null) return;
+    if (prev === activeId) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (settingsOpen) closeSettings();
   }, [activeId, settingsOpen, closeSettings]);

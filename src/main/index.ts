@@ -245,10 +245,12 @@ app.whenReady().then(() => {
     });
   });
   win.on('blur', () => cycler.end());
-  // M13 hotfix #2: renderer-driven cycle end fallback. Some Electron builds
-  // don't reliably dispatch the standalone Control keyUp through
-  // before-input-event; renderer's document keyup catches it when chrome has
-  // focus and tells us via this IPC.
+  // M13: renderer-driven cycle end. The renderer's closeDrawer (outside-
+  // click, tab selection) sends this IPC so a Ctrl+Tab-opened drawer
+  // dismisses the same way as a mouse-opened one. There is no automatic
+  // Ctrl-release detection — Electron's standalone modifier keyUp via
+  // before-input-event is unreliable on Windows. Mouse dismiss is the only
+  // exit path beyond win.blur above.
   ipcMain.on(IpcChannels.cycleEnd, () => cycler.end());
   win.once('closed', () => {
     ipcMain.removeAllListeners(IpcChannels.cycleEnd);

@@ -125,9 +125,9 @@ const api = {
   },
 
   /**
-   * Subscribe to TabCycler broadcasts (M13). payload.active=true when cycling
-   * started (drawer should show), false on Ctrl release (drawer should hide).
-   * Returns unsubscribe.
+   * Subscribe to TabCycler broadcasts (M13). payload.active=true when a
+   * cycle starts (drawer should show), false when the cycle ends (drawer
+   * should hide). Returns unsubscribe.
    */
   onCycleState: (cb: (active: boolean) => void): (() => void) => {
     const handler = (_e: IpcRendererEvent, p: { active: boolean }): void => cb(p.active);
@@ -148,9 +148,10 @@ const api = {
   },
 
   /**
-   * R→M send (M13 hotfix #2): renderer detected Ctrl release while a
-   * Ctrl+Tab cycle was active. Fallback for Electron's flaky modifier
-   * keyUp before-input-event on Windows.
+   * R→M send: end any active Ctrl+Tab cycle. Called from `closeDrawer` in
+   * App.tsx so outside-click / tab-wc focus / TabDrawer onSelect all
+   * dismiss a Ctrl+Tab-opened drawer the same way they dismiss a mouse-
+   * opened one. No automatic Ctrl-release detection exists.
    */
   endCycle: (): void => {
     ipcRenderer.send(IpcChannels.cycleEnd, {});

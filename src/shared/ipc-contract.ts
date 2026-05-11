@@ -62,7 +62,12 @@ export const IpcChannels = {
   historyRemove: 'history:remove',
   /** M→R event. 历史变更信号 — payload 空对象，renderer 自己 re-fetch。 */
   historyChanged: 'history:changed',
-  /** M→R event. M13 TabCycler broadcasts active=true on Ctrl+Tab cycle start, false on Ctrl release. */
+  /**
+   * M→R event. M13 TabCycler broadcasts active=true on Ctrl+Tab cycle start,
+   * false when the cycle ends (renderer-driven via `cycleEnd`, win blur, or
+   * any other call to `cycler.end()`). There is no automatic Ctrl-release
+   * detection.
+   */
   cycleState: 'cycle:state',
   /**
    * M→R event (M13 hotfix). Fires whenever any tab's WebContents receives
@@ -72,9 +77,10 @@ export const IpcChannels = {
    */
   tabFocused: 'chrome:tab-focused',
   /**
-   * R→M send (M13 hotfix #2). Renderer-detected Ctrl release while cycling.
-   * Fallback for the case where Electron's before-input-event doesn't fire
-   * for the standalone Control keyUp on Windows.
+   * R→M send. Renderer asks main to end any active Ctrl+Tab cycle —
+   * fires from `closeDrawer` in App.tsx so user-driven drawer dismissal
+   * (outside-click / tab selection / tab-wc focus) also ends a cycle that
+   * was started by Ctrl+Tab. There is no automatic Ctrl-release detection.
    */
   cycleEnd: 'cycle:end',
 } as const;
@@ -233,8 +239,7 @@ export interface IpcContract {
     response: void;
   };
   [IpcChannels.cycleEnd]: {
-    /** R→M send: renderer-detected Ctrl release while cycling — fallback for
-     *  unreliable Electron before-input-event modifier keyUp dispatch. */
+    /** R→M send: end any active Ctrl+Tab cycle. Fired by closeDrawer. */
     request: Record<string, never>;
     response: void;
   };
