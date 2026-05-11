@@ -70,22 +70,22 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
     <div
       ref={drawerRef}
       data-testid="settings-drawer"
-      className="absolute inset-0 z-10 flex flex-col overflow-y-auto border-l border-[var(--chrome-border)] bg-[var(--chrome-drawer-bg)] text-[var(--chrome-fg)]"
+      className="absolute inset-0 z-10 flex flex-col overflow-y-auto bg-[var(--surface)] text-[var(--fg)]"
     >
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--chrome-border)] bg-[var(--chrome-drawer-bg)] px-3 py-2">
-        <h2 className="text-sm font-semibold">Settings</h2>
+      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+        <h2 className="text-base font-semibold">Settings</h2>
         <button
           type="button"
           aria-label="Close settings"
           data-testid="settings-close"
           onClick={onClose}
-          className="rounded p-1 text-[var(--chrome-fg)] opacity-80 hover:bg-[var(--chrome-hover)] hover:opacity-100"
+          className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] text-[var(--fg-muted)] hover:bg-[var(--accent-tint)] hover:text-[var(--fg)]"
         >
           <X size={16} />
         </button>
       </header>
 
-      <div className="flex flex-col gap-5 p-3">
+      <div className="flex flex-col gap-3 p-4">
         {/* ── 0. Appearance ───────────────────────────────────── */}
         <Section title="Appearance">
           <Row
@@ -104,7 +104,7 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
               onChange={(e: ChangeEvent<HTMLSelectElement>) =>
                 void update({ appearance: { theme: e.target.value as ThemeChoice } })
               }
-              className="rounded bg-[var(--chrome-input-bg)] px-2 py-1 text-sm text-[var(--chrome-fg)] outline-none focus:ring-1 focus:ring-sky-500"
+              className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] px-2 py-1 text-sm text-[var(--fg)] outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
             >
               <option value="system">System</option>
               <option value="dark">Dark</option>
@@ -131,7 +131,7 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
               onChange={(e: ChangeEvent<HTMLSelectElement>) =>
                 void update({ window: { preset: e.target.value as WindowPreset } })
               }
-              className="rounded bg-[var(--chrome-input-bg)] px-2 py-1 text-sm text-[var(--chrome-fg)] outline-none focus:ring-1 focus:ring-sky-500"
+              className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] px-2 py-1 text-sm text-[var(--fg)] outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
             >
               <option value="iphone14pro">iPhone 14 Pro (393x852)</option>
               <option value="iphonese">iPhone SE (375x667)</option>
@@ -196,7 +196,7 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
               onChange={(e: ChangeEvent<HTMLSelectElement>) =>
                 void update({ dim: { effect: e.target.value as DimEffect } })
               }
-              className="rounded bg-[var(--chrome-input-bg)] px-2 py-1 text-sm text-[var(--chrome-fg)] outline-none focus:ring-1 focus:ring-sky-500"
+              className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] px-2 py-1 text-sm text-[var(--fg)] outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
             >
               <option value="dark">Dark</option>
               <option value="light">Light</option>
@@ -287,13 +287,14 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
               />
             }
           >
-            <input
-              type="checkbox"
-              data-testid="settings-edgedock-enabled"
-              checked={settings.edgeDock.enabled}
-              onChange={(e) => void update({ edgeDock: { enabled: e.target.checked } })}
-              className="accent-sky-500"
-            />
+            <label className="mac-toggle">
+              <input
+                type="checkbox"
+                data-testid="settings-edgedock-enabled"
+                checked={settings.edgeDock.enabled}
+                onChange={(e) => void update({ edgeDock: { enabled: e.target.checked } })}
+              />
+            </label>
           </Row>
           <Slider
             label="Animation"
@@ -345,15 +346,16 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
               />
             }
           >
-            <input
-              type="checkbox"
-              data-testid="settings-lifecycle-restore-tabs"
-              checked={settings.lifecycle.restoreTabsOnLaunch}
-              onChange={(e) =>
-                void update({ lifecycle: { restoreTabsOnLaunch: e.target.checked } })
-              }
-              className="accent-sky-500"
-            />
+            <label className="mac-toggle">
+              <input
+                type="checkbox"
+                data-testid="settings-lifecycle-restore-tabs"
+                checked={settings.lifecycle.restoreTabsOnLaunch}
+                onChange={(e) =>
+                  void update({ lifecycle: { restoreTabsOnLaunch: e.target.checked } })
+                }
+              />
+            </label>
           </Row>
         </Section>
 
@@ -371,19 +373,20 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
               />
             }
           >
-            <input
-              type="checkbox"
-              data-testid="settings-browsing-default-mobile"
-              checked={settings.browsing.defaultIsMobile}
-              onChange={(e) =>
-                void update({ browsing: { defaultIsMobile: e.target.checked } })
-              }
-              className="accent-sky-500"
-            />
+            <label className="mac-toggle">
+              <input
+                type="checkbox"
+                data-testid="settings-browsing-default-mobile"
+                checked={settings.browsing.defaultIsMobile}
+                onChange={(e) =>
+                  void update({ browsing: { defaultIsMobile: e.target.checked } })
+                }
+              />
+            </label>
           </Row>
           <div className="flex flex-col gap-1">
             <div className="flex items-center justify-between gap-2">
-              <label className="text-xs font-medium text-[var(--chrome-fg)] opacity-80">Mobile user agent</label>
+              <label className="text-xs font-medium text-[var(--fg-muted)]">Mobile user agent</label>
               <ResetIcon
                 show={settings.browsing.mobileUserAgent !== DEFAULTS.browsing.mobileUserAgent}
                 onClick={() =>
@@ -400,7 +403,7 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
                 void update({ browsing: { mobileUserAgent: e.target.value } })
               }
               spellCheck={false}
-              className="w-full rounded bg-[var(--chrome-input-bg)] px-2 py-1 font-mono text-xs text-[var(--chrome-fg)] outline-none focus:ring-1 focus:ring-sky-500"
+              className="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] px-2 py-1 font-mono text-xs text-[var(--fg)] outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
             />
           </div>
         </Section>
@@ -433,7 +436,7 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
               onChange={(e) =>
                 void update({ search: { activeId: e.target.value } })
               }
-              className="rounded bg-[var(--chrome-input-bg)] px-2 py-1 text-sm text-[var(--chrome-fg)] outline-none focus:ring-1 focus:ring-sky-500"
+              className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] px-2 py-1 text-sm text-[var(--fg)] outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
             >
               {settings.search.engines.map((eng) => (
                 <option key={eng.id} value={eng.id}>
@@ -476,12 +479,12 @@ function Section({
   rightHeader?: ReactNode;
 }): ReactElement {
   return (
-    <section className="flex flex-col gap-2">
-      <div className="mb-1 flex items-center justify-between border-b border-[var(--chrome-border)] pb-1">
-        <h3 className="text-sm font-semibold text-[var(--chrome-fg)]">{title}</h3>
+    <section className="rounded-[var(--radius-lg)] bg-[var(--surface-elevated)] p-3 shadow-[var(--shadow-card)]">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--fg-muted)]">{title}</h3>
         {rightHeader}
       </div>
-      {children}
+      <div className="flex flex-col gap-3">{children}</div>
     </section>
   );
 }
@@ -497,7 +500,7 @@ function Row({
 }): ReactElement {
   return (
     <div className="flex items-center justify-between gap-2">
-      <label className="text-xs font-medium text-[var(--chrome-fg)] opacity-80">{label}</label>
+      <label className="text-sm text-[var(--fg)]">{label}</label>
       <div className="flex items-center gap-2">
         {children}
         {rightSlot}
@@ -536,9 +539,9 @@ function Slider({
   return (
     <div className={`flex flex-col gap-1 ${dimmed ? 'opacity-60' : ''}`}>
       <div className="flex items-center justify-between gap-2">
-        <label className="text-xs font-medium text-[var(--chrome-fg)] opacity-80">{label}</label>
+        <label className="text-sm text-[var(--fg)]">{label}</label>
         <div className="flex items-center gap-1">
-          <span className="text-xs text-[var(--chrome-muted)]">
+          <span className="text-xs tabular-nums text-[var(--fg-muted)]">
             {display}
             {unit ?? ''}
           </span>
@@ -553,7 +556,7 @@ function Slider({
         max={max}
         step={step}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="h-2 w-full appearance-none rounded bg-[var(--chrome-input-bg)] accent-sky-500"
+        className="mac-slider"
       />
     </div>
   );
@@ -577,7 +580,7 @@ function ResetIcon({
       tabIndex={show ? 0 : -1}
       aria-hidden={!show}
       data-testid={testId}
-      className={`shrink-0 rounded p-1 text-[var(--chrome-muted)] hover:bg-[var(--chrome-hover)] hover:text-[var(--chrome-fg)] ${show ? '' : 'invisible'}`}
+      className={`shrink-0 rounded-[var(--radius-sm)] p-1 text-[var(--fg-faint)] hover:bg-[var(--accent-tint)] hover:text-[var(--fg)] ${show ? '' : 'invisible'}`}
     >
       <RotateCcw size={14} />
     </button>
@@ -614,23 +617,23 @@ function SearchEngineEditor({ engines, onAdd, onDelete }: SearchEngineEditorProp
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-medium text-[var(--chrome-fg)] opacity-80">Engines</label>
+      <label className="text-xs font-medium text-[var(--fg-muted)]">Engines</label>
       <ul data-testid="settings-search-engines" className="flex flex-col gap-1">
         {engines.map((eng) => (
           <li
             key={eng.id}
-            className="flex items-center justify-between rounded px-2 py-1 text-sm hover:bg-[var(--chrome-hover)]"
+            className="flex items-center justify-between rounded-[var(--radius-md)] px-2 py-1 text-sm hover:bg-[var(--accent-tint)]"
           >
-            <span className="text-[var(--chrome-fg)]">{eng.name}</span>
+            <span className="text-[var(--fg)]">{eng.name}</span>
             {eng.builtin ? (
-              <span className="text-xs text-[var(--chrome-muted)]">built-in</span>
+              <span className="text-xs text-[var(--fg-muted)]">built-in</span>
             ) : (
               <button
                 type="button"
                 aria-label={`Delete ${eng.name}`}
                 data-testid={`settings-search-delete-${eng.id}`}
                 onClick={() => onDelete(eng.id)}
-                className="rounded p-1 text-[var(--chrome-muted)] hover:bg-[var(--chrome-hover)] hover:text-[var(--chrome-fg)]"
+                className="rounded-[var(--radius-sm)] p-1 text-[var(--fg-faint)] hover:bg-[var(--accent-tint)] hover:text-[var(--fg)]"
               >
                 <X size={14} />
               </button>
@@ -644,25 +647,25 @@ function SearchEngineEditor({ engines, onAdd, onDelete }: SearchEngineEditorProp
           type="button"
           data-testid="settings-search-add-toggle"
           onClick={() => setExpanded(true)}
-          className="flex items-center gap-1 self-start rounded p-1 text-xs text-[var(--chrome-muted)] hover:bg-[var(--chrome-hover)] hover:text-[var(--chrome-fg)]"
+          className="flex items-center gap-1 self-start rounded-[var(--radius-md)] p-1.5 text-xs text-[var(--accent-text)] hover:bg-[var(--accent-tint)]"
         >
           <Plus size={14} /> Add custom engine
         </button>
       ) : (
-        <div className="flex flex-col gap-1.5 rounded border border-[var(--chrome-border)] bg-[var(--chrome-input-bg)] p-2">
+        <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] p-3">
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-[var(--chrome-fg)] opacity-80">Name</label>
+            <label className="text-xs font-medium text-[var(--fg-muted)]">Name</label>
             <input
               type="text"
               data-testid="settings-search-add-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               spellCheck={false}
-              className="rounded bg-[var(--chrome-bg)] px-2 py-1 text-sm text-[var(--chrome-fg)] outline-none focus:ring-1 focus:ring-sky-500"
+              className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-elevated)] px-2 py-1 text-sm text-[var(--fg)] outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-[var(--chrome-fg)] opacity-80">URL template</label>
+            <label className="text-xs font-medium text-[var(--fg-muted)]">URL template</label>
             <input
               type="text"
               data-testid="settings-search-add-template"
@@ -670,16 +673,16 @@ function SearchEngineEditor({ engines, onAdd, onDelete }: SearchEngineEditorProp
               onChange={(e) => setUrlTemplate(e.target.value)}
               placeholder="https://example.com/search?q={query}"
               spellCheck={false}
-              className="rounded bg-[var(--chrome-bg)] px-2 py-1 font-mono text-xs text-[var(--chrome-fg)] outline-none focus:ring-1 focus:ring-sky-500"
+              className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-elevated)] px-2 py-1 font-mono text-xs text-[var(--fg)] outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
             />
-            <span className="text-xs text-[var(--chrome-muted)]">Must contain {'{query}'}</span>
+            <span className="text-xs text-[var(--fg-muted)]">Must contain {'{query}'}</span>
           </div>
           <div className="flex justify-end gap-2">
             <button
               type="button"
               data-testid="settings-search-add-cancel"
               onClick={cancel}
-              className="rounded px-2 py-1 text-xs text-[var(--chrome-fg)] hover:bg-[var(--chrome-hover)]"
+              className="rounded-[var(--radius-sm)] px-2 py-1 text-xs text-[var(--fg)] hover:bg-[var(--accent-tint)]"
             >
               Cancel
             </button>
@@ -688,7 +691,7 @@ function SearchEngineEditor({ engines, onAdd, onDelete }: SearchEngineEditorProp
               data-testid="settings-search-add-confirm"
               onClick={submit}
               disabled={!valid}
-              className="rounded bg-sky-600 px-2 py-1 text-xs text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-[var(--radius-sm)] bg-[var(--accent)] px-3 py-1 text-xs font-medium text-[var(--accent-fg)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Add
             </button>
