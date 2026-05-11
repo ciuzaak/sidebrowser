@@ -421,6 +421,8 @@ app.whenReady().then(() => {
       // the cycle + drawer integration end-to-end.
       triggerCycle: (direction: 1 | -1): void => e2eCyclerTrigger(direction),
       endCycle: (): void => e2eCyclerEnd(),
+      // M13 chrome-dim assertion hook.
+      getWindowTitle: (): string => (win.isDestroyed() ? '' : win.getTitle()),
       // M13 context-menu hook. Runs the same template builder ViewManager
       // would for a real context-menu event, returning labels in order so the
       // spec can assert the menu structure without dealing with the native
