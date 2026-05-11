@@ -243,11 +243,22 @@ app.whenReady().then(() => {
     catch { return screen.getPrimaryDisplay().workArea; }
   };
 
+  // M13: clear OS title text while dimmed (Alt+Tab tooltip / taskbar hover
+  // / window title bar all show no string). Restored on dim clear.
+  const APP_TITLE = 'sidebrowser';
+
   const edgeDock = new EdgeDock({
     setWindowX: (x) => { const b = win.getBounds(); win.setBounds({ ...b, x: Math.round(x) }); },
     getWindowBounds: () => win.getBounds(),
-    applyDim: () => { const wc = viewManager.getActiveWebContents(); if (wc) void dim.apply(wc, settingsStore.get().dim); },
-    clearDim: () => { void dim.clear(); },
+    applyDim: () => {
+      const wc = viewManager.getActiveWebContents();
+      if (wc) void dim.apply(wc, settingsStore.get().dim);
+      if (!win.isDestroyed()) win.setTitle('');
+    },
+    clearDim: () => {
+      void dim.clear();
+      if (!win.isDestroyed()) win.setTitle(APP_TITLE);
+    },
     broadcastState: (s) => { if (!win.isDestroyed()) win.webContents.send(IpcChannels.windowState, s); },
     now: () => Date.now(),
     setInterval: (cb, ms) => setInterval(cb, ms),
