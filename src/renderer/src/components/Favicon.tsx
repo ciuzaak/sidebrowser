@@ -19,7 +19,7 @@ interface Props {
 export function Favicon({ src, size = 16 }: Props): ReactElement {
   const [erroredSrc, setErroredSrc] = useState<string | null>(null);
   if (src === null || src === erroredSrc) {
-    return <Globe size={size} className="shrink-0 text-[var(--chrome-muted)]" />;
+    return <Globe size={size} className="shrink-0 text-[var(--fg-muted)]" />;
   }
   return (
     <img
