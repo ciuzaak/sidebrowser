@@ -54,7 +54,7 @@ export function TabDrawer({ open, onSelect, onOutsideClose, toggleRef }: TabDraw
     <div
       ref={drawerRef}
       data-testid="tab-drawer"
-      className="flex max-h-[60vh] w-full flex-col overflow-y-auto border-b border-[var(--chrome-border)] bg-[var(--chrome-bg)]"
+      className="flex max-h-[60vh] w-full flex-col overflow-y-auto border-b border-[var(--border)] bg-[var(--surface)]"
     >
       <DrawerButton
         icon={Plus}
@@ -76,8 +76,12 @@ export function TabDrawer({ open, onSelect, onOutsideClose, toggleRef }: TabDraw
             data-active={isActive ? 'true' : 'false'}
             onClick={() => void activate(id)}
             className={
-              'flex w-full items-center gap-2 border-b border-[var(--chrome-border)] px-3 py-2 text-left text-sm hover:bg-[var(--chrome-hover)] ' +
-              (isActive ? 'bg-[var(--chrome-hover)] text-sky-400' : 'text-[var(--chrome-fg)]')
+              'flex w-full items-center gap-2 px-3 py-2 text-left text-sm ' +
+              'border-b border-[var(--border-subtle)] transition-colors duration-100 ' +
+              'hover:bg-[var(--accent-tint)] ' +
+              (isActive
+                ? 'bg-[var(--active-row-bg)] text-[var(--active-row-fg)] shadow-[inset_2px_0_0_var(--accent)] '
+                : 'text-[var(--fg)] ')
             }
           >
             {tab.favicon ? (
@@ -92,7 +96,7 @@ export function TabDrawer({ open, onSelect, onOutsideClose, toggleRef }: TabDraw
                 }}
               />
             ) : (
-              <span className="inline-block h-[14px] w-[14px] shrink-0" aria-hidden />
+              <span className="inline-block h-[14px] w-[14px] shrink-0 rounded-[var(--radius-sm)] bg-[var(--border)] opacity-60" aria-hidden />
             )}
             <span className="flex-1 truncate">{label}</span>
             <span
@@ -100,7 +104,7 @@ export function TabDrawer({ open, onSelect, onOutsideClose, toggleRef }: TabDraw
               aria-label="Close tab"
               data-testid="tab-drawer-close"
               onClick={(e) => void close(e, id)}
-              className="rounded p-1 text-[var(--chrome-muted)] hover:bg-[var(--chrome-hover)] hover:text-[var(--chrome-fg)]"
+              className="rounded-[var(--radius-sm)] p-1 text-[var(--fg-faint)] hover:bg-[var(--accent-tint)] hover:text-[var(--fg)]"
             >
               <X size={14} />
             </span>
@@ -127,7 +131,7 @@ function DrawerButton({
       type="button"
       data-testid={testId}
       onClick={onClick}
-      className="flex w-full items-center gap-2 border-b border-[var(--chrome-border)] px-3 py-2 text-left text-sm text-[var(--chrome-fg)] hover:bg-[var(--chrome-hover)]"
+      className="flex w-full items-center gap-2 border-b border-[var(--border-subtle)] px-3 py-2 text-left text-sm font-medium text-[var(--accent-text)] hover:bg-[var(--accent-tint)]"
     >
       <Icon size={14} />
       <span>{label}</span>
