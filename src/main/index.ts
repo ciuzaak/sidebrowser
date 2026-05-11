@@ -54,6 +54,11 @@ function createWindow(initialBounds: Rectangle): BrowserWindow {
     },
   });
   win.setAlwaysOnTop(true, 'screen-saver');
+  // M13 hotfix: hide the empty menu bar by default — only appears on Alt.
+  // Our hidden Application Menu (visible:false on the only top-level item)
+  // still leaves an empty bar row otherwise.
+  win.setAutoHideMenuBar(true);
+  win.setMenuBarVisibility(false);
 
   if (process.env['ELECTRON_RENDERER_URL']) {
     void win.loadURL(process.env['ELECTRON_RENDERER_URL']);
