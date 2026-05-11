@@ -64,6 +64,13 @@ export const IpcChannels = {
   historyChanged: 'history:changed',
   /** M→R event. M13 TabCycler broadcasts active=true on Ctrl+Tab cycle start, false on Ctrl release. */
   cycleState: 'cycle:state',
+  /**
+   * M→R event (M13 hotfix). Fires whenever any tab's WebContents receives
+   * focus — typically because the user clicked on the page area. Renderer
+   * uses this to close any open chrome drawer (replaces the suppression
+   * trick that hid the page while a drawer was open).
+   */
+  tabFocused: 'chrome:tab-focused',
 } as const;
 
 /**
@@ -212,6 +219,11 @@ export interface IpcContract {
   [IpcChannels.cycleState]: {
     /** Fires on cycle start (active=true) and cycle end (active=false). */
     request: { active: boolean };
+    response: void;
+  };
+  [IpcChannels.tabFocused]: {
+    /** Empty payload — renderer just needs the signal. */
+    request: Record<string, never>;
     response: void;
   };
 }

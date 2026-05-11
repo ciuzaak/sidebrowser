@@ -134,6 +134,18 @@ const api = {
     ipcRenderer.on(IpcChannels.cycleState, handler);
     return () => ipcRenderer.off(IpcChannels.cycleState, handler);
   },
+
+  /**
+   * Subscribe to "any tab WebContents got focus" pings (M13 hotfix). Used by
+   * renderer to close any open chrome drawer when the user clicks on the page
+   * area (which can't be detected via DOM events because WebContentsView is
+   * a separate process). Returns unsubscribe.
+   */
+  onTabFocused: (cb: () => void): (() => void) => {
+    const handler = (): void => cb();
+    ipcRenderer.on(IpcChannels.tabFocused, handler);
+    return () => ipcRenderer.off(IpcChannels.tabFocused, handler);
+  },
 };
 
 contextBridge.exposeInMainWorld('sidebrowser', api);

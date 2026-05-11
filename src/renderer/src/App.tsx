@@ -69,12 +69,13 @@ export function App(): ReactElement {
     if (settingsOpen) closeSettings();
   }, [activeId, settingsOpen, closeSettings]);
 
-  // M6 + M12 + M13: ViewManager suppression with four sources OR'd together.
-  // SettingsDrawer / AddressSuggestions / NewTab / TabDrawer all need the
-  // WebContentsView hidden so the renderer-layer overlay can paint above.
-  // M13 added drawer to the source set so outside-click on the page area lands
-  // in the renderer DOM instead of being swallowed by the native view.
-  const suppressed = settingsOpen || suggestionsOpen || isNewTab || drawerOpen;
+  // M6 + M12: ViewManager suppression. SettingsDrawer / AddressSuggestions /
+  // NewTab render OVER the page area in renderer DOM, so the underlying
+  // WebContentsView has to shrink to {0,0,0,0}. TabDrawer lives in the chrome
+  // bar (above the page area) — NOT in the suppression set; otherwise the
+  // page would go blank while the drawer is open. Outside-click on the page
+  // area is handled by the chrome:tab-focused signal below instead.
+  const suppressed = settingsOpen || suggestionsOpen || isNewTab;
   useEffect(() => {
     window.sidebrowser.setViewSuppressed(suppressed);
   }, [suppressed]);
@@ -98,6 +99,18 @@ export function App(): ReactElement {
       }
     });
   }, [toggleSettings]);
+
+  // M13 hotfix: tab WebContents focus → close all chrome drawers. Page-area
+  // clicks can't be detected via DOM events (WebContentsView is in another
+  // process), so main signals via IPC. closeDrawer only resets the user
+  // toggle — it does NOT interrupt a Ctrl+Tab cycle (cycling drives drawer
+  // visibility independently).
+  useEffect(() => {
+    return window.sidebrowser.onTabFocused(() => {
+      closeDrawer();
+      closeSettings();
+    });
+  }, [closeDrawer, closeSettings]);
 
   // M13: chrome dim — re-use the existing windowState.dimmed signal driven
   // by EdgeDock. Settings hydrate within a frame; while null, render

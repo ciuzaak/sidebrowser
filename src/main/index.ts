@@ -206,7 +206,16 @@ app.whenReady().then(() => {
     },
   });
   cycler.attach(win.webContents);
-  viewManager.onTabAttach((wc) => { cycler.attach(wc); });
+  viewManager.onTabAttach((wc) => {
+    cycler.attach(wc);
+    // M13 hotfix: when any tab wc gets focus (typically from a click on the
+    // page area), broadcast so the renderer can close any open chrome drawer.
+    // Replaces the suppression trick that used to hide the page while a
+    // drawer was open.
+    wc.on('focus', () => {
+      if (!win.isDestroyed()) win.webContents.send(IpcChannels.tabFocused, {});
+    });
+  });
   win.on('blur', () => cycler.end());
   // Expose for E2E test hooks (registered later in the SIDEBROWSER_E2E block).
   // CDP-dispatched keyboard events from Playwright bypass Electron's
