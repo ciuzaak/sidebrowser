@@ -32,7 +32,7 @@ export function useTheme(choice: ThemeChoice): 'dark' | 'light' {
   // Keep returning a valid ThemeChoice-resolved value even before first OS
   // read — callers that capture the return (currently none) should still see
   // a sensible value. `false` matches the CSS fallback in globals.css
-  // (`var(--chrome-bg, #1a1a1a)` ← dark).
+  // (`var(--surface, #1c1e24)` ← dark).
   const effective = resolveTheme(choice, systemIsDark ?? false);
 
   useEffect(() => {
