@@ -69,11 +69,11 @@ describe('buildContextMenuTemplate', () => {
       '复制链接地址',
       '---',
     ]);
-    tpl[0].click!();
+    (tpl[0].click as () => void)();
     expect(deps.openInNewTab).toHaveBeenCalledWith(linkURL);
-    tpl[1].click!();
+    (tpl[1].click as () => void)();
     expect(deps.openInSystemBrowser).toHaveBeenCalledWith(linkURL);
-    tpl[2].click!();
+    (tpl[2].click as () => void)();
     expect(deps.copyToClipboard).toHaveBeenCalledWith(linkURL);
   });
 
@@ -84,9 +84,9 @@ describe('buildContextMenuTemplate', () => {
     expect(tpl[0].label).toBe('复制');
     expect(tpl[1].label).toMatch(/^用 Google 搜索 "x{30}…"$/);
     expect(tpl[2].type).toBe('separator');
-    tpl[0].click!();
+    (tpl[0].click as () => void)();
     expect(deps.copyToClipboard).toHaveBeenCalledWith(long);
-    tpl[1].click!();
+    (tpl[1].click as () => void)();
     expect(deps.searchSelection).toHaveBeenCalledWith(long);
   });
 
@@ -115,17 +115,17 @@ describe('buildContextMenuTemplate', () => {
     const tpl = buildContextMenuTemplate(makeParams(), deps, URL);
     const byLabel = (l: string): import('electron').MenuItemConstructorOptions | undefined =>
       tpl.find((i) => i.label === l);
-    byLabel('后退')!.click!();
+    (byLabel('后退')!.click as () => void)();
     expect(deps.navigateActive).toHaveBeenCalledWith('back');
-    byLabel('前进')!.click!();
+    (byLabel('前进')!.click as () => void)();
     expect(deps.navigateActive).toHaveBeenCalledWith('forward');
-    byLabel('刷新')!.click!();
+    (byLabel('刷新')!.click as () => void)();
     expect(deps.navigateActive).toHaveBeenCalledWith('reload');
-    byLabel('在系统浏览器打开此页')!.click!();
+    (byLabel('在系统浏览器打开此页')!.click as () => void)();
     expect(deps.openInSystemBrowser).toHaveBeenCalledWith(URL);
-    byLabel('复制此页 URL')!.click!();
+    (byLabel('复制此页 URL')!.click as () => void)();
     expect(deps.copyToClipboard).toHaveBeenCalledWith(URL);
-    byLabel('查看源代码')!.click!();
+    (byLabel('查看源代码')!.click as () => void)();
     expect(deps.viewSource).toHaveBeenCalledWith(URL);
   });
 

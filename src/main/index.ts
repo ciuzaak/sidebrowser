@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, nativeTheme, ipcMain } from 'electron';
+import { app, BrowserWindow, screen, nativeTheme, ipcMain, shell, clipboard } from 'electron';
 import type { Rectangle } from 'electron';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
@@ -158,6 +158,36 @@ app.whenReady().then(() => {
     onResetZoom: () => { viewManager.resetActiveZoom(); },
     emitToRenderer: (action) => {
       if (!win.isDestroyed()) win.webContents.send(IpcChannels.chromeShortcut, { action });
+    },
+  });
+
+  // 2c. M13 web context-menu deps. The deps reference viewManager + settingsStore
+  // via closures so search-engine selection / tab creation always sees current
+  // state. canGoBack/canGoForward are placeholders here — view-manager refreshes
+  // them per-event from the right tab's nav history.
+  const buildSearchUrlForSelection = (text: string): string => {
+    const s = settingsStore.get().search;
+    const tpl =
+      s.engines.find((e) => e.id === s.activeId)?.urlTemplate ??
+      'https://www.google.com/search?q={query}';
+    return tpl.replace('{query}', encodeURIComponent(text));
+  };
+  viewManager.setContextMenuDeps({
+    openInSystemBrowser: (url) => { void shell.openExternal(url); },
+    openInNewTab: (url) => { viewManager.createTab(url); },
+    copyToClipboard: (text) => { clipboard.writeText(text); },
+    searchSelection: (text) => { viewManager.createTab(buildSearchUrlForSelection(text)); },
+    viewSource: (url) => { viewManager.createTab(`view-source:${url}`); },
+    navigateActive: (a) => {
+      if (a === 'back') viewManager.goBackActive();
+      else if (a === 'forward') viewManager.goForwardActive();
+      else viewManager.reloadActive();
+    },
+    canGoBack: false,
+    canGoForward: false,
+    get activeSearchEngineName(): string {
+      const s = settingsStore.get().search;
+      return s.engines.find((e) => e.id === s.activeId)?.name ?? 'Google';
     },
   });
 

@@ -1,4 +1,5 @@
 import { WebContentsView, type BrowserWindow } from 'electron';
+import { createRequire } from 'node:module';
 import { nanoid } from 'nanoid';
 import { getPersistentSession } from './session-manager';
 import { desktopUa } from './user-agents';
@@ -14,6 +15,12 @@ import {
 import type { Tab, TabsSnapshot } from '@shared/types';
 import { makeEmptyTab } from '@shared/types';
 import type { HistoryRecorder } from './history-recorder';
+import { buildContextMenuTemplate, type ContextMenuDeps } from './context-menu';
+
+// Lazy CommonJS bridge for `Menu` — keeps non-Electron contexts (vitest
+// importing the pure free functions in this module) free of an electron
+// runtime dependency. Same pattern as keyboard-shortcuts.ts.
+const requireCjs = createRequire(import.meta.url);
 
 // ---------------------------------------------------------------------------
 // History recorder wiring — M12 Task 5
@@ -104,6 +111,27 @@ export function nextZoomFactor(current: number, dir: 'in' | 'out'): number {
 }
 
 // ---------------------------------------------------------------------------
+// Tab cycling — M13 Task 3
+// ---------------------------------------------------------------------------
+
+/**
+ * Pure index math for Ctrl+Tab cycling. Returns -1 if `order` is empty or
+ * `activeId` is not found. With a single tab, returns 0 so callers can no-op
+ * via id equality (current === order[0]).
+ */
+export function nextRelativeIndex(
+  order: readonly string[],
+  activeId: string,
+  delta: 1 | -1,
+): number {
+  if (order.length === 0) return -1;
+  const idx = order.indexOf(activeId);
+  if (idx === -1) return -1;
+  const N = order.length;
+  return ((idx + delta) % N + N) % N;
+}
+
+// ---------------------------------------------------------------------------
 
 /**
  * Getter closure the main bootstrap injects so ViewManager can read live
@@ -138,6 +166,10 @@ export class ViewManager {
   private activeId: string | null = null;
   private chromeHeightPx = 0;
   private suppressed = false;
+  /** Web context-menu deps (M13). Wired via setContextMenuDeps() after construction. */
+  private contextMenuDeps: ContextMenuDeps | null = null;
+  /** Tab attach listeners (M13). Used by TabCycler to install before-input-event on every tab. */
+  private readonly tabAttachListeners = new Set<(wc: Electron.WebContents) => void>();
   /**
    * Per-tab zoom factor (1.0 = 100%). Default 1.0 is implicit (`get(...) ?? 1.0`).
    * Map entries are removed on closeTab. Not persisted by design (spec §6.1).
@@ -272,6 +304,9 @@ export class ViewManager {
       detach: this.attachWebContentsEvents(id, view),
     };
     this.tabs.set(id, managed);
+    // M13: emit AFTER the tab is registered so listeners (e.g. TabCycler)
+    // that may call back into ViewManager observe a consistent state.
+    this.emitTabAttach(view.webContents);
 
     this.activateTab(id);
     // Fire initial navigation. Intentionally not awaited: the load happens in the
@@ -315,6 +350,46 @@ export class ViewManager {
     this.activeId = id;
     this.applyBounds();
     this.emitSnapshot();
+  }
+
+  /**
+   * Cycle to the next/prev tab by insertion order (Map iteration order).
+   * No-op when no active tab, fewer than 2 tabs, or activeId missing from the
+   * order. M13 Task 3 — used by TabCycler.
+   */
+  activateRelativeTab(delta: 1 | -1): void {
+    if (!this.activeId) return;
+    const order = Array.from(this.tabs.keys());
+    const next = nextRelativeIndex(order, this.activeId, delta);
+    if (next === -1) return;
+    const nextId = order[next];
+    if (nextId === this.activeId) return;
+    this.activateTab(nextId);
+  }
+
+  /** Wire the M13 web context-menu deps. Called once during bootstrap. */
+  setContextMenuDeps(deps: ContextMenuDeps): void {
+    this.contextMenuDeps = deps;
+  }
+
+  /**
+   * Subscribe to per-tab WebContents attachment (M13). Fires once at createTab
+   * time for each new tab. Used by TabCycler to install before-input-event on
+   * every tab as it appears. Returns an unsubscribe function. Does NOT fire
+   * retroactively for already-existing tabs — register before the first
+   * createTab call (matches usage in index.ts bootstrap).
+   */
+  onTabAttach(listener: (wc: Electron.WebContents) => void): () => void {
+    this.tabAttachListeners.add(listener);
+    return () => this.tabAttachListeners.delete(listener);
+  }
+
+  private emitTabAttach(wc: Electron.WebContents): void {
+    for (const l of this.tabAttachListeners) {
+      try { l(wc); } catch (err) {
+        console.error('[sidebrowser] onTabAttach listener threw:', err);
+      }
+    }
   }
 
   navigate(id: string, url: string): void {
@@ -664,6 +739,25 @@ export class ViewManager {
       }
     };
 
+    // M13: web context menu. Per-event deps refresh so canGoBack/canGoForward
+    // reflect this tab's nav history (constructor-time deps carry stub values).
+    const onContextMenu = (e: Electron.Event, params: Electron.ContextMenuParams): void => {
+      if (!this.contextMenuDeps) return;
+      e.preventDefault();
+      const tab = this.tabs.get(id)?.tab;
+      const currentUrl = tab?.url ?? '';
+      const deps: ContextMenuDeps = {
+        ...this.contextMenuDeps,
+        canGoBack: wc.navigationHistory.canGoBack(),
+        canGoForward: wc.navigationHistory.canGoForward(),
+      };
+      const template = buildContextMenuTemplate(params, deps, currentUrl);
+      const { Menu } = requireCjs('electron') as {
+        Menu: { buildFromTemplate(t: Electron.MenuItemConstructorOptions[]): Electron.Menu };
+      };
+      Menu.buildFromTemplate(template).popup({ window: this.window });
+    };
+
     wc.on('did-start-loading', onStart);
     wc.on('did-stop-loading', onStop);
     wc.on('did-navigate', onNavigate);
@@ -672,6 +766,7 @@ export class ViewManager {
     wc.on('page-favicon-updated', onFavicon);
     wc.on('devtools-opened', onDevtoolsOpened);
     wc.on('devtools-closed', onDevtoolsClosed);
+    wc.on('context-menu', onContextMenu);
 
     // M11: Ctrl+wheel zoom via Chromium's native zoom-changed event.
     const onZoomChanged = (_e: Electron.Event, dir: 'in' | 'out'): void => {
@@ -708,6 +803,7 @@ export class ViewManager {
       wc.off('devtools-opened', onDevtoolsOpened);
       wc.off('devtools-closed', onDevtoolsClosed);
       wc.off('zoom-changed', onZoomChanged);
+      wc.off('context-menu', onContextMenu);
       detachHistory();    // M12: detach history listeners
     };
   }
