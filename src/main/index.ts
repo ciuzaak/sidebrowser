@@ -205,6 +205,17 @@ app.whenReady().then(() => {
   cycler.attach(win.webContents);
   viewManager.onTabAttach((wc) => { cycler.attach(wc); });
   win.on('blur', () => cycler.end());
+  // Expose for E2E test hooks (registered later in the SIDEBROWSER_E2E block).
+  // CDP-dispatched keyboard events from Playwright bypass Electron's
+  // before-input-event, so direct-trigger is the only way to exercise cycle
+  // behavior in E2E.
+  const e2eCyclerTrigger = (direction: 1 | -1): void => {
+    viewManager.activateRelativeTab(direction);
+    if (!win.isDestroyed()) win.webContents.send(IpcChannels.cycleState, { active: true });
+  };
+  const e2eCyclerEnd = (): void => {
+    if (!win.isDestroyed()) win.webContents.send(IpcChannels.cycleState, { active: false });
+  };
 
   // 3. Tab persistence — save on any snapshot change or per-tab URL update.
   const store = createTabStore();
@@ -405,6 +416,11 @@ app.whenReady().then(() => {
       // M12 history hooks.
       seedHistory: (entries: HistoryEntry[]): void => historyStore.seed(entries),
       getHistoryAll: (): HistoryEntry[] => historyStore.all(),
+      // M13 cycle hooks. CDP keyboard events bypass before-input-event in
+      // Playwright; these mirror what TabCycler would do so E2E can exercise
+      // the cycle + drawer integration end-to-end.
+      triggerCycle: (direction: 1 | -1): void => e2eCyclerTrigger(direction),
+      endCycle: (): void => e2eCyclerEnd(),
       // M13 context-menu hook. Runs the same template builder ViewManager
       // would for a real context-menu event, returning labels in order so the
       // spec can assert the menu structure without dealing with the native
