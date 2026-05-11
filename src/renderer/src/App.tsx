@@ -7,7 +7,7 @@ import { useSettingsBridge } from './hooks/useSettingsBridge';
 import { useTabBridge } from './hooks/useTabBridge';
 import { useWindowStateBridge } from './hooks/useWindowStateBridge';
 import { useSettingsStore } from './store/settings-store';
-import { useActiveTab } from './store/tab-store';
+import { useActiveTab, useTabsStore } from './store/tab-store';
 import { useTheme } from './theme/useTheme';
 
 export function App(): ReactElement {
@@ -21,13 +21,17 @@ export function App(): ReactElement {
   const activeTab = useActiveTab();
   const isNewTab = activeTab?.url === 'about:blank';
 
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // M13: drawer is open if the user toggled it OR the Ctrl+Tab cycle is active.
+  // Cycle ownership is centralized in main; renderer only mirrors via IPC.
+  const cycling = useTabsStore((s) => s.cycling);
+  const [userDrawerOpen, setUserDrawerOpen] = useState(false);
+  const drawerOpen = userDrawerOpen || cycling;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const chromeRef = useRef<HTMLDivElement | null>(null);
 
-  const toggleDrawer = useCallback(() => setDrawerOpen((v) => !v), []);
-  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+  const toggleDrawer = useCallback(() => setUserDrawerOpen((v) => !v), []);
+  const closeDrawer = useCallback(() => setUserDrawerOpen(false), []);
   const toggleSettings = useCallback(() => setSettingsOpen((v) => !v), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
@@ -45,11 +49,12 @@ export function App(): ReactElement {
     return () => observer.disconnect();
   }, []);
 
-  // M6 + M12: ViewManager suppression with three sources OR'd together.
-  // SettingsDrawer / AddressSuggestions / NewTab all need the WebContentsView
-  // hidden so the renderer-layer overlay can paint above. A single useEffect
-  // computes the union and pushes it; the individual sources don't fight.
-  const suppressed = settingsOpen || suggestionsOpen || isNewTab;
+  // M6 + M12 + M13: ViewManager suppression with four sources OR'd together.
+  // SettingsDrawer / AddressSuggestions / NewTab / TabDrawer all need the
+  // WebContentsView hidden so the renderer-layer overlay can paint above.
+  // M13 added drawer to the source set so outside-click on the page area lands
+  // in the renderer DOM instead of being swallowed by the native view.
+  const suppressed = settingsOpen || suggestionsOpen || isNewTab || drawerOpen;
   useEffect(() => {
     window.sidebrowser.setViewSuppressed(suppressed);
   }, [suppressed]);
