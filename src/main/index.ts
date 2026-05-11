@@ -40,10 +40,26 @@ if (!gotLock) {
   process.exit(0);
 }
 
-function createWindow(initialBounds: Rectangle, initialAlwaysOnTop: boolean): BrowserWindow {
-  const initialOverlay = resolveTitleBarOverlay(
-    nativeTheme.shouldUseDarkColors ? 'dark' : 'light',
-  );
+/**
+ * Resolve a `ThemeChoice` against the current OS preference. Lives next to
+ * the callers that need it (createWindow + recomputeTitleBarOverlay) so the
+ * 'system' branch is computed identically at both sites.
+ */
+function resolveActiveTheme(choice: 'system' | 'dark' | 'light'): 'dark' | 'light' {
+  if (choice === 'dark' || choice === 'light') return choice;
+  return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+}
+
+function createWindow(
+  initialBounds: Rectangle,
+  initialAlwaysOnTop: boolean,
+  initialThemeChoice: 'system' | 'dark' | 'light',
+): BrowserWindow {
+  // Codex review (M14): respect the persisted appearance.theme at startup —
+  // otherwise the OS-side titleBarOverlay paints with the OS theme even when
+  // the user has explicitly overridden it (e.g. theme='light' on a dark OS),
+  // and the mismatch only resolves on the next settings:changed event.
+  const initialOverlay = resolveTitleBarOverlay(resolveActiveTheme(initialThemeChoice));
   const win = new BrowserWindow({
     x: initialBounds.x,
     y: initialBounds.y,
@@ -121,13 +137,7 @@ function recomputeTitleBarOverlay(
   win: BrowserWindow,
   themeChoice: 'system' | 'dark' | 'light',
 ): void {
-  const resolved =
-    themeChoice === 'system'
-      ? nativeTheme.shouldUseDarkColors
-        ? 'dark'
-        : 'light'
-      : themeChoice;
-  const overlay = resolveTitleBarOverlay(resolved);
+  const overlay = resolveTitleBarOverlay(resolveActiveTheme(themeChoice));
   if (!win.isDestroyed()) {
     win.setTitleBarOverlay({
       color: overlay.color,
@@ -203,7 +213,7 @@ app.whenReady().then(() => {
   const historyRecorder = new HistoryRecorder(historyStore);
 
   // 2. Window + ViewManager + IPC router.
-  const win = createWindow(initialBounds, initial.alwaysOnTop);
+  const win = createWindow(initialBounds, initial.alwaysOnTop, settingsStore.get().appearance.theme);
   // Latest "edge-dock is currently engaged" view, fed by the broadcast handler
   // below. Combined with the user's alwaysOnTop setting in
   // applyEffectiveAlwaysOnTop() — edge-dock force-overrides while docked so
@@ -481,6 +491,7 @@ app.whenReady().then(() => {
   // values on its next dispatch without explicit poke.
   let lastPreset = settingsStore.get().window.preset;
   let lastAlwaysOnTop = settingsStore.get().window.alwaysOnTop;
+  let lastEdgeDockEnabled = settingsStore.get().edgeDock.enabled;
   settingsStore.onChanged((settings) => {
     if (dim.isActive) void dim.restyle(settings.dim);
     watcher.setDelayMs(settings.mouseLeave.delayMs);
@@ -491,7 +502,19 @@ app.whenReady().then(() => {
         win.setBounds({ ...b, width: settings.window.width, height: settings.window.height });
       }
     }
-    if (settings.window.alwaysOnTop !== lastAlwaysOnTop) {
+    // Codex review (M14): edgeDock.enabled flipping false must also flip the
+    // closure-level edgeDockActive flag. Otherwise a window that was DOCKED_*
+    // when the user disables edge-dock leaves `edgeDockActive` stuck at true,
+    // and a subsequent alwaysOnTop=false toggle gets overridden by the stale
+    // value until the next edge-dock reducer dispatch fires (which never
+    // happens once enabled=false, because the reducer is mostly a no-op).
+    const edgeDockJustDisabled =
+      lastEdgeDockEnabled && !settings.edgeDock.enabled && edgeDockActive;
+    if (edgeDockJustDisabled) {
+      edgeDockActive = false;
+    }
+    lastEdgeDockEnabled = settings.edgeDock.enabled;
+    if (settings.window.alwaysOnTop !== lastAlwaysOnTop || edgeDockJustDisabled) {
       lastAlwaysOnTop = settings.window.alwaysOnTop;
       applyEffectiveAlwaysOnTop(win, settings.window.alwaysOnTop, edgeDockActive);
     }
@@ -619,7 +642,7 @@ app.whenReady().then(() => {
       // this is best-effort. Extract a shared bootstrapWindow helper when
       // adding macOS support. Browsing defaults below now read live from
       // settingsStore, matching the primary-window wiring.
-      const newWin = createWindow(initialBounds, settingsStore.get().window.alwaysOnTop);
+      const newWin = createWindow(initialBounds, settingsStore.get().window.alwaysOnTop, settingsStore.get().appearance.theme);
       const newViewManager = new ViewManager(newWin, () => {
         const s = settingsStore.get();
         return {
