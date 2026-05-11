@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement } from 'react';
+import { forwardRef, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement, type RefObject } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, Loader2, Layers, Smartphone, Monitor, Settings } from 'lucide-react';
 import { useActiveTab } from '../store/tab-store';
 import { useWindowStateStore } from '../store/window-state-store';
@@ -13,6 +13,10 @@ interface TopBarProps {
   onToggleSettings: () => void;
   /** Called whenever the dropdown's open state changes; App lifts this for view-suppression. */
   onSuggestionsOpenChange: (open: boolean) => void;
+  /** M13: ref attached to the tabs toggle button so TabDrawer can ignore mousedown on it. */
+  tabsToggleRef: RefObject<HTMLButtonElement | null>;
+  /** M13: ref attached to the settings toggle button so SettingsDrawer can ignore mousedown on it. */
+  settingsToggleRef: RefObject<HTMLButtonElement | null>;
 }
 
 export function TopBar({
@@ -21,6 +25,8 @@ export function TopBar({
   settingsOpen,
   onToggleSettings,
   onSuggestionsOpenChange,
+  tabsToggleRef,
+  settingsToggleRef,
 }: TopBarProps): ReactElement {
   const tab = useActiveTab();
   const hidden = useWindowStateStore((s) => s.hidden);
@@ -97,6 +103,7 @@ export function TopBar({
   return (
     <div className={`flex w-full items-center gap-1 border-b border-[var(--chrome-border)] bg-[var(--chrome-bg)] px-2 py-1.5 transition-opacity duration-200 ${hidden ? 'opacity-30' : 'opacity-100'}`}>
       <IconButton
+        ref={tabsToggleRef}
         ariaLabel="Toggle tabs"
         testId="topbar-tabs-toggle"
         active={drawerOpen}
@@ -105,6 +112,7 @@ export function TopBar({
         <Layers size={16} />
       </IconButton>
       <IconButton
+        ref={settingsToggleRef}
         ariaLabel="Open settings"
         testId="topbar-settings-toggle"
         active={settingsOpen}
@@ -168,23 +176,22 @@ export function TopBar({
   );
 }
 
-function IconButton({
-  children,
-  ariaLabel,
-  testId,
-  disabled,
-  active,
-  onClick,
-}: {
+interface IconButtonProps {
   children: ReactElement;
   ariaLabel: string;
   testId?: string;
   disabled?: boolean;
   active?: boolean;
   onClick: () => void;
-}): ReactElement {
+}
+
+const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
+  { children, ariaLabel, testId, disabled, active, onClick },
+  ref,
+): ReactElement {
   return (
     <button
+      ref={ref}
       type="button"
       aria-label={ariaLabel}
       data-testid={testId}
@@ -198,4 +205,4 @@ function IconButton({
       {children}
     </button>
   );
-}
+});

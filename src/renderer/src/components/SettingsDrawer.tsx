@@ -1,6 +1,6 @@
 import { RotateCcw, X, Plus } from 'lucide-react';
-import { useState } from 'react';
-import type { ChangeEvent, ReactElement, ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { ChangeEvent, ReactElement, ReactNode, RefObject } from 'react';
 import type { Settings, ThemeChoice, SearchEngine } from '@shared/types';
 import { DEFAULTS, BUILTIN_SEARCH_ENGINES } from '@shared/settings-defaults';
 import { nanoid } from 'nanoid';
@@ -35,14 +35,32 @@ import { useSettingsStore } from '../store/settings-store';
 interface SettingsDrawerProps {
   open: boolean;
   onClose: () => void;
+  /** M13: ref to the topbar toggle so we don't auto-close when the user clicks it. */
+  toggleRef: RefObject<HTMLButtonElement | null>;
 }
 
 type DimEffect = Settings['dim']['effect'];
 type WindowPreset = Settings['window']['preset'];
 
-export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactElement | null {
+export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps): ReactElement | null {
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+
+  // M13: outside-click to close. Effect must run unconditionally (Rules of Hooks)
+  // — placed BEFORE the early returns; the `open` guard inside short-circuits.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent): void => {
+      const target = e.target as Node | null;
+      if (target === null) return;
+      if (drawerRef.current?.contains(target)) return;
+      if (toggleRef.current?.contains(target)) return;
+      onClose();
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open, onClose, toggleRef]);
 
   // Null-gate (pre-hydration) AND closed-gate (don't paint anything when hidden).
   if (!open) return null;
@@ -50,6 +68,7 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps): ReactEle
 
   return (
     <div
+      ref={drawerRef}
       data-testid="settings-drawer"
       className="absolute inset-0 z-10 flex flex-col overflow-y-auto border-l border-[var(--chrome-border)] bg-[var(--chrome-drawer-bg)] text-[var(--chrome-fg)]"
     >

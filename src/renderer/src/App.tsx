@@ -29,6 +29,10 @@ export function App(): ReactElement {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const chromeRef = useRef<HTMLDivElement | null>(null);
+  // M13: refs for the toggle buttons so the drawers can ignore mousedown on
+  // their own toggle (otherwise click-to-close would re-open immediately).
+  const tabsToggleRef = useRef<HTMLButtonElement | null>(null);
+  const settingsToggleRef = useRef<HTMLButtonElement | null>(null);
 
   const toggleDrawer = useCallback(() => setUserDrawerOpen((v) => !v), []);
   const closeDrawer = useCallback(() => setUserDrawerOpen(false), []);
@@ -88,12 +92,23 @@ export function App(): ReactElement {
           settingsOpen={settingsOpen}
           onToggleSettings={toggleSettings}
           onSuggestionsOpenChange={setSuggestionsOpen}
+          tabsToggleRef={tabsToggleRef}
+          settingsToggleRef={settingsToggleRef}
         />
-        <TabDrawer open={drawerOpen} onSelect={closeDrawer} />
+        <TabDrawer
+          open={drawerOpen}
+          onSelect={closeDrawer}
+          onOutsideClose={closeDrawer}
+          toggleRef={tabsToggleRef}
+        />
       </div>
       <div className="relative flex-1">
         {isNewTab && <NewTab />}
-        <SettingsDrawer open={settingsOpen} onClose={closeSettings} />
+        <SettingsDrawer
+          open={settingsOpen}
+          onClose={closeSettings}
+          toggleRef={settingsToggleRef}
+        />
       </div>
     </div>
   );

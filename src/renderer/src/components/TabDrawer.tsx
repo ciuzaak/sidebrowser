@@ -1,16 +1,36 @@
 import { X, Plus, type LucideIcon } from 'lucide-react';
-import type { ReactElement } from 'react';
+import { useEffect, useRef, type ReactElement, type RefObject } from 'react';
 import { useTabsStore } from '../store/tab-store';
 
 interface TabDrawerProps {
   open: boolean;
   onSelect: () => void;
+  /** M13: fired when the user mousedowns outside the drawer + outside the toggle. */
+  onOutsideClose: () => void;
+  /** M13: ref to the topbar toggle so we don't auto-close when the user clicks it. */
+  toggleRef: RefObject<HTMLButtonElement | null>;
 }
 
-export function TabDrawer({ open, onSelect }: TabDrawerProps): ReactElement | null {
+export function TabDrawer({ open, onSelect, onOutsideClose, toggleRef }: TabDrawerProps): ReactElement | null {
   const tabs = useTabsStore((s) => s.tabs);
   const order = useTabsStore((s) => s.tabOrder);
   const activeId = useTabsStore((s) => s.activeId);
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+
+  // M13: close on outside-click. Effect must run unconditionally — placing it
+  // after the `if (!open) return null` early-return would violate Rules of Hooks.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent): void => {
+      const target = e.target as Node | null;
+      if (target === null) return;
+      if (drawerRef.current?.contains(target)) return;
+      if (toggleRef.current?.contains(target)) return;
+      onOutsideClose();
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open, onOutsideClose, toggleRef]);
 
   if (!open) return null;
 
@@ -32,6 +52,7 @@ export function TabDrawer({ open, onSelect }: TabDrawerProps): ReactElement | nu
 
   return (
     <div
+      ref={drawerRef}
       data-testid="tab-drawer"
       className="flex max-h-[60vh] w-full flex-col overflow-y-auto border-b border-[var(--chrome-border)] bg-[var(--chrome-bg)]"
     >
