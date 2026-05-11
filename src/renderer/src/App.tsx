@@ -53,6 +53,18 @@ export function App(): ReactElement {
     return () => observer.disconnect();
   }, []);
 
+  // M13: switching to a different tab (drawer click, Ctrl+Tab cycle, main-side
+  // auto-reactivation on close) closes the SettingsDrawer. Guard the first
+  // hydration tick (null → first id) so an open drawer set before tabs hydrate
+  // is not auto-closed.
+  const activeId = useTabsStore((s) => s.activeId);
+  const prevActiveIdRef = useRef<string | null>(activeId);
+  useEffect(() => {
+    if (prevActiveIdRef.current === activeId) return;
+    prevActiveIdRef.current = activeId;
+    if (settingsOpen) closeSettings();
+  }, [activeId, settingsOpen, closeSettings]);
+
   // M6 + M12 + M13: ViewManager suppression with four sources OR'd together.
   // SettingsDrawer / AddressSuggestions / NewTab / TabDrawer all need the
   // WebContentsView hidden so the renderer-layer overlay can paint above.
