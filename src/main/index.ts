@@ -222,6 +222,14 @@ app.whenReady().then(() => {
     });
   });
   win.on('blur', () => cycler.end());
+  // M13 hotfix #2: renderer-driven cycle end fallback. Some Electron builds
+  // don't reliably dispatch the standalone Control keyUp through
+  // before-input-event; renderer's document keyup catches it when chrome has
+  // focus and tells us via this IPC.
+  ipcMain.on(IpcChannels.cycleEnd, () => cycler.end());
+  win.once('closed', () => {
+    ipcMain.removeAllListeners(IpcChannels.cycleEnd);
+  });
   // Expose for E2E test hooks (registered later in the SIDEBROWSER_E2E block).
   // CDP-dispatched keyboard events from Playwright bypass Electron's
   // before-input-event, so direct-trigger is the only way to exercise cycle

@@ -146,6 +146,15 @@ const api = {
     ipcRenderer.on(IpcChannels.tabFocused, handler);
     return () => ipcRenderer.off(IpcChannels.tabFocused, handler);
   },
+
+  /**
+   * R→M send (M13 hotfix #2): renderer detected Ctrl release while a
+   * Ctrl+Tab cycle was active. Fallback for Electron's flaky modifier
+   * keyUp before-input-event on Windows.
+   */
+  endCycle: (): void => {
+    ipcRenderer.send(IpcChannels.cycleEnd, {});
+  },
 };
 
 contextBridge.exposeInMainWorld('sidebrowser', api);

@@ -54,8 +54,13 @@ export class TabCycler {
         }
         return;
       }
-      // Ctrl release → end cycle (one-shot broadcast).
-      if (input.type === 'keyUp' && input.key === 'Control' && this.cycling) {
+      // End cycle when Ctrl is no longer held. Lenient match — fires on:
+      //   - keyUp of Control itself (input.control=false at release time)
+      //   - any subsequent keyUp where Ctrl wasn't being held (self-heal
+      //     against Electron's flaky modifier keyUp before-input-event
+      //     dispatch — observed Win/Electron 41 not always firing standalone
+      //     modifier keyUps reliably).
+      if (this.cycling && input.type === 'keyUp' && !input.control) {
         this.cycling = false;
         this.deps.broadcastCycleState(false);
       }

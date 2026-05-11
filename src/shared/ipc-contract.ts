@@ -71,6 +71,12 @@ export const IpcChannels = {
    * trick that hid the page while a drawer was open).
    */
   tabFocused: 'chrome:tab-focused',
+  /**
+   * R→M send (M13 hotfix #2). Renderer-detected Ctrl release while cycling.
+   * Fallback for the case where Electron's before-input-event doesn't fire
+   * for the standalone Control keyUp on Windows.
+   */
+  cycleEnd: 'cycle:end',
 } as const;
 
 /**
@@ -223,6 +229,12 @@ export interface IpcContract {
   };
   [IpcChannels.tabFocused]: {
     /** Empty payload — renderer just needs the signal. */
+    request: Record<string, never>;
+    response: void;
+  };
+  [IpcChannels.cycleEnd]: {
+    /** R→M send: renderer-detected Ctrl release while cycling — fallback for
+     *  unreliable Electron before-input-event modifier keyUp dispatch. */
     request: Record<string, never>;
     response: void;
   };

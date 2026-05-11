@@ -112,6 +112,22 @@ export function App(): ReactElement {
     });
   }, [closeDrawer, closeSettings]);
 
+  // M13 hotfix #2: renderer-side Ctrl-release fallback. Electron's
+  // before-input-event for the standalone Control keyUp on Windows is
+  // unreliable — when chrome has focus, this catches it and tells main to
+  // end the cycle. Listener attaches only while cycling so it doesn't
+  // interfere with normal Ctrl-key usage in the address bar.
+  useEffect(() => {
+    if (!cycling) return;
+    const onKeyUp = (e: KeyboardEvent): void => {
+      if (e.key === 'Control' || (!e.ctrlKey && e.key !== 'Shift' && e.key !== 'Alt' && e.key !== 'Meta')) {
+        window.sidebrowser.endCycle();
+      }
+    };
+    document.addEventListener('keyup', onKeyUp);
+    return () => document.removeEventListener('keyup', onKeyUp);
+  }, [cycling]);
+
   // M13: chrome dim — re-use the existing windowState.dimmed signal driven
   // by EdgeDock. Settings hydrate within a frame; while null, render
   // un-dimmed (avoids a brief flash of stale filter on cold start).
