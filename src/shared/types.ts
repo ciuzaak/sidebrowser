@@ -66,8 +66,14 @@ export interface MouseLeaveSettings {
 export interface DimSettings {
   effect: 'dark' | 'light' | 'blur' | 'none';
   blurPx: number;           // 0–40
-  darkBrightness: number;   // 0–1
-  lightBrightness: number;  // 1–3
+  darkBrightness: number;   // 0–1 (filter brightness multiplier)
+  /**
+   * M13: white-overlay opacity in [0, 1]. Was previously a `filter:
+   * brightness()` multiplier in [1, 3]; renamed semantically but the field
+   * key is kept to avoid a settings-file migration. clampSettings snaps
+   * values >1 down to 1 on first save post-upgrade.
+   */
+  lightBrightness: number;
   transitionMs: number;     // 0–1000
 }
 

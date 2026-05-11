@@ -50,4 +50,38 @@ describe('sanitizeUrl', () => {
   it('maps the empty string to about:blank', () => {
     expect(sanitizeUrl('')).toBe('about:blank');
   });
+
+  // M13: view-source: scheme allow-list (codex review fix).
+
+  it('passes through view-source:https://... verbatim', () => {
+    expect(sanitizeUrl('view-source:https://example.com/page')).toBe(
+      'view-source:https://example.com/page',
+    );
+  });
+
+  it('passes through view-source:http://... verbatim', () => {
+    expect(sanitizeUrl('view-source:http://example.com')).toBe(
+      'view-source:http://example.com',
+    );
+  });
+
+  it('passes through view-source:file://... verbatim', () => {
+    expect(sanitizeUrl('view-source:file:///C:/x.html')).toBe(
+      'view-source:file:///C:/x.html',
+    );
+  });
+
+  it('blocks view-source:javascript:... (inner scheme not whitelisted)', () => {
+    expect(sanitizeUrl('view-source:javascript:alert(1)')).toBe('about:blank');
+  });
+
+  it('blocks view-source: with malformed inner URL', () => {
+    expect(sanitizeUrl('view-source:not a url')).toBe('about:blank');
+  });
+
+  it('blocks view-source:data:... (inner scheme not whitelisted)', () => {
+    expect(sanitizeUrl('view-source:data:text/html,<h1>x</h1>')).toBe(
+      'about:blank',
+    );
+  });
 });

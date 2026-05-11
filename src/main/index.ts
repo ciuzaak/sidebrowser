@@ -24,6 +24,7 @@ import { HistoryStore, createElectronHistoryBackend } from './history-store';
 import { HistoryRecorder } from './history-recorder';
 import { installApplicationMenu } from './keyboard-shortcuts';
 import { TabCycler } from './tab-cycler';
+import { isSafeExternalUrl } from './safe-external';
 // Imported up here so the E2E `simulateContextMenu` hook (registered later)
 // doesn't need a runtime require — keeps lint's no-import-type-annotation rule happy.
 import { buildContextMenuTemplate as buildContextMenuTemplateForTest } from './context-menu';
@@ -181,8 +182,15 @@ app.whenReady().then(() => {
       'https://www.google.com/search?q={query}';
     return tpl.replace('{query}', encodeURIComponent(text));
   };
+  // M13 hotfix (codex review): shell.openExternal hands the URL to the OS's
+  // protocol handler. Don't forward `javascript:`, `file:`, custom-scheme,
+  // or malformed URLs from page-controlled context-menu params. http/https
+  // only — guard implemented in src/main/safe-external.ts (pure, tested).
+  const openExternalSafe = (url: string): void => {
+    if (isSafeExternalUrl(url)) void shell.openExternal(url);
+  };
   viewManager.setContextMenuDeps({
-    openInSystemBrowser: (url) => { void shell.openExternal(url); },
+    openInSystemBrowser: openExternalSafe,
     openInNewTab: (url) => { viewManager.createTab(url); },
     copyToClipboard: (text) => { clipboard.writeText(text); },
     searchSelection: (text) => { viewManager.createTab(buildSearchUrlForSelection(text)); },
