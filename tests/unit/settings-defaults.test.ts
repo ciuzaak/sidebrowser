@@ -11,7 +11,7 @@ describe('DEFAULTS', () => {
     expect(DEFAULTS.dim.effect).toBe('blur');
     expect(DEFAULTS.dim.blurPx).toBe(8);
     expect(DEFAULTS.dim.darkBrightness).toBe(0.3);
-    expect(DEFAULTS.dim.lightBrightness).toBe(1.5);
+    expect(DEFAULTS.dim.lightBrightness).toBe(0.5);   // M13: opacity in [0,1]
     expect(DEFAULTS.dim.transitionMs).toBe(150);
   });
 

@@ -121,7 +121,10 @@ function clampDim(partial: Partial<DimSettings>): Partial<DimSettings> {
     out.darkBrightness = clamp(partial.darkBrightness, 0, 1);
   }
   if (partial.lightBrightness !== undefined) {
-    out.lightBrightness = clamp(partial.lightBrightness, 1, 3);
+    // M13: range shifted from [1, 3] (filter brightness multiplier) to [0, 1]
+    // (white-overlay opacity). Old values >1 → clamp to 1 (one-time visual
+    // diff post-upgrade; user re-adjusts in seconds).
+    out.lightBrightness = clamp(partial.lightBrightness, 0, 1);
   }
   if (partial.transitionMs !== undefined) {
     out.transitionMs = clamp(partial.transitionMs, 0, 1000);

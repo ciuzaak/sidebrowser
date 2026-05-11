@@ -31,7 +31,9 @@ export const DEFAULTS: Settings = {
     effect: 'blur',
     blurPx: 8,
     darkBrightness: 0.3,
-    lightBrightness: 1.5,
+    // M13: lightBrightness now means white-overlay opacity in [0, 1]
+    // (previously was a filter brightness multiplier in [1, 3]).
+    lightBrightness: 0.5,
     transitionMs: 150,
   },
   edgeDock: { enabled: true, animationMs: 200, triggerStripPx: 3 },

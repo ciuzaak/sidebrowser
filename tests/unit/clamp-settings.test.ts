@@ -34,8 +34,17 @@ describe('clampSettings', () => {
     });
   });
 
-  it('clamps dim.lightBrightness below 1 up to 1', () => {
+  it('clamps dim.lightBrightness to [0, 1] (M13: white-overlay opacity semantics)', () => {
+    expect(clampSettings({ dim: { lightBrightness: -0.5 } }, cur())).toEqual({
+      dim: { lightBrightness: 0 },
+    });
     expect(clampSettings({ dim: { lightBrightness: 0.5 } }, cur())).toEqual({
+      dim: { lightBrightness: 0.5 },
+    });
+    expect(clampSettings({ dim: { lightBrightness: 1.5 } }, cur())).toEqual({
+      dim: { lightBrightness: 1 },
+    });
+    expect(clampSettings({ dim: { lightBrightness: 99 } }, cur())).toEqual({
       dim: { lightBrightness: 1 },
     });
   });
