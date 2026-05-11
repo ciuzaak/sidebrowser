@@ -170,11 +170,9 @@ export function App(): ReactElement {
           onClose={closeSettings}
           toggleRef={settingsToggleRef}
         />
-        <SearchSpotlight
-          open={searchOpen}
-          onClose={closeSearch}
-          pillRef={searchPillRef}
-        />
+        {searchOpen && (
+          <SearchSpotlight onClose={closeSearch} pillRef={searchPillRef} />
+        )}
       </div>
     </div>
   );

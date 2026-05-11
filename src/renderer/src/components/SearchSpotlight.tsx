@@ -14,7 +14,6 @@ import { normalizeUrlInput } from '@shared/url';
 import { AddressSuggestions, type AddressSuggestionsHandle } from './AddressSuggestions';
 
 interface Props {
-  open: boolean;
   onClose: () => void;
   /** Ref to the SearchPill trigger. Outside-click ignores mousedown on the
    *  pill so clicking it again while open doesn't close-then-reopen. */
@@ -29,19 +28,21 @@ interface Props {
  * The Spotlight defers all typing/searching to a wider floating panel that
  * pops up when the user clicks the SearchPill in TopBar (or presses Cmd+L).
  *
+ * Mounted only while open: the parent (App.tsx) conditionally renders this
+ * via `{searchOpen && <SearchSpotlight … />}`, so the `useState` initializer
+ * below runs on each (re)open and seeds the draft from the live tab.url —
+ * the user sees the current URL pre-selected, ready to copy or edit.
+ *
  * Behavior:
- *  - On open: input mounts, auto-focuses + selects current URL.
- *  - On Esc / outside-click / submit: onClose fires.
+ *  - On mount: input auto-focuses, full-content selected.
+ *  - On Esc / outside-click / submit: onClose fires → parent unmounts us.
  *  - Arrow keys drive the suggestions handle, Enter navigates (picked URL or
  *    search-engine template), mirroring the prior TopBar form.
- *  - When closed, returns null — no input is in the DOM, so view suppression
- *    handled by the parent (App.tsx) is the only thing keeping the page area
- *    visible.
  *
  * `data-testid="address-bar"` is preserved on the input so existing E2E tests
  * keep their selectors; helpers open the spotlight before driving it.
  */
-export function SearchSpotlight({ open, onClose, pillRef }: Props): ReactElement | null {
+export function SearchSpotlight({ onClose, pillRef }: Props): ReactElement {
   const tab = useActiveTab();
   const settings = useSettingsStore((s) => s.settings);
   const [draft, setDraft] = useState<string>(() => {
@@ -51,28 +52,19 @@ export function SearchSpotlight({ open, onClose, pillRef }: Props): ReactElement
   const inputRef = useRef<HTMLInputElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const suggestionsRef = useRef<AddressSuggestionsHandle | null>(null);
-  // Suggestions are open whenever the spotlight is open AND the input is
-  // focused — same lifecycle here since the spotlight only renders when open.
   const [suggestionsOpen, setSuggestionsOpen] = useState(true);
 
-  // No mid-render URL re-sync: the spotlight returns null when closed, so the
-  // useState initializer above runs on every (re)open and seeds the draft
-  // from the live tab.url. Unmount-on-close is the reset mechanism.
-
-  // Focus + select on open. useLayoutEffect to avoid a flash where the user
+  // Focus + select on mount. useLayoutEffect to avoid a flash where the user
   // could see the input unfocused before the autofocus tick runs.
   useLayoutEffect(() => {
-    if (!open) return;
     const el = inputRef.current;
     if (!el) return;
     el.focus();
     el.select();
-    setSuggestionsOpen(true);
-  }, [open]);
+  }, []);
 
   // Esc + outside-click dismissal.
   useEffect(() => {
-    if (!open) return;
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -92,9 +84,7 @@ export function SearchSpotlight({ open, onClose, pillRef }: Props): ReactElement
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('mousedown', onDown);
     };
-  }, [open, onClose, pillRef]);
-
-  if (!open) return null;
+  }, [onClose, pillRef]);
 
   const submit = (e: FormEvent): void => {
     e.preventDefault();
