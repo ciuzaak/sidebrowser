@@ -13,34 +13,38 @@ export function buildFilterCSS(
   effect: DimSettings['effect'],
   dim: DimSettings
 ): string | null {
-  // Early return for 'none' effect
   if (effect === 'none') {
     return null;
   }
 
-  let filterValue: string;
+  // M13: light is a white overlay (filter: brightness can't reach pure white).
+  // Field name `lightBrightness` retained for back-compat; semantically it is
+  // the overlay opacity in [0,1] post-clamp (clampDim updated separately).
+  if (effect === 'light') {
+    let css =
+      "html::after { content: ''; position: fixed; inset: 0;" +
+      ` background: white; opacity: ${dim.lightBrightness};` +
+      ' pointer-events: none; z-index: 2147483647;';
+    if (dim.transitionMs > 0) {
+      css += ` transition: opacity ${dim.transitionMs}ms ease-out;`;
+    }
+    css += ' }';
+    return css;
+  }
 
-  // Map effect to filter value
+  let filterValue: string;
   if (effect === 'blur') {
     filterValue = `blur(${dim.blurPx}px)`;
   } else if (effect === 'dark') {
     filterValue = `brightness(${dim.darkBrightness})`;
-  } else if (effect === 'light') {
-    filterValue = `brightness(${dim.lightBrightness})`;
   } else {
-    // Exhaustive check - should never reach here if effect type is correct
     return null;
   }
 
-  // Build CSS rule
   let css = `html { filter: ${filterValue};`;
-
-  // Add transition segment if transitionMs > 0
   if (dim.transitionMs > 0) {
     css += ` transition: filter ${dim.transitionMs}ms ease-out;`;
   }
-
   css += ' }';
-
   return css;
 }
