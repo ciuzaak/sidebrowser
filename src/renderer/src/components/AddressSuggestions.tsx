@@ -104,15 +104,17 @@ export const AddressSuggestions = forwardRef<AddressSuggestionsHandle, Props>(
 
     return (
       <ul
-        className="absolute left-0 right-0 top-full mt-1 z-10 max-h-96 overflow-y-auto rounded border border-[var(--chrome-border)] bg-[var(--chrome-bg)] shadow-lg"
+        className="absolute left-0 right-0 top-full mt-1.5 z-10 max-h-96 overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-elevated)] p-1 shadow-[var(--shadow-elevated)]"
         data-testid="address-suggestions"
       >
         {items.map((s, i) => (
           <li
             key={s.url}
             className={
-              'flex items-center gap-2 px-2 py-1 cursor-pointer ' +
-              (i === highlightIdx ? 'bg-[var(--chrome-hover)]' : 'hover:bg-[var(--chrome-hover)]')
+              'flex items-center gap-2 cursor-pointer rounded-[var(--radius-md)] px-2 py-1.5 ' +
+              (i === highlightIdx
+                ? 'bg-[var(--accent-tint)] text-[var(--accent-text)] '
+                : 'hover:bg-[var(--accent-tint)] ')
             }
             onMouseDown={(ev) => {
               ev.preventDefault();
@@ -124,7 +126,7 @@ export const AddressSuggestions = forwardRef<AddressSuggestionsHandle, Props>(
             <Favicon src={s.favicon} />
             <div className="flex-1 min-w-0">
               <div className="text-sm truncate">{s.title || s.url}</div>
-              <div className="text-xs text-[var(--chrome-muted)] truncate">{s.url}</div>
+              <div className="text-xs text-[var(--fg-muted)] truncate">{s.url}</div>
             </div>
           </li>
         ))}
