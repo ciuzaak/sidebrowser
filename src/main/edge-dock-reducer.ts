@@ -139,9 +139,23 @@ export function reduce(
   event: EdgeDockEvent,
   cfg: EdgeDockConfig,
 ): { nextState: EdgeDockState; effects: EdgeDockEffect[] } {
-  // Full disable guard
+  // Edge-dock disabled: window-positioning behavior is off, but the dim
+  // (mouse-leave / mouse-enter) feature is independent and must keep working.
+  // We forward MOUSE_LEAVE / MOUSE_ENTER to the regular DOCKED_NONE branches
+  // below; every other event becomes a no-op so the window stays put.
   if (!cfg.enabled) {
-    return { nextState: state, effects: [] };
+    if (event.type !== 'MOUSE_LEAVE' && event.type !== 'MOUSE_ENTER') {
+      return { nextState: state, effects: [] };
+    }
+    // If we somehow ended up not in DOCKED_NONE (e.g. user toggled enabled off
+    // while the window was hiding at the edge), force the state back so the
+    // DOCKED_NONE dim transitions apply cleanly. workArea is preserved from
+    // the prior dock state when available so future re-enable + WINDOW_MOVED
+    // events can re-classify cleanly.
+    if (state.kind !== 'DOCKED_NONE') {
+      const wa = 'workArea' in state ? state.workArea : null;
+      state = { kind: 'DOCKED_NONE', workArea: wa, dimmed: state.dimmed };
+    }
   }
 
   const { kind } = state;

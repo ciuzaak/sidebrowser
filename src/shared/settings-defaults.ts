@@ -25,7 +25,7 @@ export const BUILTIN_SEARCH_ENGINE_IDS: ReadonlySet<string> = new Set(
 );
 
 export const DEFAULTS: Settings = {
-  window: { width: 393, height: 852, preset: 'iphone14pro', edgeThresholdPx: 8 },
+  window: { width: 393, height: 852, preset: 'iphone14pro', edgeThresholdPx: 8, alwaysOnTop: true },
   mouseLeave: { delayMs: 100 },
   dim: {
     effect: 'blur',

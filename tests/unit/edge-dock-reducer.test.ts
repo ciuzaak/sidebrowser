@@ -481,23 +481,28 @@ describe('DISPLAY_CHANGED offscreen', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 20. cfg.enabled = false → all events are no-ops
+// 20. cfg.enabled = false → window-positioning events are no-ops, but the
+//     MOUSE_LEAVE/ENTER dim feature is independent and must keep working.
 // ---------------------------------------------------------------------------
 describe('cfg.enabled = false', () => {
   const disabledCfg = { ...CFG, enabled: false };
 
-  it('MOUSE_LEAVE is no-op', () => {
+  it('MOUSE_LEAVE still applies dim (DOCKED_NONE branch)', () => {
     const state = dockedNone();
     const { nextState, effects } = reduce(state, { type: 'MOUSE_LEAVE' }, disabledCfg);
-    expect(nextState).toBe(state);
-    expect(effects).toHaveLength(0);
+    expect(nextState.kind).toBe('DOCKED_NONE');
+    expect(nextState.dimmed).toBe(true);
+    expect(effects).toContainEqual({ type: 'APPLY_DIM' });
   });
 
-  it('MOUSE_ENTER is no-op', () => {
+  it('MOUSE_ENTER still clears dim (DOCKED_NONE branch, even from a stale DOCKED_LEFT)', () => {
+    // User disabled edge-dock mid-hide: state is DOCKED_LEFT but cfg.enabled=false.
+    // The reducer forces the state back to DOCKED_NONE so dim transitions apply.
     const state = dockedLeft();
     const { nextState, effects } = reduce(state, { type: 'MOUSE_ENTER' }, disabledCfg);
-    expect(nextState).toBe(state);
-    expect(effects).toHaveLength(0);
+    expect(nextState.kind).toBe('DOCKED_NONE');
+    expect(nextState.dimmed).toBe(false);
+    expect(effects).toContainEqual({ type: 'CLEAR_DIM' });
   });
 
   it('WINDOW_MOVED is no-op', () => {

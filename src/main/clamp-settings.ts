@@ -97,6 +97,9 @@ function clampWindow(
   if (partial.edgeThresholdPx !== undefined) {
     out.edgeThresholdPx = clamp(partial.edgeThresholdPx, 0, 50);
   }
+  if (partial.alwaysOnTop !== undefined) {
+    out.alwaysOnTop = Boolean(partial.alwaysOnTop);
+  }
 
   return out;
 }

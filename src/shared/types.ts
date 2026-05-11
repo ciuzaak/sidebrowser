@@ -57,6 +57,9 @@ export interface WindowSettings {
   height: number;           // 852
   preset: 'iphone14pro' | 'iphonese' | 'pixel7';
   edgeThresholdPx: number;  // 8, 0–50
+  alwaysOnTop: boolean;     // M14: default true. Edge-dock force-overrides this
+                            // while the window is docked/hiding so the trigger
+                            // strip stays reachable regardless of user choice.
 }
 
 export interface MouseLeaveSettings {

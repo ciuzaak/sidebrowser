@@ -40,7 +40,7 @@ if (!gotLock) {
   process.exit(0);
 }
 
-function createWindow(initialBounds: Rectangle): BrowserWindow {
+function createWindow(initialBounds: Rectangle, initialAlwaysOnTop: boolean): BrowserWindow {
   const initialOverlay = resolveTitleBarOverlay(
     nativeTheme.shouldUseDarkColors ? 'dark' : 'light',
   );
@@ -50,7 +50,7 @@ function createWindow(initialBounds: Rectangle): BrowserWindow {
     width: initialBounds.width,
     height: initialBounds.height,
     title: 'sidebrowser',
-    alwaysOnTop: true,
+    alwaysOnTop: initialAlwaysOnTop,
     // M14: frameless + Windows-native titleBarOverlay. Windows draws min/max/
     // close in the top-right; everything else (drag region, chrome layout) is
     // ours. Title-bar height matches the chrome strip height (36 px) so the
@@ -68,7 +68,11 @@ function createWindow(initialBounds: Rectangle): BrowserWindow {
       nodeIntegration: false,
     },
   });
-  win.setAlwaysOnTop(true, 'screen-saver');
+  // 'screen-saver' level keeps us above the Windows taskbar (and most "always
+  // on top" docks). relativeLevel=1 is macOS-only; harmless on Windows.
+  if (initialAlwaysOnTop) {
+    win.setAlwaysOnTop(true, 'screen-saver', 1);
+  }
   // M14: autoHideMenuBar leaves the menu hidden by default but Alt restores it
   // (so M8/M14 §15 accelerator hints stay reachable). M13's setMenuBarVisibility(false)
   // permanently locked the menu out of Alt-toggle and was paired with the now-gone
@@ -83,6 +87,29 @@ function createWindow(initialBounds: Rectangle): BrowserWindow {
   }
 
   return win;
+}
+
+/**
+ * M14: effective always-on-top = user setting OR edge-dock currently active.
+ * Edge-dock-active means the window is docked to or hiding/revealing at an
+ * edge — in those states the trigger strip must stay on top so the user can
+ * mouse it back into view, regardless of the user's alwaysOnTop preference.
+ *
+ * Called on settings change, edge-dock broadcast, and win.focus to combat
+ * other always-on-top apps that may steal Windows' HWND_TOPMOST z-order.
+ */
+function applyEffectiveAlwaysOnTop(
+  win: BrowserWindow,
+  userSetting: boolean,
+  edgeDockActive: boolean,
+): void {
+  if (win.isDestroyed()) return;
+  const effective = userSetting || edgeDockActive;
+  win.setAlwaysOnTop(effective, 'screen-saver', 1);
+  if (effective) {
+    // Re-assert z-order in case a peer dock app raced to topmost.
+    win.moveTop();
+  }
 }
 
 /**
@@ -176,7 +203,18 @@ app.whenReady().then(() => {
   const historyRecorder = new HistoryRecorder(historyStore);
 
   // 2. Window + ViewManager + IPC router.
-  const win = createWindow(initialBounds);
+  const win = createWindow(initialBounds, initial.alwaysOnTop);
+  // Latest "edge-dock is currently engaged" view, fed by the broadcast handler
+  // below. Combined with the user's alwaysOnTop setting in
+  // applyEffectiveAlwaysOnTop() — edge-dock force-overrides while docked so
+  // the trigger strip stays reachable.
+  let edgeDockActive = false;
+  // Re-assert topmost when our window gains focus so any peer dock app that
+  // raced to topmost loses the position (Windows' HWND_TOPMOST is FIFO among
+  // topmost windows).
+  win.on('focus', () => {
+    applyEffectiveAlwaysOnTop(win, settingsStore.get().window.alwaysOnTop, edgeDockActive);
+  });
   const viewManager = new ViewManager(win, () => {
     const s = settingsStore.get();
     return {
@@ -360,7 +398,18 @@ app.whenReady().then(() => {
       void dim.clear();
       if (!win.isDestroyed()) win.setTitle(APP_TITLE);
     },
-    broadcastState: (s) => { if (!win.isDestroyed()) win.webContents.send(IpcChannels.windowState, s); },
+    broadcastState: (s) => {
+      // M14: edge-dock force-overrides alwaysOnTop while the window is engaged
+      // with an edge (docked/hidden/animating). On DOCKED_NONE we revert to the
+      // user's setting. Compute before the IPC so the renderer sees consistent
+      // state.
+      const nextActive = s.docked !== null || s.hidden;
+      if (nextActive !== edgeDockActive) {
+        edgeDockActive = nextActive;
+        applyEffectiveAlwaysOnTop(win, settingsStore.get().window.alwaysOnTop, edgeDockActive);
+      }
+      if (!win.isDestroyed()) win.webContents.send(IpcChannels.windowState, s);
+    },
     now: () => Date.now(),
     setInterval: (cb, ms) => setInterval(cb, ms),
     clearInterval: (h) => { clearInterval(h); },
@@ -431,6 +480,7 @@ app.whenReady().then(() => {
   // the renderer broadcast. EdgeDock config is a getter — it picks up fresh
   // values on its next dispatch without explicit poke.
   let lastPreset = settingsStore.get().window.preset;
+  let lastAlwaysOnTop = settingsStore.get().window.alwaysOnTop;
   settingsStore.onChanged((settings) => {
     if (dim.isActive) void dim.restyle(settings.dim);
     watcher.setDelayMs(settings.mouseLeave.delayMs);
@@ -440,6 +490,10 @@ app.whenReady().then(() => {
       if (b.width !== settings.window.width || b.height !== settings.window.height) {
         win.setBounds({ ...b, width: settings.window.width, height: settings.window.height });
       }
+    }
+    if (settings.window.alwaysOnTop !== lastAlwaysOnTop) {
+      lastAlwaysOnTop = settings.window.alwaysOnTop;
+      applyEffectiveAlwaysOnTop(win, settings.window.alwaysOnTop, edgeDockActive);
     }
     if (!win.isDestroyed()) {
       // If a renderer isn't yet listening (e.g. a test hook calls updateSettings
@@ -565,7 +619,7 @@ app.whenReady().then(() => {
       // this is best-effort. Extract a shared bootstrapWindow helper when
       // adding macOS support. Browsing defaults below now read live from
       // settingsStore, matching the primary-window wiring.
-      const newWin = createWindow(initialBounds);
+      const newWin = createWindow(initialBounds, settingsStore.get().window.alwaysOnTop);
       const newViewManager = new ViewManager(newWin, () => {
         const s = settingsStore.get();
         return {

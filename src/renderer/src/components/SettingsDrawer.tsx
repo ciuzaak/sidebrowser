@@ -155,6 +155,25 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
               />
             }
           />
+          <Row
+            label="Always on top"
+            rightSlot={
+              <ResetIcon
+                show={settings.window.alwaysOnTop !== DEFAULTS.window.alwaysOnTop}
+                onClick={() => void update({ window: { alwaysOnTop: DEFAULTS.window.alwaysOnTop } })}
+                testId="reset-window-always-on-top"
+              />
+            }
+          >
+            <label className="mac-toggle">
+              <input
+                type="checkbox"
+                data-testid="settings-window-always-on-top"
+                checked={settings.window.alwaysOnTop}
+                onChange={(e) => void update({ window: { alwaysOnTop: e.target.checked } })}
+              />
+            </label>
+          </Row>
         </Section>
 
         {/* ── 2. Mouse leave ──────────────────────────────────── */}
