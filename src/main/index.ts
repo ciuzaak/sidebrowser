@@ -95,45 +95,20 @@ function createWindow(initialBounds: Rectangle, initialAlwaysOnTop: boolean): Br
  * edge — in those states the trigger strip must stay on top so the user can
  * mouse it back into view, regardless of the user's alwaysOnTop preference.
  *
- * Beyond setting the flag, we hold z-order via two mechanisms because peer
- * always-on-top apps (docks, widgets) can race for Windows' HWND_TOPMOST:
- *   - On every win.focus event, re-assert via moveTop() (instant user-driven).
- *   - While effective is true, poll moveTop() every TOPMOST_POLL_MS so we
- *     stay above peers even when our window isn't focused.
- *
- * The poll handle is stored in `topmostPollHandle` (captured via closure in
- * the caller); start/stop are driven by the effective flag.
+ * Called on settings change, edge-dock broadcast, and win.focus to combat
+ * other always-on-top apps that may steal Windows' HWND_TOPMOST z-order.
  */
-const TOPMOST_POLL_MS = 1000;
-
-interface TopmostHolder { handle: ReturnType<typeof setInterval> | null }
-
 function applyEffectiveAlwaysOnTop(
   win: BrowserWindow,
   userSetting: boolean,
   edgeDockActive: boolean,
-  poll: TopmostHolder,
 ): void {
   if (win.isDestroyed()) return;
   const effective = userSetting || edgeDockActive;
   win.setAlwaysOnTop(effective, 'screen-saver', 1);
-
   if (effective) {
-    // Instant re-assert (user-visible: clicking us should immediately bring
-    // us above any peer dock app).
+    // Re-assert z-order in case a peer dock app raced to topmost.
     win.moveTop();
-    // Start the keep-on-top poll if not already running. Skips moveTop when
-    // the window is minimized — moveTop on a minimized window can flicker it
-    // back into view, which the user didn't ask for.
-    if (poll.handle === null) {
-      poll.handle = setInterval(() => {
-        if (win.isDestroyed() || win.isMinimized() || !win.isAlwaysOnTop()) return;
-        win.moveTop();
-      }, TOPMOST_POLL_MS);
-    }
-  } else if (poll.handle !== null) {
-    clearInterval(poll.handle);
-    poll.handle = null;
   }
 }
 
@@ -234,28 +209,11 @@ app.whenReady().then(() => {
   // applyEffectiveAlwaysOnTop() — edge-dock force-overrides while docked so
   // the trigger strip stays reachable.
   let edgeDockActive = false;
-  // Closure-scoped handle for the 1 Hz "stay topmost" poll. Lifetime is the
-  // window's lifetime; applyEffectiveAlwaysOnTop starts/stops it based on
-  // the effective alwaysOnTop value.
-  const topmostPoll: TopmostHolder = { handle: null };
-  // Kick off the initial poll if the user's setting was true at launch
-  // (applyEffectiveAlwaysOnTop already ran inside createWindow via the
-  // BrowserWindow constructor, but didn't have access to the holder).
-  applyEffectiveAlwaysOnTop(win, initial.alwaysOnTop, edgeDockActive, topmostPoll);
   // Re-assert topmost when our window gains focus so any peer dock app that
   // raced to topmost loses the position (Windows' HWND_TOPMOST is FIFO among
   // topmost windows).
   win.on('focus', () => {
-    applyEffectiveAlwaysOnTop(win, settingsStore.get().window.alwaysOnTop, edgeDockActive, topmostPoll);
-  });
-  // Stop the poll on window close — otherwise the interval keeps firing
-  // against a destroyed window (the isDestroyed guard inside is a backstop
-  // but the cleanest fix is to clear it.)
-  win.once('closed', () => {
-    if (topmostPoll.handle !== null) {
-      clearInterval(topmostPoll.handle);
-      topmostPoll.handle = null;
-    }
+    applyEffectiveAlwaysOnTop(win, settingsStore.get().window.alwaysOnTop, edgeDockActive);
   });
   const viewManager = new ViewManager(win, () => {
     const s = settingsStore.get();
@@ -448,7 +406,7 @@ app.whenReady().then(() => {
       const nextActive = s.docked !== null || s.hidden;
       if (nextActive !== edgeDockActive) {
         edgeDockActive = nextActive;
-        applyEffectiveAlwaysOnTop(win, settingsStore.get().window.alwaysOnTop, edgeDockActive, topmostPoll);
+        applyEffectiveAlwaysOnTop(win, settingsStore.get().window.alwaysOnTop, edgeDockActive);
       }
       if (!win.isDestroyed()) win.webContents.send(IpcChannels.windowState, s);
     },
@@ -535,7 +493,7 @@ app.whenReady().then(() => {
     }
     if (settings.window.alwaysOnTop !== lastAlwaysOnTop) {
       lastAlwaysOnTop = settings.window.alwaysOnTop;
-      applyEffectiveAlwaysOnTop(win, settings.window.alwaysOnTop, edgeDockActive, topmostPoll);
+      applyEffectiveAlwaysOnTop(win, settings.window.alwaysOnTop, edgeDockActive);
     }
     if (!win.isDestroyed()) {
       // If a renderer isn't yet listening (e.g. a test hook calls updateSettings
