@@ -1,13 +1,10 @@
-import { forwardRef, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement, type RefObject } from 'react';
-import { ArrowLeft, ArrowRight, RotateCw, Loader2, Layers, Smartphone, Monitor, Settings } from 'lucide-react';
+import { forwardRef, type ReactElement, type RefObject } from 'react';
+import { ArrowLeft, ArrowRight, RotateCw, Loader2, Layers, Smartphone, Monitor, Settings, Search } from 'lucide-react';
 import { useActiveTab } from '../store/tab-store';
 import { useWindowStateStore } from '../store/window-state-store';
-import { useSettingsStore } from '../store/settings-store';
-import { normalizeUrlInput } from '@shared/url';
-import { AddressSuggestions, type AddressSuggestionsHandle } from './AddressSuggestions';
 
 /**
- * M14: reserve width on the right of the chrome row so the address bar
+ * M14: reserve width on the right of the chrome row so the SearchPill
  * doesn't slide under the Windows-native titleBarOverlay (the min/max/close
  * buttons). The overlay is ~135 px wide on Win10/11; 138 px gives a small
  * margin.
@@ -19,12 +16,15 @@ interface TopBarProps {
   onToggleDrawer: () => void;
   settingsOpen: boolean;
   onToggleSettings: () => void;
-  /** Called whenever the dropdown's open state changes; App lifts this for view-suppression. */
-  onSuggestionsOpenChange: (open: boolean) => void;
+  /** Spotlight-open state lifted to App so view-suppression can react. */
+  searchOpen: boolean;
+  onOpenSearch: () => void;
   /** M13: ref attached to the tabs toggle button so TabDrawer can ignore mousedown on it. */
   tabsToggleRef: RefObject<HTMLButtonElement | null>;
   /** M13: ref attached to the settings toggle button so SettingsDrawer can ignore mousedown on it. */
   settingsToggleRef: RefObject<HTMLButtonElement | null>;
+  /** Ref to the SearchPill so the SearchSpotlight can ignore mousedown on it (avoid reopen-on-close). */
+  searchPillRef: RefObject<HTMLButtonElement | null>;
 }
 
 export function TopBar({
@@ -32,81 +32,32 @@ export function TopBar({
   onToggleDrawer,
   settingsOpen,
   onToggleSettings,
-  onSuggestionsOpenChange,
+  searchOpen,
+  onOpenSearch,
   tabsToggleRef,
   settingsToggleRef,
+  searchPillRef,
 }: TopBarProps): ReactElement {
   const tab = useActiveTab();
   const hidden = useWindowStateStore((s) => s.hidden);
-  const settings = useSettingsStore((s) => s.settings);
-  const [draft, setDraft] = useState<string>('');
-  const [syncedUrl, setSyncedUrl] = useState<string>(tab?.url ?? '');
-  const [focused, setFocused] = useState<boolean>(false);
-  const [syncedTabId, setSyncedTabId] = useState<string | null>(tab?.id ?? null);
-  const suggestionsRef = useRef<AddressSuggestionsHandle | null>(null);
-
-  // Sync address bar when the active tab or its url changes externally.
-  const currentUrl = tab?.url ?? '';
-  if (currentUrl !== syncedUrl) {
-    setSyncedUrl(currentUrl);
-    setDraft(currentUrl === 'about:blank' ? '' : currentUrl);
-  }
-
-  const setOpen = (open: boolean): void => {
-    setFocused(open);
-    onSuggestionsOpenChange(open);
-  };
-
-  // M12: when active tab changes, force-close the suggestions dropdown so the
-  // lifted suggestionsOpen flag in App.tsx doesn't strand `true` and keep the
-  // WebContentsView suppressed after the user navigates the new tab.
-  const currentTabId = tab?.id ?? null;
-  if (currentTabId !== syncedTabId) {
-    setSyncedTabId(currentTabId);
-    if (focused) setOpen(false);
-  }
-
-  const submit = (e: FormEvent): void => {
-    e.preventDefault();
-    if (!tab) return;
-    const picked = suggestionsRef.current?.currentUrl() ?? null;
-    let url: string;
-    if (picked !== null) {
-      // User picked from the dropdown — bypass search-engine template entirely.
-      url = picked;
-    } else {
-      const search = settings?.search;
-      const tpl =
-        search?.engines.find((eng) => eng.id === search.activeId)?.urlTemplate ??
-        'https://www.google.com/search?q={query}';
-      url = normalizeUrlInput(draft, tpl);
-    }
-    setOpen(false);
-    void window.sidebrowser.navigate(tab.id, url);
-  };
-
-  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      suggestionsRef.current?.moveDown();
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      suggestionsRef.current?.moveUp();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      setOpen(false);
-      // Keep focus + draft; user can keep typing.
-    }
-  };
-
-  const handlePick = (url: string): void => {
-    if (!tab) return;
-    setOpen(false);
-    void window.sidebrowser.navigate(tab.id, url);
-  };
 
   const id = tab?.id ?? '';
   const disabled = !tab;
+
+  // Compact label inside the pill. Empty / about:blank shows a placeholder.
+  // For real URLs, show host only (e.g. "apple.com" instead of the full URL)
+  // so narrow windows still display something meaningful.
+  const pillLabel = ((): string => {
+    const url = tab?.url ?? '';
+    if (url === '' || url === 'about:blank') return 'Search or enter URL';
+    try {
+      const u = new URL(url);
+      return u.host || url;
+    } catch {
+      return url;
+    }
+  })();
+  const pillIsPlaceholder = pillLabel === 'Search or enter URL';
 
   return (
     <div
@@ -170,33 +121,26 @@ export function TopBar({
         {tab?.isMobile ? <Smartphone size={16} /> : <Monitor size={16} />}
       </IconButton>
 
-      <form onSubmit={submit} className="app-no-drag relative flex-1">
-        <input
-          type="text"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onFocus={() => setOpen(true)}
-          onBlur={() => setOpen(false)}
-          onKeyDown={onKeyDown}
-          placeholder="Enter URL or search"
-          spellCheck={false}
-          data-testid="address-bar"
-          disabled={disabled}
-          className={
-            'app-no-drag h-[26px] w-full rounded-[var(--radius-md)] px-2 text-sm ' +
-            'bg-[var(--surface-sunken)] text-[var(--fg)] placeholder-[var(--fg-muted)] ' +
-            'border border-[var(--border)] outline-none ' +
-            'focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent ' +
-            'disabled:opacity-50'
-          }
-        />
-        <AddressSuggestions
-          ref={suggestionsRef}
-          query={draft}
-          open={focused && !disabled}
-          onPick={handlePick}
-        />
-      </form>
+      <button
+        ref={searchPillRef}
+        type="button"
+        data-testid="search-pill"
+        aria-label="Search or enter URL"
+        aria-expanded={searchOpen}
+        disabled={disabled}
+        onClick={onOpenSearch}
+        className={
+          'app-no-drag flex h-[26px] min-w-0 flex-1 items-center gap-1.5 ' +
+          'rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] ' +
+          'px-2 text-xs text-left transition-colors duration-100 ' +
+          'hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 ' +
+          'focus-visible:outline-[var(--accent)] disabled:opacity-50 ' +
+          (pillIsPlaceholder ? 'text-[var(--fg-muted)] ' : 'text-[var(--fg)] ')
+        }
+      >
+        <Search size={12} className="shrink-0 text-[var(--fg-muted)]" aria-hidden />
+        <span className="truncate">{pillLabel}</span>
+      </button>
     </div>
   );
 }

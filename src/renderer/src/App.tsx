@@ -3,6 +3,7 @@ import { TopBar } from './components/TopBar';
 import { TabDrawer } from './components/TabDrawer';
 import { SettingsDrawer } from './components/SettingsDrawer';
 import { NewTab } from './components/NewTab';
+import { SearchSpotlight } from './components/SearchSpotlight';
 import { useSettingsBridge } from './hooks/useSettingsBridge';
 import { useTabBridge } from './hooks/useTabBridge';
 import { useWindowStateBridge } from './hooks/useWindowStateBridge';
@@ -29,12 +30,15 @@ export function App(): ReactElement {
   const [userDrawerOpen, setUserDrawerOpen] = useState(false);
   const drawerOpen = userDrawerOpen || cycling;
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  // M14: Spotlight (replaces the inline AddressSuggestions dropdown).
+  const [searchOpen, setSearchOpen] = useState(false);
   const chromeRef = useRef<HTMLDivElement | null>(null);
   // M13: refs for the toggle buttons so the drawers can ignore mousedown on
   // their own toggle (otherwise click-to-close would re-open immediately).
   const tabsToggleRef = useRef<HTMLButtonElement | null>(null);
   const settingsToggleRef = useRef<HTMLButtonElement | null>(null);
+  // M14: ref for the SearchPill so the SearchSpotlight can ignore mousedown on it.
+  const searchPillRef = useRef<HTMLButtonElement | null>(null);
 
   const toggleDrawer = useCallback(() => setUserDrawerOpen((v) => !v), []);
   // M13 simplified: any "close drawer" intent (outside-click, tab-wc focus,
@@ -47,6 +51,8 @@ export function App(): ReactElement {
   }, []);
   const toggleSettings = useCallback(() => setSettingsOpen((v) => !v), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  const openSearch = useCallback(() => setSearchOpen(true), []);
+  const closeSearch = useCallback(() => setSearchOpen(false), []);
 
   useEffect(() => {
     const el = chromeRef.current;
@@ -76,32 +82,36 @@ export function App(): ReactElement {
     prevActiveIdRef.current = activeId;
     if (prev === null || activeId === null) return;
     if (prev === activeId) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (settingsOpen) closeSettings();
-  }, [activeId, settingsOpen, closeSettings]);
+    // closeSettings / closeSearch are cascading setStates — intentional. We
+    // can't merge them into a single setter (different state slices). The
+    // rule fires once per offending if-statement; disable below each.
+    if (settingsOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      closeSettings();
+    }
+    if (searchOpen) {
+      closeSearch();
+    }
+  }, [activeId, settingsOpen, searchOpen, closeSettings, closeSearch]);
 
-  // M6 + M12: ViewManager suppression. SettingsDrawer / AddressSuggestions /
-  // NewTab render OVER the page area in renderer DOM, so the underlying
-  // WebContentsView has to shrink to {0,0,0,0}. TabDrawer lives in the chrome
-  // bar (above the page area) — NOT in the suppression set; otherwise the
-  // page would go blank while the drawer is open. Outside-click on the page
-  // area is handled by the chrome:tab-focused signal below instead.
-  const suppressed = settingsOpen || suggestionsOpen || isNewTab;
+  // M6 + M12 + M14: ViewManager suppression. SettingsDrawer, NewTab, and the
+  // new SearchSpotlight all render OVER the page area in renderer DOM, so the
+  // underlying WebContentsView has to shrink to {0,0,0,0}. TabDrawer lives
+  // in the chrome bar (above the page area) — NOT in the suppression set;
+  // otherwise the page would go blank while the drawer is open.
+  const suppressed = settingsOpen || searchOpen || isNewTab;
   useEffect(() => {
     window.sidebrowser.setViewSuppressed(suppressed);
   }, [suppressed]);
 
-  // Spec §15: dispatch renderer-bound shortcut actions from the hidden
-  // Application Menu. Same pattern as before — the address-bar focus action
-  // calls `.focus()` which will trigger TopBar's onFocus and open the dropdown
-  // automatically (Q2 option B).
+  // Spec §15 + M14: dispatch renderer-bound shortcut actions from the hidden
+  // Application Menu. focus-address-bar now opens the Spotlight instead of
+  // focusing an inline input (which no longer exists).
   useEffect(() => {
     return window.sidebrowser.onShortcut((action) => {
       switch (action) {
         case 'focus-address-bar': {
-          const input = document.querySelector<HTMLInputElement>('[data-testid="address-bar"]');
-          input?.focus();
-          input?.select();
+          openSearch();
           return;
         }
         case 'toggle-settings-drawer':
@@ -109,7 +119,7 @@ export function App(): ReactElement {
           return;
       }
     });
-  }, [toggleSettings]);
+  }, [openSearch, toggleSettings]);
 
   // M13 hotfix: tab WebContents focus → close all chrome drawers. Page-area
   // clicks can't be detected via DOM events (WebContentsView is in another
@@ -119,8 +129,9 @@ export function App(): ReactElement {
     return window.sidebrowser.onTabFocused(() => {
       closeDrawer();
       closeSettings();
+      closeSearch();
     });
-  }, [closeDrawer, closeSettings]);
+  }, [closeDrawer, closeSettings, closeSearch]);
 
   // M13: chrome dim — re-use the existing windowState.dimmed signal driven
   // by EdgeDock. Settings hydrate within a frame; while null, render
@@ -139,9 +150,11 @@ export function App(): ReactElement {
           onToggleDrawer={toggleDrawer}
           settingsOpen={settingsOpen}
           onToggleSettings={toggleSettings}
-          onSuggestionsOpenChange={setSuggestionsOpen}
+          searchOpen={searchOpen}
+          onOpenSearch={openSearch}
           tabsToggleRef={tabsToggleRef}
           settingsToggleRef={settingsToggleRef}
+          searchPillRef={searchPillRef}
         />
         <TabDrawer
           open={drawerOpen}
@@ -156,6 +169,11 @@ export function App(): ReactElement {
           open={settingsOpen}
           onClose={closeSettings}
           toggleRef={settingsToggleRef}
+        />
+        <SearchSpotlight
+          open={searchOpen}
+          onClose={closeSearch}
+          pillRef={searchPillRef}
         />
       </div>
     </div>

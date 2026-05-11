@@ -69,11 +69,12 @@ function createWindow(initialBounds: Rectangle): BrowserWindow {
     },
   });
   win.setAlwaysOnTop(true, 'screen-saver');
-  // M13 hotfix: hide the empty menu bar by default — only appears on Alt.
-  // Our hidden Application Menu (visible:false on the only top-level item)
-  // still leaves an empty bar row otherwise.
+  // M14: autoHideMenuBar leaves the menu hidden by default but Alt restores it
+  // (so M8/M14 §15 accelerator hints stay reachable). M13's setMenuBarVisibility(false)
+  // permanently locked the menu out of Alt-toggle and was paired with the now-gone
+  // standard title bar's "empty bar row" symptom — titleBarStyle: 'hidden' removes
+  // that symptom on its own, so we no longer need the visibility lock.
   win.setAutoHideMenuBar(true);
-  win.setMenuBarVisibility(false);
 
   if (process.env['ELECTRON_RENDERER_URL']) {
     void win.loadURL(process.env['ELECTRON_RENDERER_URL']);
