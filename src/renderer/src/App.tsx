@@ -8,7 +8,9 @@ import { useTabBridge } from './hooks/useTabBridge';
 import { useWindowStateBridge } from './hooks/useWindowStateBridge';
 import { useSettingsStore } from './store/settings-store';
 import { useActiveTab, useTabsStore } from './store/tab-store';
+import { useWindowStateStore } from './store/window-state-store';
 import { useTheme } from './theme/useTheme';
+import { computeChromeDimStyle } from './lib/chrome-dim';
 
 export function App(): ReactElement {
   useTabBridge();
@@ -95,8 +97,17 @@ export function App(): ReactElement {
     });
   }, [toggleSettings]);
 
+  // M13: chrome dim — re-use the existing windowState.dimmed signal driven
+  // by EdgeDock. Settings hydrate within a frame; while null, render
+  // un-dimmed (avoids a brief flash of stale filter on cold start).
+  const dimmed = useWindowStateStore((s) => s.dimmed);
+  const { rootStyle, overlayStyle } = settings
+    ? computeChromeDimStyle(dimmed, settings.dim)
+    : { rootStyle: {}, overlayStyle: null };
+
   return (
-    <div className="flex h-full w-full flex-col">
+    <div data-testid="chrome-root" className="flex h-full w-full flex-col" style={rootStyle}>
+      {overlayStyle && <div data-testid="chrome-dim-overlay" style={overlayStyle} />}
       <div ref={chromeRef} className="shrink-0">
         <TopBar
           drawerOpen={drawerOpen}
