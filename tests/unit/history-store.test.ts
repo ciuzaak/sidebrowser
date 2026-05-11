@@ -235,6 +235,57 @@ describe('HistoryStore persistence', () => {
     expect(cb).toHaveBeenCalledTimes(1);
   });
 
+  // M14: clearAll — wipe everything, commit synchronously, notify once.
+  it('clearAll() empties the store, commits to backend, and notifies listeners', () => {
+    const backend = createFakeBackend({
+      entries: [
+        entry('https://a.example/', { lastVisitedAt: 1 }),
+        entry('https://b.example/', { lastVisitedAt: 2 }),
+      ],
+    });
+    const store = new HistoryStore(backend);
+    expect(store.all()).toHaveLength(2);
+
+    const cb = vi.fn();
+    store.onChanged(cb);
+
+    store.clearAll();
+
+    // Backend write is synchronous (clearAll bypasses the debounce).
+    expect(store.all()).toEqual([]);
+    expect(backend.lastSet).toEqual({ entries: [] });
+
+    // Notify is throttled to next tick (16 ms).
+    vi.advanceTimersByTime(16);
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  it('clearAll() on an empty store is a no-op but still notifies once', () => {
+    const backend = createFakeBackend({ entries: [] });
+    const store = new HistoryStore(backend);
+    const cb = vi.fn();
+    store.onChanged(cb);
+
+    store.clearAll();
+
+    vi.advanceTimersByTime(16);
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(store.all()).toEqual([]);
+  });
+
+  it('clearAll() cancels a pending saveTimer so backend.set is called exactly once', () => {
+    const backend = createFakeBackend({ entries: [] });
+    const store = new HistoryStore(backend);
+    store.upsert('https://old.com', 1000);     // arms saveTimer
+    expect(backend.setCount).toBe(0);
+
+    store.clearAll();
+    expect(backend.setCount).toBe(1);
+
+    vi.advanceTimersByTime(2000);
+    expect(backend.setCount).toBe(1);          // pending timer was cancelled
+  });
+
   it('onChanged fires on mutation; same-frame mutations coalesce to one notification', () => {
     const store = new HistoryStore(createFakeBackend());
     const cb = vi.fn();

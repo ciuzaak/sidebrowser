@@ -119,6 +119,21 @@ export class HistoryStore {
     this.markDirty();
   }
 
+  /**
+   * M14: wipe all entries. Backend write is synchronous (bypasses the debounce)
+   * so the UI "Clear" button shows immediate effect on next read; notify is
+   * scheduled normally so renderer subscribers re-fetch once.
+   */
+  clearAll(): void {
+    if (this.saveTimer !== null) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    this.entries.clear();
+    this.commitToBackend();
+    this.scheduleNotify();
+  }
+
   /** 最近 N 条，按 lastVisitedAt 倒序。 */
   recent(limit: number): HistoryEntry[] {
     return [...this.entries.values()]
