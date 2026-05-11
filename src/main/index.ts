@@ -31,6 +31,7 @@ import { buildContextMenuTemplate as buildContextMenuTemplateForTest } from './c
 import { handleSecondInstance } from './single-instance';
 import { installMobileHeaderRewriter } from './mobile-emulation';
 import { getPersistentSession } from './session-manager';
+import { resolveTitleBarOverlay } from './title-bar-overlay';
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -40,6 +41,9 @@ if (!gotLock) {
 }
 
 function createWindow(initialBounds: Rectangle): BrowserWindow {
+  const initialOverlay = resolveTitleBarOverlay(
+    nativeTheme.shouldUseDarkColors ? 'dark' : 'light',
+  );
   const win = new BrowserWindow({
     x: initialBounds.x,
     y: initialBounds.y,
@@ -47,6 +51,16 @@ function createWindow(initialBounds: Rectangle): BrowserWindow {
     height: initialBounds.height,
     title: 'sidebrowser',
     alwaysOnTop: true,
+    // M14: frameless + Windows-native titleBarOverlay. Windows draws min/max/
+    // close in the top-right; everything else (drag region, chrome layout) is
+    // ours. Title-bar height matches the chrome strip height (36 px) so the
+    // overlay sits flush with our IconButton row.
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: initialOverlay.color,
+      symbolColor: initialOverlay.symbolColor,
+      height: 36,
+    },
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       sandbox: true,
@@ -68,6 +82,31 @@ function createWindow(initialBounds: Rectangle): BrowserWindow {
   }
 
   return win;
+}
+
+/**
+ * M14: keep the titleBarOverlay color pair in sync with the resolved theme.
+ * Called on `settings:changed` (user toggled appearance.theme) and on
+ * `nativeTheme.on('updated')` (OS appearance change).
+ */
+function recomputeTitleBarOverlay(
+  win: BrowserWindow,
+  themeChoice: 'system' | 'dark' | 'light',
+): void {
+  const resolved =
+    themeChoice === 'system'
+      ? nativeTheme.shouldUseDarkColors
+        ? 'dark'
+        : 'light'
+      : themeChoice;
+  const overlay = resolveTitleBarOverlay(resolved);
+  if (!win.isDestroyed()) {
+    win.setTitleBarOverlay({
+      color: overlay.color,
+      symbolColor: overlay.symbolColor,
+      height: 36,
+    });
+  }
 }
 
 function seedTabs(viewManager: ViewManager, persisted: PersistedTabs | null): void {
@@ -358,6 +397,9 @@ app.whenReady().then(() => {
         shouldUseDarkColors: nativeTheme.shouldUseDarkColors,
       });
     }
+    // M14: refresh titleBarOverlay if the user's theme choice is 'system' —
+    // recomputeTitleBarOverlay itself handles the resolution.
+    recomputeTitleBarOverlay(win, settingsStore.get().appearance.theme);
   };
   nativeTheme.on('updated', onNativeThemeUpdated);
 
@@ -405,6 +447,8 @@ app.whenReady().then(() => {
       // first-paint path; app:ready is a backup hint.
       win.webContents.send(IpcChannels.settingsChanged, settings);
     }
+    // M14: keep titleBarOverlay color in sync with appearance.theme.
+    recomputeTitleBarOverlay(win, settings.appearance.theme);
   });
 
   // 7. app:ready broadcast + initial EdgeDock seed (one-shot on ready-to-show).
