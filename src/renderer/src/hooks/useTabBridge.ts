@@ -15,6 +15,7 @@ import { useTabsStore } from '../store/tab-store';
 export function useTabBridge(): void {
   const setSnapshot = useTabsStore((s) => s.setSnapshot);
   const upsertTab = useTabsStore((s) => s.upsertTab);
+  const setCycling = useTabsStore((s) => s.setCycling);
 
   useEffect(() => {
     const unsubSnapshot = window.sidebrowser.onTabsSnapshot((snapshot) => {
@@ -23,10 +24,14 @@ export function useTabBridge(): void {
     const unsubUpdated = window.sidebrowser.onTabUpdated((tab) => {
       upsertTab(tab);
     });
+    const unsubCycle = window.sidebrowser.onCycleState((active) => {
+      setCycling(active);
+    });
     void window.sidebrowser.requestTabsSnapshot().then(setSnapshot);
     return () => {
       unsubSnapshot();
       unsubUpdated();
+      unsubCycle();
     };
-  }, [setSnapshot, upsertTab]);
+  }, [setSnapshot, upsertTab, setCycling]);
 }

@@ -123,6 +123,17 @@ const api = {
     ipcRenderer.on(IpcChannels.historyChanged, handler);
     return () => ipcRenderer.off(IpcChannels.historyChanged, handler);
   },
+
+  /**
+   * Subscribe to TabCycler broadcasts (M13). payload.active=true when cycling
+   * started (drawer should show), false on Ctrl release (drawer should hide).
+   * Returns unsubscribe.
+   */
+  onCycleState: (cb: (active: boolean) => void): (() => void) => {
+    const handler = (_e: IpcRendererEvent, p: { active: boolean }): void => cb(p.active);
+    ipcRenderer.on(IpcChannels.cycleState, handler);
+    return () => ipcRenderer.off(IpcChannels.cycleState, handler);
+  },
 };
 
 contextBridge.exposeInMainWorld('sidebrowser', api);

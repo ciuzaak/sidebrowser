@@ -6,6 +6,8 @@ interface TabsState {
   /** Authoritative render order. Independent of tabs Record so future drag-reorder can mutate ordering without rebuilding tab objects. */
   tabOrder: string[];
   activeId: string | null;
+  /** True while the user is mid-Ctrl+Tab-cycle (broadcast by main). Drives drawer visibility in App.tsx (M13). */
+  cycling: boolean;
   /** Replace the entire tabs + activeId state from a main-side snapshot. */
   setSnapshot: (snapshot: TabsSnapshot) => void;
   /**
@@ -16,12 +18,14 @@ interface TabsState {
    * use setSnapshot.
    */
   upsertTab: (tab: Tab) => void;
+  setCycling: (active: boolean) => void;
 }
 
 export const useTabsStore = create<TabsState>((set) => ({
   tabs: {},
   tabOrder: [],
   activeId: null,
+  cycling: false,
   setSnapshot: (snapshot) =>
     set(() => {
       const tabs: Record<string, Tab> = {};
@@ -36,6 +40,7 @@ export const useTabsStore = create<TabsState>((set) => ({
     set((state) => ({
       tabs: { ...state.tabs, [tab.id]: tab },
     })),
+  setCycling: (active) => set({ cycling: active }),
 }));
 
 /** Selector hook: active Tab or null. */

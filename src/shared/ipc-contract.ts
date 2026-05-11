@@ -62,6 +62,8 @@ export const IpcChannels = {
   historyRemove: 'history:remove',
   /** M→R event. 历史变更信号 — payload 空对象，renderer 自己 re-fetch。 */
   historyChanged: 'history:changed',
+  /** M→R event. M13 TabCycler broadcasts active=true on Ctrl+Tab cycle start, false on Ctrl release. */
+  cycleState: 'cycle:state',
 } as const;
 
 /**
@@ -206,6 +208,11 @@ export interface IpcContract {
   [IpcChannels.historyChanged]: {
     /** 仅信号；renderer 收到后自己 re-fetch。 */
     request: Record<string, never>;
+    response: void;
+  };
+  [IpcChannels.cycleState]: {
+    /** Fires on cycle start (active=true) and cycle end (active=false). */
+    request: { active: boolean };
     response: void;
   };
 }
