@@ -405,6 +405,35 @@ app.whenReady().then(() => {
       // M12 history hooks.
       seedHistory: (entries: HistoryEntry[]): void => historyStore.seed(entries),
       getHistoryAll: (): HistoryEntry[] => historyStore.all(),
+      // M13 context-menu hook. Runs the same template builder ViewManager
+      // would for a real context-menu event, returning labels in order so the
+      // spec can assert the menu structure without dealing with the native
+      // popup menu (which Playwright cannot query).
+      simulateContextMenu: (
+        wc: Electron.WebContents,
+        params: { linkURL?: string; selectionText?: string },
+      ): string[] => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { buildContextMenuTemplate } = require('./context-menu') as typeof import('./context-menu');
+        const tpl = buildContextMenuTemplate(
+          { linkURL: params.linkURL ?? '', selectionText: params.selectionText ?? '' } as Electron.ContextMenuParams,
+          {
+            openInSystemBrowser: () => {},
+            openInNewTab: () => {},
+            copyToClipboard: () => {},
+            searchSelection: () => {},
+            viewSource: () => {},
+            navigateActive: () => {},
+            canGoBack: true,
+            canGoForward: true,
+            activeSearchEngineName: settingsStore.get().search.engines.find((e) =>
+              e.id === settingsStore.get().search.activeId,
+            )?.name ?? 'Google',
+          },
+          wc.getURL(),
+        );
+        return tpl.map((i) => i.label ?? (i.type === 'separator' ? '---' : ''));
+      },
     };
   } else {
     watcher.start();
