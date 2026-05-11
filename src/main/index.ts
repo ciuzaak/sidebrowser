@@ -205,9 +205,22 @@ app.whenReady().then(() => {
   // wc has focus drives the cycle. Ctrl release is NOT auto-detected (Electron
   // unreliable on Windows); drawer dismisses via closeDrawer in the renderer
   // (outside-click / tab selection) or win.blur below.
+  //
+  // After each activation we re-focus chrome's wc. Two reasons:
+  //   1) Without this, the newly-active tab's WebContentsView captures keyboard
+  //      focus. Subsequent Ctrl+Tab keystrokes get dispatched to that tab's wc;
+  //      on about:blank pages (no focusable element) Chromium may not deliver
+  //      before-input-event at all, so the cycler stops responding ("stuck after
+  //      one press").
+  //   2) The same focus capture would also fire `wc.on('focus')` below → the
+  //      tabFocused IPC → renderer's closeDrawer → cycle:end → drawer closes
+  //      mid-cycle. Keeping focus on chrome avoids this feedback loop.
+  const refocusChrome = (): void => {
+    if (!win.isDestroyed()) win.webContents.focus();
+  };
   const cycler = new TabCycler({
-    activateNext: () => viewManager.activateRelativeTab(+1),
-    activatePrev: () => viewManager.activateRelativeTab(-1),
+    activateNext: () => { viewManager.activateRelativeTab(+1); refocusChrome(); },
+    activatePrev: () => { viewManager.activateRelativeTab(-1); refocusChrome(); },
     broadcastCycleState: (active) => {
       if (!win.isDestroyed()) win.webContents.send(IpcChannels.cycleState, { active });
     },
