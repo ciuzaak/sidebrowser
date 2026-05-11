@@ -3,7 +3,7 @@ import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { getChromeWindow, waitForAddressBarReady } from './helpers';
+import { getChromeWindow, waitForAddressBarReady, openSpotlight, getActiveUrl } from './helpers';
 import type { HistoryEntry } from '../../src/shared/types';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -43,15 +43,14 @@ const FIXTURE: Seed[] = [
 ];
 
 test.describe('AddressSuggestions', () => {
-  test('shows recent history when address bar focused with empty input', async () => {
+  test('shows recent history when spotlight opens with empty input', async () => {
     const userDataDir = mkdtempSync(join(tmpdir(), 'sb-ac-'));
     const app = await launch(userDataDir);
     try {
       const window = await getChromeWindow(app);
       await seedHistory(app, FIXTURE);
       await waitForAddressBarReady(window);
-      const bar = window.getByTestId('address-bar');
-      await bar.click();   // focus
+      await openSpotlight(window);
       await expect(window.getByTestId('address-suggestions')).toBeVisible();
       const items = window.getByTestId('address-suggestions-item');
       await expect(items).toHaveCount(4);
@@ -68,8 +67,8 @@ test.describe('AddressSuggestions', () => {
       const window = await getChromeWindow(app);
       await seedHistory(app, FIXTURE);
       await waitForAddressBarReady(window);
+      await openSpotlight(window);
       const bar = window.getByTestId('address-bar');
-      await bar.click();
       await bar.fill('git');
       const items = window.getByTestId('address-suggestions-item');
       await expect(items).toHaveCount(2);
@@ -86,8 +85,8 @@ test.describe('AddressSuggestions', () => {
       const window = await getChromeWindow(app);
       await seedHistory(app, FIXTURE);
       await waitForAddressBarReady(window);
+      await openSpotlight(window);
       const bar = window.getByTestId('address-bar');
-      await bar.click();
       await bar.fill('git');
       // After 'git' filter: github + gitlab (tier 0), ranked by frecency.
       // With identical visitCount=1 and adjacent timestamps, exact ranking
@@ -96,27 +95,30 @@ test.describe('AddressSuggestions', () => {
       await bar.press('ArrowDown');
       await bar.press('ArrowDown');
       await bar.press('Enter');
-      await expect.poll(async () => bar.inputValue(), { timeout: 10_000 }).toMatch(/^https:\/\/git/);
+      await expect
+        .poll(async () => getActiveUrl(app), { timeout: 10_000 })
+        .toMatch(/^https:\/\/git/);
     } finally {
       try { await app.close(); } catch { /* already closed */ }
       rmSync(userDataDir, { recursive: true, force: true });
     }
   });
 
-  test('Esc closes dropdown and keeps draft input', async () => {
+  test('Esc closes the spotlight entirely', async () => {
     const userDataDir = mkdtempSync(join(tmpdir(), 'sb-ac-'));
     const app = await launch(userDataDir);
     try {
       const window = await getChromeWindow(app);
       await seedHistory(app, FIXTURE);
       await waitForAddressBarReady(window);
+      await openSpotlight(window);
       const bar = window.getByTestId('address-bar');
-      await bar.click();
       await bar.fill('git');
-      await expect(window.getByTestId('address-suggestions')).toBeVisible();
-      await bar.press('Escape');
-      await expect(window.getByTestId('address-suggestions')).toBeHidden();
-      await expect(bar).toHaveValue('git');
+      await expect(window.getByTestId('search-spotlight')).toBeVisible();
+      await window.keyboard.press('Escape');
+      await expect(window.getByTestId('search-spotlight')).toBeHidden();
+      // Re-opening yields a fresh draft seeded from tab.url (no persistence
+      // of the 'git' fragment) — captured by the next test rather than here.
     } finally {
       try { await app.close(); } catch { /* already closed */ }
       rmSync(userDataDir, { recursive: true, force: true });

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
-import { getChromeWindow } from './helpers';
+import { getChromeWindow, waitForAddressBarReady, navigateActive, getActiveUrl } from './helpers';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAIN_PATH = resolve(__dirname, '../../out/main/index.cjs');
@@ -29,24 +29,6 @@ function startPageServer(): Promise<{ server: Server; baseUrl: string }> {
   });
 }
 
-async function waitForAddressBarReady(page: Page): Promise<void> {
-  await page.waitForFunction(
-    () => {
-      const input = document.querySelector<HTMLInputElement>('[data-testid="address-bar"]');
-      return Boolean(input && !input.disabled);
-    },
-    { timeout: 10_000 },
-  );
-}
-
-async function navigateActive(page: Page, url: string): Promise<void> {
-  const addressBar = page.getByTestId('address-bar');
-  await addressBar.fill(url);
-  await addressBar.press('Enter');
-  await expect
-    .poll(async () => (await addressBar.inputValue()) === url, { timeout: 10_000 })
-    .toBeTruthy();
-}
 
 async function openDrawer(page: Page): Promise<void> {
   await page.getByTestId('topbar-tabs-toggle').click();
@@ -70,21 +52,22 @@ test('three tabs survive restart with correct active tab', async () => {
     {
       const app = await electron.launch({
         args: [MAIN_PATH, `--user-data-dir=${userDataDir}`],
+        env: { ...process.env, SIDEBROWSER_E2E: '1' },
       });
       try {
         const page = await getChromeWindow(app);
         await waitForAddressBarReady(page);
 
         // Tab 1 (existing initial blank) → navigate to /page1.
-        await navigateActive(page, `${baseUrl}/page1`);
+        await navigateActive(page, `${baseUrl}/page1`, app);
 
         // New tab → /page2.
         await createNewTab(page);
-        await navigateActive(page, `${baseUrl}/page2`);
+        await navigateActive(page, `${baseUrl}/page2`, app);
 
         // New tab → /page3.
         await createNewTab(page);
-        await navigateActive(page, `${baseUrl}/page3`);
+        await navigateActive(page, `${baseUrl}/page3`, app);
 
         // Activate tab 2 by finding its drawer row (title "PAGE 2") and clicking.
         await openDrawer(page);
@@ -97,10 +80,7 @@ test('three tabs survive restart with correct active tab', async () => {
 
         // Confirm active tab's url is /page2.
         await expect
-          .poll(
-            async () => (await page.getByTestId('address-bar').inputValue()).endsWith('/page2'),
-            { timeout: 10_000 },
-          )
+          .poll(async () => (await getActiveUrl(app)).endsWith('/page2'), { timeout: 10_000 })
           .toBeTruthy();
       } finally {
         await app.close();
@@ -111,6 +91,7 @@ test('three tabs survive restart with correct active tab', async () => {
     {
       const app = await electron.launch({
         args: [MAIN_PATH, `--user-data-dir=${userDataDir}`],
+        env: { ...process.env, SIDEBROWSER_E2E: '1' },
       });
       try {
         const page = await getChromeWindow(app);
@@ -118,10 +99,7 @@ test('three tabs survive restart with correct active tab', async () => {
 
         // Address bar should immediately reflect /page2 (the restored active tab).
         await expect
-          .poll(
-            async () => (await page.getByTestId('address-bar').inputValue()).endsWith('/page2'),
-            { timeout: 10_000 },
-          )
+          .poll(async () => (await getActiveUrl(app)).endsWith('/page2'), { timeout: 10_000 })
           .toBeTruthy();
 
         // Open drawer — expect 3 rows, one per restored page.

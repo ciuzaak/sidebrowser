@@ -116,7 +116,7 @@ test.describe('M14 macOS-style tokens', () => {
     }
   });
 
-  test('address bar uses --surface-sunken background in dark theme', async () => {
+  test('search pill uses --surface-sunken background in dark theme', async () => {
     const userDataDir = mkdtempSync(join(tmpdir(), 'sidebrowser-e2e-m14-'));
     try {
       const app = await launch(userDataDir);
@@ -128,12 +128,21 @@ test.describe('M14 macOS-style tokens', () => {
           () => document.documentElement.dataset.theme === 'dark',
         );
 
-        const addressBg = await win.evaluate(() => {
-          const el = document.querySelector('[data-testid="address-bar"]');
-          return el ? getComputedStyle(el).backgroundColor : '';
-        });
-        // --surface-sunken (dark) = #14161b = rgb(20, 22, 27)
-        expect(rgbToHex(addressBg)).toBe('#14161b');
+        // M14: the inline address bar is gone; SearchPill in TopBar is the
+        // surface-sunken element now. Poll because the CSS variable cascade
+        // takes a paint cycle after dataset.theme flips.
+        await expect
+          .poll(
+            async () => {
+              const bg = await win.evaluate(() => {
+                const el = document.querySelector('[data-testid="search-pill"]');
+                return el ? getComputedStyle(el).backgroundColor : '';
+              });
+              return rgbToHex(bg);
+            },
+            { timeout: 5_000 },
+          )
+          .toBe('#14161b');
       } finally {
         await app.close();
       }

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
-import { getChromeWindow } from './helpers';
+import { getChromeWindow, waitForAddressBarReady, navigateActive } from './helpers';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAIN_PATH = resolve(__dirname, '../../out/main/index.cjs');
@@ -53,16 +53,12 @@ function startCookieServer(): Promise<CookieSpy> {
 async function launchAndNavigate(baseUrl: string, subpath: string, userDataDir: string): Promise<void> {
   const app = await electron.launch({
     args: [MAIN_PATH, `--user-data-dir=${userDataDir}`],
+    env: { ...process.env, SIDEBROWSER_E2E: '1' },
   });
   try {
     const window = await getChromeWindow(app);
-    const addressBar = window.getByTestId('address-bar');
-    await addressBar.fill(`${baseUrl}${subpath}`);
-    await addressBar.press('Enter');
-
-    await expect
-      .poll(async () => (await addressBar.inputValue()).endsWith(subpath), { timeout: 10_000 })
-      .toBeTruthy();
+    await waitForAddressBarReady(window);
+    await navigateActive(window, `${baseUrl}${subpath}`, app);
   } finally {
     await app.close();
   }

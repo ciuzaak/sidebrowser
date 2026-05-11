@@ -27,25 +27,75 @@ export async function getChromeWindow(app: ElectronApplication, timeoutMs = 10_0
   throw new Error(`getChromeWindow: chrome window (window.sidebrowser) not found within ${timeoutMs}ms`);
 }
 
-/** Wait for the address-bar input to exist and be enabled (tabs seeded). */
+/**
+ * Wait until the chrome's SearchPill is mounted and enabled (tabs have been
+ * seeded). Replaces M14's prior `waitForAddressBarReady` — the inline address
+ * bar input no longer exists; the pill is the always-visible chrome control
+ * that opens the SearchSpotlight on click.
+ */
 export async function waitForAddressBarReady(page: Page): Promise<void> {
   await page.waitForFunction(
     () => {
-      const el = document.querySelector<HTMLInputElement>('[data-testid="address-bar"]');
+      const el = document.querySelector<HTMLButtonElement>('[data-testid="search-pill"]');
       return Boolean(el && !el.disabled);
     },
     { timeout: 10_000 },
   );
 }
 
-/** Type `url` into the address bar and press Enter; poll until the input reflects the submitted value. */
-export async function navigateActive(page: Page, url: string): Promise<void> {
+/**
+ * Click the SearchPill so the SearchSpotlight mounts and its input
+ * (data-testid="address-bar") becomes focusable. No-op if already open.
+ */
+export async function openSpotlight(page: Page): Promise<void> {
+  const alreadyOpen = await page
+    .locator('[data-testid="search-spotlight"]')
+    .count()
+    .then((c) => c > 0);
+  if (alreadyOpen) return;
+  await page.getByTestId('search-pill').click();
+  await page.waitForSelector('[data-testid="address-bar"]', { timeout: 10_000 });
+}
+
+/**
+ * Type `url` into the address bar and press Enter. Returns once the navigation
+ * has actually committed on the main side (active WebContents URL matches).
+ *
+ * If `app` is provided, polls the active WebContents URL via the test hook
+ * (requires SIDEBROWSER_E2E=1). Without it, only waits for the spotlight to
+ * unmount — caller is responsible for verifying the navigation landed.
+ */
+export async function navigateActive(
+  page: Page,
+  url: string,
+  app?: ElectronApplication,
+): Promise<void> {
+  await openSpotlight(page);
   const bar = page.getByTestId('address-bar');
   await bar.fill(url);
   await bar.press('Enter');
-  await expect
-    .poll(async () => (await bar.inputValue()) === url, { timeout: 10_000 })
-    .toBeTruthy();
+  // Spotlight unmounts on submit.
+  await page.waitForSelector('[data-testid="address-bar"]', { state: 'detached', timeout: 10_000 });
+  if (app !== undefined) {
+    await expect
+      .poll(async () => getActiveUrl(app), { timeout: 10_000 })
+      .toBe(url);
+  }
+}
+
+/**
+ * Read the URL of the currently-active WebContents via the main-side test hook.
+ * Used in place of the old `addressBar.inputValue()` assertion because the
+ * spotlight input no longer reflects the live URL after submit.
+ */
+export async function getActiveUrl(app: ElectronApplication): Promise<string> {
+  return app.evaluate(async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const h = (globalThis as any).__sidebrowserTestHooks as {
+      getActiveWebContents: () => Electron.WebContents | null;
+    };
+    return h.getActiveWebContents()?.getURL() ?? '';
+  });
 }
 
 /**

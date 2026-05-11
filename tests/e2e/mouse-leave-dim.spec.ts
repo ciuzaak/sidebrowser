@@ -9,6 +9,7 @@ import {
   getActiveFilter,
   getChromeWindow,
   navigateActive,
+  getActiveUrl,
   waitForAddressBarReady,
 } from './helpers';
 
@@ -185,11 +186,11 @@ test('dim applies on leave, clears on enter, retargets on tab switch', async () 
       }
       await page.getByTestId('tab-drawer').waitFor({ state: 'hidden' });
 
-      // Wait for address bar to show tab1's URL (/plain, not /plain2)
+      // Wait for the active tab to settle on tab1's URL (/plain, not /plain2)
       await expect
         .poll(
           async () => {
-            const val = await page.getByTestId('address-bar').inputValue();
+            const val = await getActiveUrl(app);
             return val.includes('/plain') && !val.includes('/plain2');
           },
           { timeout: 10_000 },

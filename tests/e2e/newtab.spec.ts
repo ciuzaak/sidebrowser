@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
-import { getChromeWindow } from './helpers';
+import { getChromeWindow, openSpotlight, getActiveUrl } from './helpers';
 import type { HistoryEntry } from '../../src/shared/types';
 
 /** Start a minimal HTTP server and return its base URL. */
@@ -94,16 +94,19 @@ test.describe('NewTab', () => {
       const window = await getChromeWindow(app);
       await expect(window.getByTestId('newtab')).toBeVisible();
 
-      // Navigate to a real HTTP page; wait for NewTab to disappear (driven by
-      // tab:updated IPC, not by address-bar poll value which would pass immediately).
+      // Navigate to a real HTTP page via the Spotlight; NewTab unmounts once
+      // tab.url flips away from about:blank.
+      await openSpotlight(window);
       const bar = window.getByTestId('address-bar');
       await bar.fill(awayUrl);
       await bar.press('Enter');
       await expect(window.getByTestId('newtab')).toBeHidden({ timeout: 10_000 });
 
       // Navigate back to about:blank by submitting an empty address bar.
-      await bar.fill('');
-      await bar.press('Enter');
+      await openSpotlight(window);
+      const bar2 = window.getByTestId('address-bar');
+      await bar2.fill('');
+      await bar2.press('Enter');
       await expect(window.getByTestId('newtab')).toBeVisible({ timeout: 10_000 });
     } finally {
       try { await app.close(); } catch { /* already closed */ }
@@ -145,10 +148,9 @@ test.describe('NewTab', () => {
 
       await window.getByTestId('newtab-item').first().dispatchEvent('mousedown');
 
-      // Address bar reflects the loaded URL after navigation completes;
+      // Active tab URL reflects the loaded URL after navigation completes;
       // NewTab unmounts because isNewTab flips false.
-      const bar = window.getByTestId('address-bar');
-      await expect.poll(async () => bar.inputValue(), { timeout: 10_000 }).toBe(targetUrl);
+      await expect.poll(async () => getActiveUrl(app), { timeout: 10_000 }).toBe(targetUrl);
       await expect(window.getByTestId('newtab')).toBeHidden();
     } finally {
       try { await app.close(); } catch { /* already closed */ }

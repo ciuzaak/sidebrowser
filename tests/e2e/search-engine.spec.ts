@@ -8,7 +8,7 @@ import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { getChromeWindow, waitForAddressBarReady } from './helpers';
+import { getChromeWindow, waitForAddressBarReady, openSpotlight } from './helpers';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAIN_PATH = resolve(__dirname, '../../out/main/index.cjs');
@@ -87,6 +87,7 @@ test('default search engine routes to Google', async () => {
   const page = await getChromeWindow(app);
   await waitForAddressBarReady(page);
 
+  await openSpotlight(page);
   const bar = page.getByTestId('address-bar');
   await bar.fill('hello world');
   await bar.press('Enter');
@@ -113,6 +114,7 @@ test('switching active engine to Bing routes via Bing', async () => {
     h.updateSettings({ search: { activeId: 'bing' } });
   });
 
+  await openSpotlight(page);
   const bar = page.getByTestId('address-bar');
   await bar.fill('foo bar');
   await bar.press('Enter');

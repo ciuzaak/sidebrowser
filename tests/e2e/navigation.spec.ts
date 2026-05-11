@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
-import { getChromeWindow } from './helpers';
+import { getChromeWindow, navigateActive, getActiveUrl } from './helpers';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -57,12 +57,12 @@ test('address bar navigation updates URL and history', async () => {
   const userDataDir = mkdtempSync(join(tmpdir(), 'sidebrowser-nav-e2e-'));
   const app = await electron.launch({
     args: [resolve(__dirname, '../../out/main/index.cjs'), `--user-data-dir=${userDataDir}`],
+    env: { ...process.env, SIDEBROWSER_E2E: '1' },
   });
 
   try {
     const window = await getChromeWindow(app);
 
-    const addressBar = window.getByTestId('address-bar');
     const backButton = window.getByRole('button', { name: 'Back' });
 
     // Initially on about:blank — Back disabled.
@@ -73,27 +73,25 @@ test('address bar navigation updates URL and history', async () => {
     // IPC → Zustand → React and is reliable where URL polling is not.
     // Note: about:blank → first real page does NOT create a back entry, so
     // canGoBack stays false here; we cannot use toBeEnabled() as the fence.
-    await addressBar.fill(`${baseUrl}/page1`);
-    await addressBar.press('Enter');
+    await navigateActive(window, `${baseUrl}/page1`);
     await waitForLoadComplete(window);
     await expect
-      .poll(async () => (await addressBar.inputValue()).endsWith('/page1'), { timeout: 10_000 })
+      .poll(async () => (await getActiveUrl(app)).endsWith('/page1'), { timeout: 10_000 })
       .toBeTruthy();
 
     // Navigate to /page2. After this commit page1→page2 history exists, so
     // Back will be enabled. Wait for spinner → gone, then assert Back.
-    await addressBar.fill(`${baseUrl}/page2`);
-    await addressBar.press('Enter');
+    await navigateActive(window, `${baseUrl}/page2`);
     await waitForLoadComplete(window);
     await expect
-      .poll(async () => (await addressBar.inputValue()).endsWith('/page2'), { timeout: 10_000 })
+      .poll(async () => (await getActiveUrl(app)).endsWith('/page2'), { timeout: 10_000 })
       .toBeTruthy();
     await expect(backButton).toBeEnabled();
 
-    // Go back → /page1 should reappear in the address bar.
+    // Go back → /page1 should reappear.
     await backButton.click();
     await expect
-      .poll(async () => (await addressBar.inputValue()).endsWith('/page1'), { timeout: 10_000 })
+      .poll(async () => (await getActiveUrl(app)).endsWith('/page1'), { timeout: 10_000 })
       .toBeTruthy();
   } finally {
     await app.close();

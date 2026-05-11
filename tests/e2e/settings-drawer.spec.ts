@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
 import {
   getActiveFilter,
+  getActiveUrl,
   getChromeWindow,
   navigateActive,
   waitForAddressBarReady,
@@ -203,7 +204,7 @@ test('drawer open suppresses active view bounds; close restores them', async () 
     try {
       const page = await getChromeWindow(app);
       await waitForAddressBarReady(page);
-      await navigateActive(page, `${baseUrl}/plain`);
+      await navigateActive(page, `${baseUrl}/plain`, app);
 
       // Baseline: active view occupies non-zero area.
       const initial = await getActiveViewBounds(app);
@@ -250,7 +251,7 @@ test('dim blur slider live-updates active WebContents filter', async () => {
     try {
       const page = await getChromeWindow(app);
       await waitForAddressBarReady(page);
-      await navigateActive(page, `${baseUrl}/plain`);
+      await navigateActive(page, `${baseUrl}/plain`, app);
 
       // Activate dim (default effect='blur', blurPx=8).
       await fireLeaveNow(app);
@@ -391,7 +392,7 @@ test('restoreTabsOnLaunch=false relaunches with about:blank, not persisted tab',
         const page = await getChromeWindow(app);
         await waitForAddressBarReady(page);
 
-        await navigateActive(page, `${baseUrl}/plain`);
+        await navigateActive(page, `${baseUrl}/plain`, app);
 
         await openSettingsDrawer(page);
         await page.getByTestId('settings-lifecycle-restore-tabs').uncheck();
@@ -415,21 +416,14 @@ test('restoreTabsOnLaunch=false relaunches with about:blank, not persisted tab',
         const page = await getChromeWindow(app);
         await waitForAddressBarReady(page);
 
-        // Address bar reflects the active tab's URL — for a blank tab it's
-        // either empty string or 'about:blank'. Both signal the /plain URL
-        // was NOT restored.
+        // Active tab URL — for a blank tab it's about:blank. /plain was NOT
+        // restored.
         await expect
-          .poll(
-            async () => {
-              const val = await page.getByTestId('address-bar').inputValue();
-              return val.includes('/plain');
-            },
-            { timeout: 5_000 },
-          )
+          .poll(async () => (await getActiveUrl(app)).includes('/plain'), { timeout: 5_000 })
           .toBe(false);
 
-        const addressValue = await page.getByTestId('address-bar').inputValue();
-        expect(['', 'about:blank']).toContain(addressValue);
+        const url = await getActiveUrl(app);
+        expect(['', 'about:blank']).toContain(url);
       } finally {
         await app.close();
       }

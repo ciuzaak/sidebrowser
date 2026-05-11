@@ -64,8 +64,9 @@ test.describe('tab UX (M13)', () => {
     await chrome.getByTestId('topbar-tabs-toggle').click();
     await expect(chrome.getByTestId('tab-drawer')).toBeVisible();
 
-    // mousedown on the address bar — outside drawer + outside the toggle.
-    await chrome.getByTestId('address-bar').click();
+    // mousedown on the SearchPill — outside drawer + outside the toggle.
+    // The pill also opens the Spotlight; only the drawer state matters here.
+    await chrome.getByTestId('search-pill').click();
     await expect(chrome.getByTestId('tab-drawer')).toBeHidden();
   });
 
