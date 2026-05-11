@@ -6,6 +6,14 @@ import { useSettingsStore } from '../store/settings-store';
 import { normalizeUrlInput } from '@shared/url';
 import { AddressSuggestions, type AddressSuggestionsHandle } from './AddressSuggestions';
 
+/**
+ * M14: reserve width on the right of the chrome row so the address bar
+ * doesn't slide under the Windows-native titleBarOverlay (the min/max/close
+ * buttons). The overlay is ~135 px wide on Win10/11; 138 px gives a small
+ * margin.
+ */
+const TITLEBAR_OVERLAY_PX = 138;
+
 interface TopBarProps {
   drawerOpen: boolean;
   onToggleDrawer: () => void;
@@ -101,7 +109,18 @@ export function TopBar({
   const disabled = !tab;
 
   return (
-    <div className={`flex w-full items-center gap-1 border-b border-[var(--chrome-border)] bg-[var(--chrome-bg)] px-2 py-1.5 transition-opacity duration-200 ${hidden ? 'opacity-30' : 'opacity-100'}`}>
+    <div
+      className={
+        'app-drag flex h-9 w-full items-center gap-1 px-2 ' +
+        'border-b border-[var(--border)] ' +
+        `transition-opacity duration-200 ${hidden ? 'opacity-30' : 'opacity-100'}`
+      }
+      style={{
+        background:
+          'linear-gradient(180deg, var(--surface-chrome-top) 0%, var(--surface-chrome-bot) 100%)',
+        paddingRight: TITLEBAR_OVERLAY_PX,
+      }}
+    >
       <IconButton
         ref={tabsToggleRef}
         ariaLabel="Toggle tabs"
@@ -151,7 +170,7 @@ export function TopBar({
         {tab?.isMobile ? <Smartphone size={16} /> : <Monitor size={16} />}
       </IconButton>
 
-      <form onSubmit={submit} className="relative flex-1">
+      <form onSubmit={submit} className="app-no-drag relative flex-1">
         <input
           type="text"
           value={draft}
@@ -163,7 +182,13 @@ export function TopBar({
           spellCheck={false}
           data-testid="address-bar"
           disabled={disabled}
-          className="w-full rounded bg-[var(--chrome-input-bg)] px-2 py-1 text-sm text-[var(--chrome-fg)] placeholder-[var(--chrome-muted)] outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-50"
+          className={
+            'app-no-drag h-[26px] w-full rounded-[var(--radius-md)] px-2 text-sm ' +
+            'bg-[var(--surface-sunken)] text-[var(--fg)] placeholder-[var(--fg-muted)] ' +
+            'border border-[var(--border)] outline-none ' +
+            'focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent ' +
+            'disabled:opacity-50'
+          }
         />
         <AddressSuggestions
           ref={suggestionsRef}
@@ -198,8 +223,12 @@ const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconB
       disabled={disabled}
       onClick={onClick}
       className={
-        'rounded p-1 text-[var(--chrome-fg)] hover:bg-[var(--chrome-hover)] disabled:cursor-not-allowed disabled:opacity-40 ' +
-        (active ? 'bg-[var(--chrome-hover)] text-sky-400' : '')
+        'app-no-drag flex h-[26px] w-[26px] items-center justify-center ' +
+        'rounded-[var(--radius-sm)] text-[var(--fg)] transition-colors duration-100 ' +
+        'hover:bg-[var(--accent-tint)] ' +
+        'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent ' +
+        (active ? 'bg-[var(--accent-tint)] text-[var(--accent-text)] ' : '') +
+        'focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]'
       }
     >
       {children}
