@@ -36,19 +36,6 @@ function startServer(): Promise<{ server: Server; baseUrl: string }> {
   });
 }
 
-interface Hooks {
-  getActiveWebContents: () => Electron.WebContents | null;
-  simulateContextMenu: (
-    wc: Electron.WebContents,
-    params: { linkURL?: string; selectionText?: string },
-  ) => string[];
-}
-
-function getHooks(): Hooks {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (globalThis as any).__sidebrowserTestHooks as Hooks;
-}
-
 test.describe('context menu (M13)', () => {
   let app: ElectronApplication;
   let userDataDir: string;

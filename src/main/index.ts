@@ -24,6 +24,9 @@ import { HistoryStore, createElectronHistoryBackend } from './history-store';
 import { HistoryRecorder } from './history-recorder';
 import { installApplicationMenu } from './keyboard-shortcuts';
 import { TabCycler } from './tab-cycler';
+// Imported up here so the E2E `simulateContextMenu` hook (registered later)
+// doesn't need a runtime require — keeps lint's no-import-type-annotation rule happy.
+import { buildContextMenuTemplate as buildContextMenuTemplateForTest } from './context-menu';
 import { handleSecondInstance } from './single-instance';
 import { installMobileHeaderRewriter } from './mobile-emulation';
 import { getPersistentSession } from './session-manager';
@@ -431,9 +434,7 @@ app.whenReady().then(() => {
         wc: Electron.WebContents,
         params: { linkURL?: string; selectionText?: string },
       ): string[] => {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { buildContextMenuTemplate } = require('./context-menu') as typeof import('./context-menu');
-        const tpl = buildContextMenuTemplate(
+        const tpl = buildContextMenuTemplateForTest(
           { linkURL: params.linkURL ?? '', selectionText: params.selectionText ?? '' } as Electron.ContextMenuParams,
           {
             openInSystemBrowser: () => {},

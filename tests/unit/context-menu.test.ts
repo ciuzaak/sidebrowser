@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import type { MenuItemConstructorOptions } from 'electron';
 import {
   buildContextMenuTemplate,
   type ContextMenuDeps,
@@ -113,7 +114,7 @@ describe('buildContextMenuTemplate', () => {
   it('page-section navigation/view-source/copy/open clicks route to the right deps', () => {
     const deps = makeDeps();
     const tpl = buildContextMenuTemplate(makeParams(), deps, URL);
-    const byLabel = (l: string): import('electron').MenuItemConstructorOptions | undefined =>
+    const byLabel = (l: string): MenuItemConstructorOptions | undefined =>
       tpl.find((i) => i.label === l);
     (byLabel('后退')!.click as () => void)();
     expect(deps.navigateActive).toHaveBeenCalledWith('back');
