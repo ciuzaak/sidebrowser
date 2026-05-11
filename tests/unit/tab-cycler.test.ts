@@ -90,34 +90,6 @@ describe('TabCycler', () => {
     expect(activateNext).not.toHaveBeenCalled();
   });
 
-  it('Control keyUp ends cycle and broadcasts active=false', () => {
-    const broadcastCycleState = vi.fn();
-    const cycler = new TabCycler({
-      activateNext: vi.fn(),
-      activatePrev: vi.fn(),
-      broadcastCycleState,
-    });
-    const wc = makeWc();
-    cycler.attach(wc as unknown as Electron.WebContents);
-    wc.emit(input({ type: 'keyDown', key: 'Tab', control: true }));
-    wc.emit(input({ type: 'keyUp', key: 'Control' }));
-    expect(broadcastCycleState).toHaveBeenNthCalledWith(1, true);
-    expect(broadcastCycleState).toHaveBeenNthCalledWith(2, false);
-  });
-
-  it('keyUp Control with no active cycle is a no-op', () => {
-    const broadcastCycleState = vi.fn();
-    const cycler = new TabCycler({
-      activateNext: vi.fn(),
-      activatePrev: vi.fn(),
-      broadcastCycleState,
-    });
-    const wc = makeWc();
-    cycler.attach(wc as unknown as Electron.WebContents);
-    wc.emit(input({ type: 'keyUp', key: 'Control' }));
-    expect(broadcastCycleState).not.toHaveBeenCalled();
-  });
-
   it('Tab without Ctrl is ignored', () => {
     const activateNext = vi.fn();
     const cycler = new TabCycler({

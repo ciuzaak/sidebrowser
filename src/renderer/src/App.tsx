@@ -109,31 +109,14 @@ export function App(): ReactElement {
 
   // M13 hotfix: tab WebContents focus → close all chrome drawers. Page-area
   // clicks can't be detected via DOM events (WebContentsView is in another
-  // process), so main signals via IPC. closeDrawer only resets the user
-  // toggle — it does NOT interrupt a Ctrl+Tab cycle (cycling drives drawer
-  // visibility independently).
+  // process), so main signals via IPC. closeDrawer also ends any active
+  // Ctrl+Tab cycle (see its definition).
   useEffect(() => {
     return window.sidebrowser.onTabFocused(() => {
       closeDrawer();
       closeSettings();
     });
   }, [closeDrawer, closeSettings]);
-
-  // M13 hotfix #2: renderer-side Ctrl-release fallback. Electron's
-  // before-input-event for the standalone Control keyUp on Windows is
-  // unreliable — when chrome has focus, this catches it and tells main to
-  // end the cycle. Listener attaches only while cycling so it doesn't
-  // interfere with normal Ctrl-key usage in the address bar.
-  useEffect(() => {
-    if (!cycling) return;
-    const onKeyUp = (e: KeyboardEvent): void => {
-      if (e.key === 'Control' || (!e.ctrlKey && e.key !== 'Shift' && e.key !== 'Alt' && e.key !== 'Meta')) {
-        window.sidebrowser.endCycle();
-      }
-    };
-    document.addEventListener('keyup', onKeyUp);
-    return () => document.removeEventListener('keyup', onKeyUp);
-  }, [cycling]);
 
   // M13: chrome dim — re-use the existing windowState.dimmed signal driven
   // by EdgeDock. Settings hydrate within a frame; while null, render

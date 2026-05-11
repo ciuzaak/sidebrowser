@@ -202,16 +202,12 @@ app.whenReady().then(() => {
 
   // 2d. M13 TabCycler — replaces the old CmdOrCtrl+Tab "toggle drawer" accelerator.
   // Attaches before-input-event on the host renderer + every tab so whichever
-  // wc has focus drives the cycle. blur ends a stuck cycle (alt-tab away mid-Ctrl-hold).
-  // After each cycle activation, force keyboard focus back to chrome's wc so
-  // the Ctrl release reaches the renderer's document.keyup fallback (Electron's
-  // standalone-modifier keyUp via before-input-event is unreliable on Windows).
-  const refocusChrome = (): void => {
-    if (!win.isDestroyed()) win.webContents.focus();
-  };
+  // wc has focus drives the cycle. Ctrl release is NOT auto-detected (Electron
+  // unreliable on Windows); drawer dismisses via closeDrawer in the renderer
+  // (outside-click / tab selection) or win.blur below.
   const cycler = new TabCycler({
-    activateNext: () => { viewManager.activateRelativeTab(+1); refocusChrome(); },
-    activatePrev: () => { viewManager.activateRelativeTab(-1); refocusChrome(); },
+    activateNext: () => viewManager.activateRelativeTab(+1),
+    activatePrev: () => viewManager.activateRelativeTab(-1),
     broadcastCycleState: (active) => {
       if (!win.isDestroyed()) win.webContents.send(IpcChannels.cycleState, { active });
     },
