@@ -26,10 +26,33 @@ export interface TabCyclerDeps {
   broadcastCycleState: (active: boolean) => void;
 }
 
+/**
+ * Inactivity safety net: if no Ctrl+Tab arrives for this long, end the cycle.
+ * Defends against the Windows/Electron unreliable modifier keyUp dispatch
+ * even when the renderer-side fallback can't see the release either.
+ */
+const INACTIVITY_END_MS = 3000;
+
 export class TabCycler {
   private cycling = false;
+  private inactivityTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly deps: TabCyclerDeps) {}
+
+  private resetInactivityTimer(): void {
+    if (this.inactivityTimer) clearTimeout(this.inactivityTimer);
+    this.inactivityTimer = setTimeout(() => {
+      this.inactivityTimer = null;
+      this.end();
+    }, INACTIVITY_END_MS);
+  }
+
+  private clearInactivityTimer(): void {
+    if (this.inactivityTimer) {
+      clearTimeout(this.inactivityTimer);
+      this.inactivityTimer = null;
+    }
+  }
 
   /**
    * Install the before-input-event listener on `wc`. Returns a detach closure
@@ -52,6 +75,8 @@ export class TabCycler {
           this.cycling = true;
           this.deps.broadcastCycleState(true);
         }
+        // Each cycle press extends the inactivity safety net.
+        this.resetInactivityTimer();
         return;
       }
       // End cycle when Ctrl is no longer held. Lenient match — fires on:
@@ -61,8 +86,7 @@ export class TabCycler {
       //     dispatch — observed Win/Electron 41 not always firing standalone
       //     modifier keyUps reliably).
       if (this.cycling && input.type === 'keyUp' && !input.control) {
-        this.cycling = false;
-        this.deps.broadcastCycleState(false);
+        this.end();
       }
     };
     wc.on('before-input-event', handler);
@@ -72,10 +96,11 @@ export class TabCycler {
   }
 
   /**
-   * Force-end the cycle (e.g. window blur). No-op when not currently cycling
-   * to keep the broadcast stream clean.
+   * Force-end the cycle (e.g. window blur, renderer fallback IPC, inactivity
+   * timer). No-op when not currently cycling to keep the broadcast stream clean.
    */
   end(): void {
+    this.clearInactivityTimer();
     if (!this.cycling) return;
     this.cycling = false;
     this.deps.broadcastCycleState(false);
