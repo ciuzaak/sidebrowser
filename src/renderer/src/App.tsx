@@ -37,7 +37,14 @@ export function App(): ReactElement {
   const settingsToggleRef = useRef<HTMLButtonElement | null>(null);
 
   const toggleDrawer = useCallback(() => setUserDrawerOpen((v) => !v), []);
-  const closeDrawer = useCallback(() => setUserDrawerOpen(false), []);
+  // M13 simplified: any "close drawer" intent (outside-click, tab-wc focus,
+  // explicit selection) also ends any active Ctrl+Tab cycle. Ctrl release
+  // detection on Windows/Electron is unreliable, so user-driven dismissal
+  // is the fallback that always works.
+  const closeDrawer = useCallback(() => {
+    setUserDrawerOpen(false);
+    window.sidebrowser.endCycle();
+  }, []);
   const toggleSettings = useCallback(() => setSettingsOpen((v) => !v), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
