@@ -61,7 +61,7 @@ test('per-tab UA toggle reloads under new UA and persists across restart', async
         await navigateActive(page, `${baseUrl}/ua`);
         await expect.poll(() => log.length >= 1, { timeout: 10_000 }).toBeTruthy();
         const mobileUa = log[log.length - 1];
-        expect(mobileUa).toMatch(/iPhone/);
+        expect(mobileUa).toMatch(/Android/);
 
         // Click the UA toggle → setMobile(false) → reloadIgnoringCache fires a
         // fresh /ua request carrying the desktop UA.
@@ -71,7 +71,7 @@ test('per-tab UA toggle reloads under new UA and persists across restart', async
           .poll(() => log.length > beforeToggle, { timeout: 10_000 })
           .toBeTruthy();
         const desktopUa = log[log.length - 1];
-        expect(desktopUa).not.toMatch(/iPhone/);
+        expect(desktopUa).not.toMatch(/Android/);
         expect(desktopUa.length).toBeGreaterThan(0);
       } finally {
         await app.close();
@@ -100,7 +100,7 @@ test('per-tab UA toggle reloads under new UA and persists across restart', async
           .poll(() => log.length > snapshotBeforeRestart, { timeout: 10_000 })
           .toBeTruthy();
         const restoredUa = log[log.length - 1];
-        expect(restoredUa).not.toMatch(/iPhone/);
+        expect(restoredUa).not.toMatch(/Android/);
         expect(restoredUa.length).toBeGreaterThan(0);
       } finally {
         await app.close();

@@ -92,7 +92,7 @@ export interface LifecycleSettings {
 
 export interface BrowsingSettings {
   defaultIsMobile: boolean;
-  /** iOS Safari UA — sourced from `MOBILE_UA` in src/main/user-agents.ts at DEFAULTS construction. */
+  /** Mobile UA (Android Chrome by default) — sourced from `MOBILE_UA` in @shared/settings-defaults at DEFAULTS construction. */
   mobileUserAgent: string;
 }
 

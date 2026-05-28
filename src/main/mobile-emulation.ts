@@ -56,6 +56,83 @@ export function parseUaForMetadata(ua: string): UaMetadata {
   return { platform: 'iOS', platformVersion: '', mobile: true };
 }
 
+/** Client Hints brand entry — `{ brand, version }` 对，CDP userAgentMetadata 与
+ *  navigator.userAgentData.brands / getHighEntropyValues 同构。 */
+export interface UaBrand {
+  brand: string;
+  version: string;
+}
+
+/**
+ * 造 Client Hints 品牌列表（brands + fullVersionList），镜像真 Chrome 上报的形态。
+ * 纯函数，便于单测。
+ *
+ * **major 取自传入的 UA 字符串（`Chrome/(\d+)`）而非 `process.versions.chrome`：**
+ * 这样 UA 字符串、`Sec-CH-UA` brands、`Sec-CH-UA-Full-Version-List` 的主版本号
+ * **永远一致**——UA 与 Client Hints 版本错位（version skew）本身就是 bot 信号。
+ * Electron 升级 Chromium 或用户自定义 UA 时，品牌自动跟随 UA，不会出现「UA 写死
+ * 146、CH 报引擎新版本」这种矛盾。fullVersionList 的完整构建号在「UA major == 引擎
+ * major」时取引擎真实值（`process.versions.chrome`），否则退化为 `${major}.0.0.0`，
+ * 始终保证内部自洽。
+ *
+ * **为什么不能留空 `[]`：** Chromium 引擎却报零品牌本身就是自动化/伪造的强信号——
+ * Cloudflare Turnstile 直接调 `navigator.userAgentData.getHighEntropyValues(['brands',
+ * 'fullVersionList'])` 读这个。空品牌 + Android-Chrome UA 自相矛盾，验证永不放行。
+ *
+ * GREASE 品牌（`Not-A.Brand`/`24`）是随版本变化的占位，服务端不依赖其具体值。
+ */
+export function buildChromiumBrands(ua: string): {
+  brands: UaBrand[];
+  fullVersionList: UaBrand[];
+} {
+  const uaMajor = /Chrome\/(\d+)/.exec(ua)?.[1] || '';
+  const engineFull = process.versions.chrome || ''; // undefined outside Electron (Vitest)
+  const engineMajor = engineFull.split('.')[0] || '';
+  const major = uaMajor || engineMajor || '0';
+  // 仅当引擎主版本与 UA 主版本一致时用引擎真实构建号，否则退化以保证 UA/CH 不矛盾。
+  const full = engineFull && engineMajor === major ? engineFull : `${major}.0.0.0`;
+  const GREASE = 'Not-A.Brand';
+  return {
+    brands: [
+      { brand: 'Chromium', version: major },
+      { brand: 'Google Chrome', version: major },
+      { brand: GREASE, version: '24' },
+    ],
+    fullVersionList: [
+      { brand: 'Chromium', version: full },
+      { brand: 'Google Chrome', version: full },
+      { brand: GREASE, version: '24.0.0.0' },
+    ],
+  };
+}
+
+/**
+ * Format a brand list into the `Sec-CH-UA` header's structured-header value,
+ * e.g. `"Chromium";v="146", "Google Chrome";v="146", "Not-A.Brand";v="24"`.
+ * Used to force a consistent brand header on cross-origin OOPIF requests (see
+ * installMobileHeaderRewriter).
+ */
+export function formatBrandList(brands: UaBrand[]): string {
+  return brands.map((b) => `"${b.brand}";v="${b.version}"`).join(', ');
+}
+
+/**
+ * `navigator.platform` 的 JS 字符串（≠ Client Hints platform token）。真浏览器这里
+ * 上报一个固定串，且**不等于** CH platform：Android Chrome → "Linux armv8l"、
+ * iPhone → "iPhone"。若在 Android UA 下把它留成宿主真实值（"Win32"）就是指纹矛盾。
+ * 默认落 Android（与 fallback=mobile 一致）。
+ */
+export function navigatorPlatformFor(chPlatform: string): string {
+  switch (chPlatform) {
+    case 'Android': return 'Linux armv8l';
+    case 'iOS':     return 'iPhone';
+    case 'macOS':   return 'MacIntel';
+    case 'Windows': return 'Win32';
+    case 'Linux':   return 'Linux x86_64';
+    default:        return 'Linux armv8l';
+  }
+}
+
 /**
  * 翻 Chromium 内部 mobile flag —— 触摸 / (pointer:coarse) / (hover:none) /
  * userAgentData.mobile / 'ontouchstart' in window 一并按移动设备表现。
@@ -137,17 +214,25 @@ export async function attachCdpEmulation(
     }
   }
   try {
+    // 品牌列表必须非空且与 UA 主版本一致——空 brands / 版本错位都是 bot 信号
+    // （Cloudflare Turnstile 读 getHighEntropyValues），见 buildChromiumBrands。
+    // 从 ua 派生，保证主框架（CDP）与 OOPIF（header rewriter）品牌完全一致。
+    const { brands, fullVersionList } = buildChromiumBrands(ua);
     await wc.debugger.sendCommand('Emulation.setUserAgentOverride', {
       userAgent: ua,
-      platform: metadata.platform,
+      // navigator.platform —— 固定 JS 串，≠ CH platform（Android→"Linux armv8l"）。
+      platform: navigatorPlatformFor(metadata.platform),
       userAgentMetadata: {
-        brands: [],
-        fullVersionList: [],
+        brands,
+        fullVersionList,
         platform: metadata.platform,
         platformVersion: metadata.platformVersion,
+        // mobile 设备的 architecture/bitness/model 在真 Chrome 上为空，不像桌面
+        // 报 x86/64；显式置空覆盖 CDP 默认（实测 desktop 默认填 bitness:"64"）。
         architecture: '',
         model: '',
         mobile: metadata.mobile,
+        bitness: '',
       },
     });
     await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
@@ -181,37 +266,102 @@ export function detachCdpEmulation(wc: WebContents): void {
 }
 
 /**
+ * 一个 mobile tab 请求要呈现的完整身份。`installMobileHeaderRewriter` 用它把
+ * **每一个**出站请求（含跨域 OOPIF）改写成一致的移动身份。
+ */
+export interface MobileRequestIdentity {
+  /** 该 tab 的移动 UA 字符串，写进 User-Agent 头。 */
+  userAgent: string;
+  /** Client Hints 元数据，驱动 Sec-CH-UA-Mobile/Platform/Platform-Version。 */
+  metadata: UaMetadata;
+}
+
+/** 大小写不敏感地删头：删掉所有同名变体（'sec-ch-ua' 与 'Sec-CH-UA' 都删）。
+ *  返回是否删掉了至少一个，供 rewriteIfPresent 判断「原本是否存在」。 */
+function deleteHeader(headers: Record<string, string>, name: string): boolean {
+  let found = false;
+  for (const k of Object.keys(headers)) {
+    if (k.toLowerCase() === name.toLowerCase()) {
+      delete headers[k];
+      found = true;
+    }
+  }
+  return found;
+}
+
+/** 大小写不敏感地设头：先删掉任何已存在的同名变体（避免双键并存），再写规范名。 */
+function setHeader(headers: Record<string, string>, name: string, value: string): void {
+  deleteHeader(headers, name);
+  headers[name] = value;
+}
+
+/** 仅当该头原本已存在时才改写（保留「服务端 Accept-CH 请求过才发」的语义；不存在
+ *  就不主动添加，未被请求却发送高熵 Client Hints 本身反常）。 */
+function rewriteIfPresent(headers: Record<string, string>, name: string, value: string): void {
+  if (deleteHeader(headers, name)) headers[name] = value;
+}
+
+/**
  * 在 persistent session 上挂一次 onBeforeSendHeaders 处理器。
- * `getMobileEmulationState` 是 ViewManager 暴露的 lookup（M10 Task 6）：
- *   - null       → 该 wcId 是 desktop tab / 不是 tab，头不动
- *   - UaMetadata → mobile tab，按元数据改 Sec-CH-UA-Mobile/Platform/Platform-Version
+ * `getMobileIdentity` 是 ViewManager 暴露的 lookup：
+ *   - null                  → 该 wcId 是 desktop tab / 不是 tab，头不动
+ *   - MobileRequestIdentity → mobile tab，改写下列头
  *
- * 只动这三个头。Sec-CH-UA（品牌列表）让 Chromium 发真实值；User-Agent 由
- * wc.setUserAgent 处理；Sec-CH-UA-Arch / Bitness / Model / Full-Version-List
- * 不动（design §3）。
+ * **为什么要改 User-Agent + Sec-CH-UA（M15 Cloudflare 修复）：**
+ * Cloudflare Turnstile 验证跑在一个跨域 **out-of-process iframe（OOPIF，
+ * `challenges.cloudflare.com`）** 里。`wc.setUserAgent` 与挂在主 target 上的 CDP
+ * `Emulation.setUserAgentOverride` **都到不了**这个独立 target——它回退到 app 全局
+ * 默认 UA（桌面 Electron）。于是「装着 cf_clearance 的页面是安卓手机、但跑验证的
+ * iframe 是 Windows 桌面 Electron」，Cloudflare 判定环境矛盾、clearance 永不认可，
+ * 移动模式下验证无限循环（desktop 模式两边都是桌面 Electron 故一致、能过）。
+ *
+ * onBeforeSendHeaders 是 session 级、对所有 frame（含 OOPIF）生效，且 OOPIF 的
+ * 子帧请求带的是宿主 webContentsId，故这里能统一兜住：把 User-Agent + 完整
+ * Sec-CH-UA 品牌列表也改写成移动身份，让顶框架与 Turnstile iframe 完全一致。
+ * 实测：grok.com 由此从 403 cf-mitigated 变 200。
+ *
+ * Sec-CH-UA 品牌串由 `buildChromiumBrands(id.userAgent)` 从 UA 派生，与 CDP override
+ * 同源（同一条 UA），保证主框架（CDP 驱动）与 OOPIF（本改写驱动）品牌一致，且 UA 与
+ * Client Hints 主版本号不会错位。高熵头（Full-Version-List/Arch/Bitness/Model）仅在
+ * 服务端 Accept-CH 请求后才会出现，故只「存在则改写」成与主框架一致的移动值，避免
+ * OOPIF 泄露桌面/Electron 高熵值。
  *
  * 注册一次即可——session 是 app 全局单例，所有 tab 共享。注册时机：app.whenReady()
- * 之后、ViewManager 创建之后、第一次 createTab 之前（详见 M10 Task 8）。
+ * 之后、ViewManager 创建之后、第一次 createTab 之前。
  */
 export function installMobileHeaderRewriter(
   session: Session,
-  getMobileEmulationState: (wcId: number) => UaMetadata | null,
+  getMobileIdentity: (wcId: number) => MobileRequestIdentity | null,
 ): void {
   session.webRequest.onBeforeSendHeaders((details, callback) => {
     // webContentsId 不存在的请求（例如某些 service worker / preload-阶段请求）
     // 没法关联到 tab，直接放行不动头。
     const wcId = details.webContentsId;
-    const meta = wcId === undefined ? null : getMobileEmulationState(wcId);
-    if (!meta) {
+    const id = wcId === undefined ? null : getMobileIdentity(wcId);
+    if (!id) {
       callback({});
       return;
     }
+    // 从该 tab 的 UA 派生品牌——UA 可被用户自定义，且要与 CDP 主框架一致，故每请求算。
+    const { brands, fullVersionList } = buildChromiumBrands(id.userAgent);
     const headers = { ...details.requestHeaders };
-    headers['Sec-CH-UA-Mobile'] = meta.mobile ? '?1' : '?0';
-    headers['Sec-CH-UA-Platform'] = `"${meta.platform}"`;
-    if (meta.platformVersion) {
-      headers['Sec-CH-UA-Platform-Version'] = `"${meta.platformVersion}"`;
+    setHeader(headers, 'User-Agent', id.userAgent);
+    setHeader(headers, 'Sec-CH-UA', formatBrandList(brands));
+    setHeader(headers, 'Sec-CH-UA-Mobile', id.metadata.mobile ? '?1' : '?0');
+    setHeader(headers, 'Sec-CH-UA-Platform', `"${id.metadata.platform}"`);
+    if (id.metadata.platformVersion) {
+      setHeader(headers, 'Sec-CH-UA-Platform-Version', `"${id.metadata.platformVersion}"`);
+    } else {
+      // 无版本时主动删除残留值（OOPIF 可能带桌面 Sec-CH-UA-Platform-Version），
+      // 否则会与改写后的 platform 矛盾。
+      deleteHeader(headers, 'Sec-CH-UA-Platform-Version');
     }
+    // 高熵 Client Hints：仅在已存在（被 Accept-CH 请求过）时改写成移动一致值。
+    // mobile 的 arch/bitness/model 在真 Chrome 上为空（sf-string `""`）。
+    rewriteIfPresent(headers, 'Sec-CH-UA-Full-Version-List', formatBrandList(fullVersionList));
+    rewriteIfPresent(headers, 'Sec-CH-UA-Arch', '""');
+    rewriteIfPresent(headers, 'Sec-CH-UA-Bitness', '""');
+    rewriteIfPresent(headers, 'Sec-CH-UA-Model', '""');
     callback({ requestHeaders: headers });
   });
 }

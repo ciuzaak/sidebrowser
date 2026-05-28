@@ -10,7 +10,7 @@ import {
   attachCdpEmulation,
   detachCdpEmulation,
   parseUaForMetadata,
-  type UaMetadata,
+  type MobileRequestIdentity,
 } from './mobile-emulation';
 import type { Tab, TabsSnapshot } from '@shared/types';
 import { makeEmptyTab } from '@shared/types';
@@ -529,19 +529,24 @@ export class ViewManager {
   }
 
   /**
-   * Lookup helper for installMobileHeaderRewriter (M10 Task 7).
+   * Lookup helper for installMobileHeaderRewriter (M10 Task 7; extended M15).
    * 返回值语义：
-   *   null       → 该 wcId 对应 desktop tab / 不是 tab（chrome renderer 自己），头不动
-   *   UaMetadata → mobile tab，按这份元数据改 Sec-CH-UA-Mobile/Platform/Platform-Version
+   *   null                  → 该 wcId 对应 desktop tab / 不是 tab（chrome renderer 自己），头不动
+   *   MobileRequestIdentity → mobile tab，rewriter 据此改 User-Agent + Sec-CH-UA(-Mobile/Platform/…)
+   *
+   * 返回 UA 字符串本身（不只是派生元数据），是为了让 rewriter 能把跨域 OOPIF
+   * （Cloudflare Turnstile iframe）的 User-Agent 也改成移动身份——见
+   * installMobileHeaderRewriter 的 M15 注释。
    *
    * 每次 webRequest 命中都跑一次。parse 是几个 regex，tab 数 ≤ 几个，UA 字符串
    * 可被用户在 settings 改，实时 parse 比缓存失效逻辑简单（design §8）。
    */
-  getMobileEmulationState(wcId: number): UaMetadata | null {
+  getMobileEmulationState(wcId: number): MobileRequestIdentity | null {
     for (const [, m] of this.tabs) {
       if (m.view.webContents.id === wcId) {
         if (!m.tab.isMobile) return null;
-        return parseUaForMetadata(this.getBrowsingDefaults().mobileUserAgent);
+        const ua = this.getBrowsingDefaults().mobileUserAgent;
+        return { userAgent: ua, metadata: parseUaForMetadata(ua) };
       }
     }
     return null;

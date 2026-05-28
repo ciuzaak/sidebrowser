@@ -1,12 +1,24 @@
 import type { Settings, SearchEngine } from './types';
 
 /**
- * iOS Safari UA. Kept in shared so both main (at DEFAULTS construction) and
- * renderer (for reset-to-default UI) can reference it without crossing the
- * main/renderer import boundary.
+ * Default mobile UA — Android Chrome.
+ *
+ * An iOS Safari UA painted over a Chromium engine produces an *impossible*
+ * device fingerprint: real Safari has no `navigator.userAgentData` and never
+ * sends `Sec-CH-UA` headers, yet our Chromium engine leaks both (plus
+ * `window.chrome`, `navigator.vendor = "Google Inc."`). Cloudflare's bot
+ * detection cross-checks these and rejects the contradiction → mobile-mode
+ * challenges loop forever. Android Chrome matches the actual Blink engine, so
+ * the JS + Client-Hints signals stay internally consistent and Cloudflare
+ * passes. The Chrome major version tracks the bundled Chromium (Electron 41 →
+ * Chromium 146); revisit on Electron upgrades to avoid a UA/engine skew.
+ *
+ * Kept in shared so both main (at DEFAULTS construction) and renderer (for
+ * reset-to-default UI) can reference it without crossing the main/renderer
+ * import boundary.
  */
 export const MOBILE_UA =
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
+  'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36';
 
 /**
  * 内置搜索引擎表（spec §3.2）。顺序即 SettingsDrawer 列表显示顺序。

@@ -85,7 +85,7 @@ test('mobile tab flips userAgentData / pointer / hover / touch signals; desktop 
       const mobileSignals = await readSignals(app);
       expect(mobileSignals).not.toBeNull();
       expect(mobileSignals!.uaDataMobile).toBe(true);
-      expect(mobileSignals!.uaDataPlatform).toBe('iOS');
+      expect(mobileSignals!.uaDataPlatform).toBe('Android');
       expect(mobileSignals!.pointerCoarse).toBe(true);
       expect(mobileSignals!.hoverNone).toBe(true);
       expect(mobileSignals!.hasTouch).toBe(true);
@@ -102,7 +102,7 @@ test('mobile tab flips userAgentData / pointer / hover / touch signals; desktop 
       const desktopSignals = await readSignals(app);
       expect(desktopSignals).not.toBeNull();
       expect(desktopSignals!.uaDataMobile).toBe(false);
-      expect(desktopSignals!.uaDataPlatform).not.toBe('iOS');
+      expect(desktopSignals!.uaDataPlatform).not.toBe('Android');
       expect(desktopSignals!.pointerCoarse).toBe(false);
       expect(desktopSignals!.hoverNone).toBe(false);
       expect(desktopSignals!.hasTouch).toBe(false);
