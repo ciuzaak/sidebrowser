@@ -5,6 +5,48 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 the project follows [Semantic Versioning](https://semver.org/) at the
 minor level (each numbered milestone bumps the minor version).
 
+## [1.4.1] — 2026-05-28
+
+### Fixed
+
+- **Mobile-mode Cloudflare verification loop.** Cloudflare-protected
+  pages opened in mobile mode looped the verification challenge forever
+  (solve → refresh → re-challenge); desktop mode was unaffected. The
+  Cloudflare Turnstile challenge runs in a cross-origin out-of-process
+  iframe (`challenges.cloudflare.com`), and neither
+  `webContents.setUserAgent` nor the page-target CDP user-agent override
+  reaches an OOPIF — so it fell back to the desktop Electron UA while the
+  top frame was mobile. Cloudflare saw a top-frame/iframe device mismatch
+  and never honored `cf_clearance`. `installMobileHeaderRewriter` now
+  forces a consistent mobile identity (`User-Agent` + full `Sec-CH-UA`,
+  alongside the existing `Sec-CH-UA-Mobile`/`-Platform`/`-Platform-Version`)
+  on every request for a mobile tab — including OOPIF requests, which carry
+  the host webContents id — so the Turnstile iframe matches the top frame.
+  Verified against grok.com (403 `cf-mitigated=challenge` → 200).
+
+### Changed
+
+- **Default mobile user agent is now Android Chrome** (previously iOS
+  Safari). An iOS Safari UA over a Chromium engine is an impossible
+  fingerprint — real Safari exposes no `navigator.userAgentData` and sends
+  no `Sec-CH-UA`, yet the engine leaks both (plus `window.chrome` and
+  `navigator.vendor = "Google Inc."`) — which Cloudflare's bot detection
+  rejects. Android Chrome matches the real Blink engine, keeping the JS and
+  Client-Hints signals internally consistent. The `Sec-CH-UA` brand list is
+  derived from the UA string's Chrome major (so the UA and Client-Hints
+  versions can never skew across Electron upgrades or custom UAs) and is
+  never empty; high-entropy Client-Hint headers
+  (`Full-Version-List`/`Arch`/`Bitness`/`Model`) are normalized to
+  mobile-consistent values when present. Existing customized/persisted UA
+  settings are unaffected — only the default (and reset-to-default) changes.
+
+### Tests
+
+- +6 unit/e2e cases: `buildChromiumBrands` UA-major derivation and
+  never-empty guarantee, high-entropy header rewrite-if-present, stale
+  `Sec-CH-UA-Platform-Version` deletion, and a cross-site (OOPIF) subframe
+  regression asserting the iframe request carries the mobile identity.
+
 ## [1.4.0] — 2026-05-11
 
 Major UX overhaul covering two milestones (M13 stealth/UX polish +

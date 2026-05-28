@@ -1,6 +1,6 @@
 {
   "name": "sidebrowser",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "description": "A side-panel Electron browser with mobile emulation and edge auto-hide.",
   "type": "module",
