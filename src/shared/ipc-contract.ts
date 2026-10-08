@@ -104,7 +104,7 @@ export const IpcChannels = {
   viewSetTopInset: 'view:set-top-inset',
   /** R→M invoke (M17). Half-res JPEG data URL of the active page, or null. */
   viewCaptureActive: 'view:capture-active',
-  /** R→M invoke (M17). NewTab "Frequent" tiles, ranked by origin frecency. */
+  /** R→M invoke (M17). NewTab "Frequent" tiles, grouped by host, ranked by frecency. */
   historyTopSites: 'history:top-sites',
 } as const;
 

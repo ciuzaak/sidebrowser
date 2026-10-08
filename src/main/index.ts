@@ -606,7 +606,6 @@ app.whenReady().then(() => {
       // M17 hooks.
       getActiveViewVisible: (): boolean | null => viewManager.getActiveViewVisibleForTest(),
       getIsMinimized: (): boolean => !win.isDestroyed() && win.isMinimized(),
-      restoreWindow: (): void => { if (!win.isDestroyed()) win.restore(); },
     };
   } else {
     watcher.start();

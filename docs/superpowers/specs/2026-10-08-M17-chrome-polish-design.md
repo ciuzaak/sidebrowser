@@ -337,7 +337,7 @@ Updated E2E:
 - `settings-drawer.spec.ts` test 1 asserts visibility (`getActiveViewVisible`) instead of `{0,0,0,0}` bounds.
 - `navigation.spec.ts` `waitForLoadComplete` fences on `data-loading`.
 
-New test hooks: `getActiveViewVisible()`, `getIsMinimized()`, `restoreWindow()`.
+New test hooks: `getActiveViewVisible()`, `getIsMinimized()`.
 
 Manual smoke (user): §15.
 
@@ -362,3 +362,17 @@ Manual smoke (user): §15.
 6. Settings: themed scrollbar, selects, filled sliders; Dim shows only the relevant slider.
 7. NewTab: Frequent grid + Recent; dark-theme favicons visible on tiles.
 8. Edge-dock hide/reveal + dim still behave as before; minimize while docked and restore.
+
+## 16. Implementation notes (post-execution, 2026-10-08)
+
+Deviations from the sections above, made during execution and review:
+
+- **Spike results (Task 1).** `View.setVisible(false)` hides the view and flips the page to `visibilityState = 'hidden'` (so Settings / Spotlight / NewTab now also throttle the page underneath); re-show keeps scroll position with zero `resize` events. Offsetting the view by 200 px without changing height is clipped by the window, again with zero `resize` events. `capturePage` + half-res JPEG: p50 13 ms / p95 22 ms (~8 KB). All gates passed; no fallbacks used.
+- **§7.1 backdrop.** The backdrop `<img>` is rendered by `App`, not `SearchSpotlight`, so it survives the 100 ms post-close grace. `openSearch` is a no-op while the Spotlight is already open (a capture then returns `null` and would wipe the backdrop), and a request counter — bumped by `closeSearch` and by active-tab switches — drops opens whose capture resolves after cancellation.
+- **§6.3 inset reset.** Main also resets the top inset to 0 whenever the chrome renderer starts loading (reload / crash recovery skip TabDrawer's effect cleanup).
+- **§11 top sites.** Grouped by host (leading `www.` stripped) rather than origin, so http/https/www variants share one tile; the tile opens the group's highest-scoring origin.
+- **§7.3 match emphasis.** `splitMatch` uses an escaped case-insensitive RegExp (indices stay aligned when `toLowerCase()` would change string length); `<mark>` inherits the row color so highlighted rows keep the accent.
+- **§5.4 load bar.** The visual bar is suppressed while the tab is on `about:blank` (the startup blank load flashed it over NewTab); `data-loading` on the top bar still mirrors `isLoading` exactly.
+- **AddressSuggestions** syncs its imperative-handle refs in a layout effect instead of during render (`react-hooks/refs`).
+- **E2E quiet mode** (not in the original scope): under `SIDEBROWSER_E2E=1` the window is shown inactive, opacity 0, click-through and off the taskbar, with native occlusion tracking disabled; `SIDEBROWSER_E2E_VISIBLE=1` opts out. `launch.spec` now uses an isolated profile like every other spec.
+

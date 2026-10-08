@@ -187,8 +187,12 @@ export interface Suggestion {
   tier: 0 | 1 | 2;
 }
 
-/** NewTab "Frequent" tile (M17): one per origin, ranked by summed frecency. */
+/**
+ * NewTab "Frequent" tile (M17): one per host (leading `www.` ignored, so
+ * http/https/www variants merge), ranked by summed frecency.
+ */
 export interface TopSite {
+  /** Highest-scoring origin within the host group — the tile navigates here. */
   origin: string;
   /** Host with a leading `www.` stripped — tile label. */
   host: string;

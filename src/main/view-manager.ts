@@ -565,9 +565,8 @@ export class ViewManager {
 
   /**
    * E2E hook: returns the active tab's view bounds, or null if no active tab.
-   * Used by settings-drawer E2E specs to verify suppression actually shrinks
-   * the view rect (visual blur alone is an insufficient signal — see
-   * plan §Task 11 rationale).
+   * Used by E2E specs to assert that suppression keeps the bounds (M17) and
+   * that the TabDrawer inset offsets y without changing height.
    */
   getActiveBoundsForTest(): { x: number; y: number; width: number; height: number } | null {
     if (!this.activeId) return null;
