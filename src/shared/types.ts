@@ -13,7 +13,20 @@ export interface Tab {
   isLoading: boolean;
   canGoBack: boolean;
   canGoForward: boolean;
+  /**
+   * M16: false = no live page yet (lazy-restored at launch) or unloaded by the
+   * inactive-tab timer. Activating the tab loads / restores it.
+   */
+  loaded: boolean;
+  /** M16: the page is currently playing audio. */
+  audible: boolean;
+  /** M16: user mute (TabDrawer speaker button). Auto-mute is applied separately. */
+  muted: boolean;
+  /** M16: renderer gone / hung; null when healthy. */
+  crashed: TabCrashState;
 }
+
+export type TabCrashState = 'crashed' | 'unresponsive' | null;
 
 /**
  * Full tabs snapshot broadcast on create/close/activate events.
@@ -44,6 +57,10 @@ export function makeEmptyTab(id: string, url: string, isMobile: boolean = true):
     isLoading: false,
     canGoBack: false,
     canGoForward: false,
+    loaded: true,
+    audible: false,
+    muted: false,
+    crashed: null,
   };
 }
 

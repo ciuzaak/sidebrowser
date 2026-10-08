@@ -697,6 +697,8 @@ export class ViewManager {
         topInsetPx: this.topInsetPx,
         suppressed: this.suppressed,
         isActive: id === this.activeId,
+        windowHidden: false,
+        fullscreen: false,
       });
       managed.view.setBounds(bounds);
       managed.view.setVisible(visible);
