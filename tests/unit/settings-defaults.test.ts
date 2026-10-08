@@ -31,11 +31,13 @@ describe('DEFAULTS', () => {
   it('has correct spec §7 default values for lifecycle and browsing', () => {
     // lifecycle
     expect(DEFAULTS.lifecycle.restoreTabsOnLaunch).toBe(true);
+    expect(DEFAULTS.lifecycle.discardAfterMin).toBe(30);
 
     // browsing — assert UA equals the imported constant so a future UA bump
     // doesn't silently break this test (and the test doesn't duplicate the
     // long UA string).
     expect(DEFAULTS.browsing.defaultIsMobile).toBe(true);
+    expect(DEFAULTS.browsing.muteWhenHidden).toBe(true);
     expect(DEFAULTS.browsing.mobileUserAgent).toBe(MOBILE_UA);
   });
 

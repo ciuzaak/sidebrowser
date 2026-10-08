@@ -45,23 +45,22 @@ export interface SettingsBackend {
 // ---------------------------------------------------------------------------
 
 /**
- * Fill in any top-level Settings section missing from `persisted` with the
- * corresponding DEFAULTS. Sections present in `persisted` pass through as-is
- * — we do NOT field-level merge here (that's `update`'s job via
- * `clampSettings`). This only protects against upgrade scenarios where a new
- * version adds a whole section (e.g. `lifecycle` was added in M6) and the
- * on-disk blob predates it.
+ * Fill in anything missing from `persisted` with DEFAULTS — whole sections
+ * (e.g. `lifecycle` was added in M6) and, since M16, individual fields inside
+ * an existing section (e.g. `browsing.muteWhenHidden`, or M14's
+ * `window.alwaysOnTop`, which an older on-disk blob lacks). Present fields
+ * pass through as-is; clamping stays `update`'s job via `clampSettings`.
  */
 function fillMissingSections(persisted: Partial<Settings>): Settings {
   return {
-    window: persisted.window ?? DEFAULTS.window,
-    mouseLeave: persisted.mouseLeave ?? DEFAULTS.mouseLeave,
-    dim: persisted.dim ?? DEFAULTS.dim,
-    edgeDock: persisted.edgeDock ?? DEFAULTS.edgeDock,
-    lifecycle: persisted.lifecycle ?? DEFAULTS.lifecycle,
-    browsing: persisted.browsing ?? DEFAULTS.browsing,
-    appearance: persisted.appearance ?? DEFAULTS.appearance,
-    search: persisted.search ?? DEFAULTS.search,
+    window: { ...DEFAULTS.window, ...persisted.window },
+    mouseLeave: { ...DEFAULTS.mouseLeave, ...persisted.mouseLeave },
+    dim: { ...DEFAULTS.dim, ...persisted.dim },
+    edgeDock: { ...DEFAULTS.edgeDock, ...persisted.edgeDock },
+    lifecycle: { ...DEFAULTS.lifecycle, ...persisted.lifecycle },
+    browsing: { ...DEFAULTS.browsing, ...persisted.browsing },
+    appearance: { ...DEFAULTS.appearance, ...persisted.appearance },
+    search: { ...DEFAULTS.search, ...persisted.search },
   };
 }
 
@@ -102,11 +101,26 @@ function mergeSettingsPatch(current: Settings, patch: SettingsPatch): Settings {
 // SettingsStore
 // ---------------------------------------------------------------------------
 
+export interface SettingsStoreOptions {
+  /**
+   * M16: coalesce backend writes (slider drags fire many updates per second
+   * and electron-store writes synchronously). 0 = write on every update.
+   * The in-memory value and `onChanged` broadcasts are always immediate.
+   */
+  writeDebounceMs?: number;
+}
+
 export class SettingsStore {
   private settings: Settings;
   private readonly listeners = new Set<(s: Settings) => void>();
+  private readonly writeDebounceMs: number;
+  private writeTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private readonly backend: SettingsBackend) {
+  constructor(
+    private readonly backend: SettingsBackend,
+    options: SettingsStoreOptions = {},
+  ) {
+    this.writeDebounceMs = options.writeDebounceMs ?? 0;
     const persisted = backend.get();
     this.settings = persisted ? fillMissingSections(persisted) : DEFAULTS;
   }
@@ -131,9 +145,29 @@ export class SettingsStore {
     if (partial === undefined) return this.settings;
     const clamped = clampSettings(partial, this.settings);
     this.settings = mergeSettingsPatch(this.settings, clamped);
-    this.backend.set(this.settings);
+    this.scheduleWrite();
     for (const l of this.listeners) l(this.settings);
     return this.settings;
+  }
+
+  /** Write any pending debounced update now (call before quit). */
+  flush(): void {
+    if (this.writeTimer === null) return;
+    clearTimeout(this.writeTimer);
+    this.writeTimer = null;
+    this.backend.set(this.settings);
+  }
+
+  private scheduleWrite(): void {
+    if (this.writeDebounceMs <= 0) {
+      this.backend.set(this.settings);
+      return;
+    }
+    if (this.writeTimer !== null) clearTimeout(this.writeTimer);
+    this.writeTimer = setTimeout(() => {
+      this.writeTimer = null;
+      this.backend.set(this.settings);
+    }, this.writeDebounceMs);
   }
 
   onChanged(cb: (s: Settings) => void): () => void {

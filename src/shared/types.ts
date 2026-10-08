@@ -88,12 +88,16 @@ export interface EdgeDockSettings {
 
 export interface LifecycleSettings {
   restoreTabsOnLaunch: boolean;
+  /** M16: unload tabs inactive this long (minutes); 0 = never. One of DISCARD_AFTER_OPTIONS. */
+  discardAfterMin: number;
 }
 
 export interface BrowsingSettings {
   defaultIsMobile: boolean;
   /** Mobile UA (Android Chrome by default) — sourced from `MOBILE_UA` in @shared/settings-defaults at DEFAULTS construction. */
   mobileUserAgent: string;
+  /** M16: mute every tab while the window is hidden at the screen edge. */
+  muteWhenHidden: boolean;
 }
 
 export type ThemeChoice = 'system' | 'dark' | 'light';

@@ -184,7 +184,8 @@ interface ElectronStoreInstance {
 
 app.whenReady().then(() => {
   // 1. Settings store + window-bounds persister.
-  const settingsStore = new SettingsStore(createElectronBackend());
+  // M16: slider drags fire many updates; coalesce the synchronous file write.
+  const settingsStore = new SettingsStore(createElectronBackend(), { writeDebounceMs: 300 });
   const boundsPersister = new WindowBoundsPersister(
     createBoundsBackend(),
     screen,
@@ -644,6 +645,7 @@ app.whenReady().then(() => {
   // 9. Before-quit: flush both bounds debounce and tab-save debounce so the
   // last rect/tab-state mutation always hits disk.
   app.on('before-quit', () => {
+    settingsStore.flush();
     boundsPersister.flush();
     saver.flush();
     historyStore.flush();

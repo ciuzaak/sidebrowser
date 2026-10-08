@@ -32,6 +32,9 @@ export const BUILTIN_SEARCH_ENGINES: readonly SearchEngine[] = [
   { id: 'baidu',      name: '百度',        urlTemplate: 'https://www.baidu.com/s?wd={query}',      builtin: true },
 ] as const;
 
+/** M16: allowed values for `lifecycle.discardAfterMin` (0 = never unload). */
+export const DISCARD_AFTER_OPTIONS: readonly number[] = [0, 15, 30, 60];
+
 export const BUILTIN_SEARCH_ENGINE_IDS: ReadonlySet<string> = new Set(
   BUILTIN_SEARCH_ENGINES.map((e) => e.id),
 );
@@ -49,8 +52,8 @@ export const DEFAULTS: Settings = {
     transitionMs: 150,
   },
   edgeDock: { enabled: true, animationMs: 200, triggerStripPx: 3 },
-  lifecycle: { restoreTabsOnLaunch: true },
-  browsing: { defaultIsMobile: true, mobileUserAgent: MOBILE_UA },
+  lifecycle: { restoreTabsOnLaunch: true, discardAfterMin: 30 },
+  browsing: { defaultIsMobile: true, mobileUserAgent: MOBILE_UA, muteWhenHidden: true },
   appearance: { theme: 'system' },
   search: {
     engines: [...BUILTIN_SEARCH_ENGINES],
