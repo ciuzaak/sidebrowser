@@ -34,8 +34,9 @@ a daily-driver browser is expected to do) and M17 (chrome polish).
   closes itself; at most 3 per tab. Ctrl/middle-click opens links in a
   background tab.
 - **Lazy session restore.** Only the active tab loads on startup; the
-  others keep title, favicon and back/forward history (up to 25 entries,
-  with scroll position) and load when first shown.
+  others keep title, favicon and back/forward history (up to 25 entries)
+  and load when first shown. Scroll position is retained when unloading
+  a tab during the current session, but is not saved across restarts.
 - **Reopen closed tab** (Ctrl+Shift+T, last 10).
 - **Auto-unload idle tabs** after 15 / 30 / 60 minutes (Settings →
   Session; default 30, or never). Tabs playing audio, with unsaved form

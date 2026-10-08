@@ -35,10 +35,20 @@ interface SearchSettings {
 // ---------------------------------------------------------------------------
 
 async function launch(userDataDir: string): Promise<ElectronApplication> {
-  return electron.launch({
+  const app = await electron.launch({
     args: [MAIN_PATH, `--user-data-dir=${userDataDir}`],
     env: { ...process.env, SIDEBROWSER_E2E: '1' },
   });
+  await getChromeWindow(app);
+  // Exercise real navigation and URL construction without contacting search
+  // providers, whose bot checks and redirects make CI nondeterministic.
+  await app.evaluate(async ({ session }) => {
+    await session.defaultSession.protocol.handle('https', () => new Response(
+      '<!doctype html><title>Search fixture</title>',
+      { headers: { 'content-type': 'text/html' } },
+    ));
+  });
+  return app;
 }
 
 // ---------------------------------------------------------------------------
@@ -95,7 +105,7 @@ test('default search engine routes to Google', async () => {
   await expect.poll(
     () => getActiveUrl(app!),
     { timeout: 30_000 },
-  ).toMatch(/google\.com\/search\?q=hello/);
+  ).toBe('https://www.google.com/search?q=hello%20world');
 });
 
 // ---------------------------------------------------------------------------
@@ -122,7 +132,7 @@ test('switching active engine to Bing routes via Bing', async () => {
   await expect.poll(
     () => getActiveUrl(app!),
     { timeout: 30_000 },
-  ).toMatch(/bing\.com\/search\?q=foo/);
+  ).toBe('https://www.bing.com/search?q=foo%20bar');
 });
 
 // ---------------------------------------------------------------------------
