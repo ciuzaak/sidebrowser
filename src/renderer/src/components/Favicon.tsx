@@ -15,20 +15,26 @@ interface Props {
  * automatically dismissed whenever `src` changes — even when the component
  * instance is reused across a list (e.g., NewTab keyed by URL where the
  * favicon updates after a page-favicon-updated event lands).
+ *
+ * M17: drawn on a `--favicon-tile` square so dark favicons stay visible in
+ * the dark theme. The Globe fallback gets the same box (no tile) so rows align.
  */
 export function Favicon({ src, size = 16 }: Props): ReactElement {
   const [erroredSrc, setErroredSrc] = useState<string | null>(null);
+  const box = { width: size + 4, height: size + 4 };
   if (src === null || src === erroredSrc) {
-    return <Globe size={size} className="shrink-0 text-[var(--fg-muted)]" />;
+    return (
+      <span className="inline-flex shrink-0 items-center justify-center" style={box}>
+        <Globe size={size} className="text-[var(--fg-muted)]" />
+      </span>
+    );
   }
   return (
-    <img
-      src={src}
-      alt=""
-      width={size}
-      height={size}
-      className="shrink-0"
-      onError={() => setErroredSrc(src)}
-    />
+    <span
+      className="inline-flex shrink-0 items-center justify-center rounded-[4px] bg-[var(--favicon-tile)]"
+      style={box}
+    >
+      <img src={src} alt="" width={size} height={size} onError={() => setErroredSrc(src)} />
+    </span>
   );
 }
