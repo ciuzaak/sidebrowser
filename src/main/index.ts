@@ -31,7 +31,6 @@ import { buildContextMenuTemplate as buildContextMenuTemplateForTest } from './c
 import { handleSecondInstance } from './single-instance';
 import { installMobileHeaderRewriter } from './mobile-emulation';
 import { getPersistentSession } from './session-manager';
-import { resolveTitleBarOverlay } from './title-bar-overlay';
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -40,26 +39,10 @@ if (!gotLock) {
   process.exit(0);
 }
 
-/**
- * Resolve a `ThemeChoice` against the current OS preference. Lives next to
- * the callers that need it (createWindow + recomputeTitleBarOverlay) so the
- * 'system' branch is computed identically at both sites.
- */
-function resolveActiveTheme(choice: 'system' | 'dark' | 'light'): 'dark' | 'light' {
-  if (choice === 'dark' || choice === 'light') return choice;
-  return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
-}
-
 function createWindow(
   initialBounds: Rectangle,
   initialAlwaysOnTop: boolean,
-  initialThemeChoice: 'system' | 'dark' | 'light',
 ): BrowserWindow {
-  // Codex review (M14): respect the persisted appearance.theme at startup —
-  // otherwise the OS-side titleBarOverlay paints with the OS theme even when
-  // the user has explicitly overridden it (e.g. theme='light' on a dark OS),
-  // and the mismatch only resolves on the next settings:changed event.
-  const initialOverlay = resolveTitleBarOverlay(resolveActiveTheme(initialThemeChoice));
   const win = new BrowserWindow({
     x: initialBounds.x,
     y: initialBounds.y,
@@ -67,16 +50,13 @@ function createWindow(
     height: initialBounds.height,
     title: 'sidebrowser',
     alwaysOnTop: initialAlwaysOnTop,
-    // M14: frameless + Windows-native titleBarOverlay. Windows draws min/max/
-    // close in the top-right; everything else (drag region, chrome layout) is
-    // ours. Title-bar height matches the chrome strip height (36 px) so the
-    // overlay sits flush with our IconButton row.
+    // M17: frameless (`titleBarStyle: 'hidden'`; the thick frame keeps edge
+    // resize). Window controls are self-drawn in the renderer
+    // (WindowControls.tsx) instead of the Windows-native titleBarOverlay, which
+    // reserved 138 px of the 393 px chrome row. `maximizable: false` stops a
+    // double-click on the drag region from maximizing a side panel.
     titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: initialOverlay.color,
-      symbolColor: initialOverlay.symbolColor,
-      height: 36,
-    },
+    maximizable: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       sandbox: true,
@@ -125,25 +105,6 @@ function applyEffectiveAlwaysOnTop(
   if (effective) {
     // Re-assert z-order in case a peer dock app raced to topmost.
     win.moveTop();
-  }
-}
-
-/**
- * M14: keep the titleBarOverlay color pair in sync with the resolved theme.
- * Called on `settings:changed` (user toggled appearance.theme) and on
- * `nativeTheme.on('updated')` (OS appearance change).
- */
-function recomputeTitleBarOverlay(
-  win: BrowserWindow,
-  themeChoice: 'system' | 'dark' | 'light',
-): void {
-  const overlay = resolveTitleBarOverlay(resolveActiveTheme(themeChoice));
-  if (!win.isDestroyed()) {
-    win.setTitleBarOverlay({
-      color: overlay.color,
-      symbolColor: overlay.symbolColor,
-      height: 36,
-    });
   }
 }
 
@@ -213,7 +174,7 @@ app.whenReady().then(() => {
   const historyRecorder = new HistoryRecorder(historyStore);
 
   // 2. Window + ViewManager + IPC router.
-  const win = createWindow(initialBounds, initial.alwaysOnTop, settingsStore.get().appearance.theme);
+  const win = createWindow(initialBounds, initial.alwaysOnTop);
   // Latest "edge-dock is currently engaged" view, fed by the broadcast handler
   // below. Combined with the user's alwaysOnTop setting in
   // applyEffectiveAlwaysOnTop() — edge-dock force-overrides while docked so
@@ -457,9 +418,6 @@ app.whenReady().then(() => {
         shouldUseDarkColors: nativeTheme.shouldUseDarkColors,
       });
     }
-    // M14: refresh titleBarOverlay if the user's theme choice is 'system' —
-    // recomputeTitleBarOverlay itself handles the resolution.
-    recomputeTitleBarOverlay(win, settingsStore.get().appearance.theme);
   };
   nativeTheme.on('updated', onNativeThemeUpdated);
 
@@ -525,8 +483,6 @@ app.whenReady().then(() => {
       // first-paint path; app:ready is a backup hint.
       win.webContents.send(IpcChannels.settingsChanged, settings);
     }
-    // M14: keep titleBarOverlay color in sync with appearance.theme.
-    recomputeTitleBarOverlay(win, settings.appearance.theme);
   });
 
   // 7. app:ready broadcast + initial EdgeDock seed (one-shot on ready-to-show).
@@ -646,7 +602,7 @@ app.whenReady().then(() => {
       // this is best-effort. Extract a shared bootstrapWindow helper when
       // adding macOS support. Browsing defaults below now read live from
       // settingsStore, matching the primary-window wiring.
-      const newWin = createWindow(initialBounds, settingsStore.get().window.alwaysOnTop, settingsStore.get().appearance.theme);
+      const newWin = createWindow(initialBounds, settingsStore.get().window.alwaysOnTop);
       const newViewManager = new ViewManager(newWin, () => {
         const s = settingsStore.get();
         return {
