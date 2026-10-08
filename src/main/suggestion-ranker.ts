@@ -76,14 +76,16 @@ export function recentEntries(entries: HistoryEntry[], limit: number): HistoryEn
 }
 
 /**
- * NewTab "Frequent" tiles (M17): http(s) history grouped by origin, ranked
- * by summed frecency. Favicon = the highest-frecency entry in the group that
- * has one.
+ * NewTab "Frequent" tiles (M17): http(s) history grouped by host (a leading
+ * `www.` ignored, so http/https/www variants merge into one tile), ranked by
+ * summed frecency. The tile opens the group's highest-scoring origin; its
+ * favicon is the highest-frecency entry in the group that has one.
  */
 export function topSites(entries: HistoryEntry[], limit: number, now: number): TopSite[] {
   interface Group {
     host: string;
     score: number;
+    originScores: Map<string, number>;
     favicon: string | null;
     faviconScore: number;
   }
@@ -97,19 +99,31 @@ export function topSites(entries: HistoryEntry[], limit: number, now: number): T
     }
     if (u.protocol !== 'http:' && u.protocol !== 'https:') continue;
     const s = frecency(e, now);
-    let g = groups.get(u.origin);
+    const host = u.host.replace(/^www\./i, '');
+    let g = groups.get(host);
     if (!g) {
-      g = { host: u.host.replace(/^www\./i, ''), score: 0, favicon: null, faviconScore: -1 };
-      groups.set(u.origin, g);
+      g = { host, score: 0, originScores: new Map(), favicon: null, faviconScore: -1 };
+      groups.set(host, g);
     }
     g.score += s;
+    g.originScores.set(u.origin, (g.originScores.get(u.origin) ?? 0) + s);
     if (e.favicon !== null && s > g.faviconScore) {
       g.favicon = e.favicon;
       g.faviconScore = s;
     }
   }
-  return [...groups.entries()]
-    .sort((a, b) => b[1].score - a[1].score || a[1].host.localeCompare(b[1].host))
+  return [...groups.values()]
+    .sort((a, b) => b.score - a.score || a.host.localeCompare(b.host))
     .slice(0, limit)
-    .map(([origin, g]) => ({ origin, host: g.host, favicon: g.favicon }));
+    .map((g) => {
+      let origin = '';
+      let best = -1;
+      for (const [o, sc] of g.originScores) {
+        if (sc > best) {
+          best = sc;
+          origin = o;
+        }
+      }
+      return { origin, host: g.host, favicon: g.favicon };
+    });
 }

@@ -56,9 +56,21 @@ export function App(): ReactElement {
   // scrim, since the native view is hidden while the Spotlight is open.
   const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
   const backdropClearTimer = useRef<number | null>(null);
+  // Mirrors searchOpen for the async open path (state is stale in its closure).
+  const searchOpenRef = useRef(false);
+  useEffect(() => {
+    searchOpenRef.current = searchOpen;
+  }, [searchOpen]);
+  // Bumped by every close / tab switch so an in-flight open (awaiting the
+  // capture) knows it was cancelled and must not open the Spotlight late.
+  const openRequest = useRef(0);
   // Snapshot first, then open. NewTab has no native page to capture. Capped at
-  // 150 ms — on timeout the Spotlight opens without a backdrop.
+  // 150 ms — on timeout the Spotlight opens without a backdrop. Re-opening an
+  // already-open Spotlight is a no-op (a capture now would return null — the
+  // view is suppressed — and wipe the existing backdrop).
   const openSearch = useCallback(async (): Promise<void> => {
+    if (searchOpenRef.current) return;
+    const request = ++openRequest.current;
     if (backdropClearTimer.current !== null) {
       window.clearTimeout(backdropClearTimer.current);
       backdropClearTimer.current = null;
@@ -66,12 +78,14 @@ export function App(): ReactElement {
     const snap = isNewTab
       ? null
       : await withTimeout(window.sidebrowser.captureActiveView(), 150, null);
+    if (request !== openRequest.current) return;
     setBackdropUrl(snap);
     setSearchOpen(true);
   }, [isNewTab]);
   // Keep the backdrop briefly after close: the view re-shows over it, so no
   // blank frame appears between unsuppress and the page repaint.
   const closeSearch = useCallback(() => {
+    openRequest.current += 1;
     setSearchOpen(false);
     if (backdropClearTimer.current !== null) window.clearTimeout(backdropClearTimer.current);
     backdropClearTimer.current = window.setTimeout(() => {
@@ -108,6 +122,8 @@ export function App(): ReactElement {
     prevActiveIdRef.current = activeId;
     if (prev === null || activeId === null) return;
     if (prev === activeId) return;
+    // M17: a Spotlight open still awaiting its capture belongs to the old tab.
+    openRequest.current += 1;
     // closeSettings / closeSearch are cascading setStates — intentional. We
     // can't merge them into a single setter (different state slices). The
     // rule fires once per offending if-statement; disable below each.
@@ -190,9 +206,17 @@ export function App(): ReactElement {
           onClose={closeSettings}
           toggleRef={settingsToggleRef}
         />
-        {searchOpen && (
-          <SearchSpotlight onClose={closeSearch} pillRef={searchPillRef} backdropUrl={backdropUrl} />
+        {/* M17: lives outside the Spotlight so it survives the 100 ms after close. */}
+        {backdropUrl !== null && (
+          <img
+            data-testid="spotlight-backdrop"
+            src={backdropUrl}
+            alt=""
+            aria-hidden
+            className="absolute inset-0 z-20 h-full w-full object-cover object-top"
+          />
         )}
+        {searchOpen && <SearchSpotlight onClose={closeSearch} pillRef={searchPillRef} />}
         <TabDrawer
           open={drawerOpen}
           onSelect={closeDrawer}

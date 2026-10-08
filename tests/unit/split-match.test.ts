@@ -11,6 +11,13 @@ describe('splitMatch', () => {
     expect(splitMatch('abc', '   ')).toBeNull();
     expect(splitMatch('abc', 'z')).toBeNull();
   });
+  it('treats regex metacharacters literally', () => {
+    expect(splitMatch('a.b(c)', '.b(')).toEqual(['a', '.b(', 'c)']);
+    expect(splitMatch('axbc', '.b')).toBeNull();
+  });
+  it('keeps indices aligned when lowercasing would change length', () => {
+    expect(splitMatch('İstanbul news', 'news')).toEqual(['İstanbul ', 'news', '']);
+  });
   it('trims the query', () => {
     expect(splitMatch('example.com', ' exa ')).toEqual(['', 'exa', 'mple.com']);
   });

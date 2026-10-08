@@ -138,6 +138,17 @@ describe('topSites', () => {
     expect(r[0]!.favicon).toBe('f2');
   });
 
+  it('merges http/https/www variants of a host and opens the top origin', () => {
+    const r = topSites(
+      [e('http://example.com/', 1), e('https://www.example.com/a', 3), e('https://example.com/b', 1)],
+      8,
+      NOW,
+    );
+    expect(r).toHaveLength(1);
+    expect(r[0]!.host).toBe('example.com');
+    expect(r[0]!.origin).toBe('https://www.example.com');
+  });
+
   it('respects the limit', () => {
     const many = Array.from({ length: 12 }, (_, i) => e(`https://s${i}.com/`, 12 - i));
     expect(topSites(many, 8, NOW)).toHaveLength(8);

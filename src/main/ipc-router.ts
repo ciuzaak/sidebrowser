@@ -130,6 +130,9 @@ export function registerIpcRouter(
     if (!window.isDestroyed()) window.close();
   };
   ipcMain.on(IpcChannels.viewSetTopInset, onSetTopInset);
+  // A chrome reload/crash skips TabDrawer's effect cleanup, and the remounted
+  // (closed) drawer reports nothing — reset the inset whenever chrome reloads.
+  window.webContents.on('did-start-loading', () => viewManager.setTopInset(0));
   ipcMain.on(IpcChannels.windowMinimize, onMinimize);
   ipcMain.on(IpcChannels.windowClose, onClose);
   window.once('closed', () => {

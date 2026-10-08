@@ -19,8 +19,6 @@ interface Props {
   /** Ref to the SearchPill trigger. Outside-click ignores mousedown on the
    *  pill so clicking it again while open doesn't close-then-reopen. */
   pillRef: RefObject<HTMLButtonElement | null>;
-  /** M17: JPEG data URL of the page under the (suppressed) view, or null. */
-  backdropUrl: string | null;
 }
 
 /**
@@ -29,8 +27,8 @@ interface Props {
  * The Spotlight defers all typing/searching to a wider floating panel that
  * pops up when the user clicks the SearchPill in TopBar (or presses Cmd+L).
  * M17: one card (input → suggestions → Enter hint) over a blurred scrim; the
- * scrim sits on a snapshot of the page (`backdropUrl`) because the native
- * view is hidden while the Spotlight is open.
+ * scrim sits on a snapshot of the page (rendered by App, beneath this
+ * component) because the native view is hidden while the Spotlight is open.
  *
  * Mounted only while open: the parent (App.tsx) conditionally renders this
  * via `{searchOpen && <SearchSpotlight … />}`, so the `useState` initializer
@@ -46,7 +44,7 @@ interface Props {
  * `data-testid="address-bar"` is preserved on the input so existing E2E tests
  * keep their selectors; helpers open the spotlight before driving it.
  */
-export function SearchSpotlight({ onClose, pillRef, backdropUrl }: Props): ReactElement {
+export function SearchSpotlight({ onClose, pillRef }: Props): ReactElement {
   const tab = useActiveTab();
   const settings = useSettingsStore((s) => s.settings);
   const [draft, setDraft] = useState<string>(() => {
@@ -130,15 +128,6 @@ export function SearchSpotlight({ onClose, pillRef, backdropUrl }: Props): React
 
   return (
     <div data-testid="search-spotlight" className="absolute inset-0 z-20">
-      {backdropUrl !== null && (
-        <img
-          data-testid="spotlight-backdrop"
-          src={backdropUrl}
-          alt=""
-          aria-hidden
-          className="absolute inset-0 h-full w-full object-cover object-top"
-        />
-      )}
       <div className="absolute inset-0 bg-[var(--scrim)] backdrop-blur-[6px]" />
       <div className="relative flex justify-center">
         <div
