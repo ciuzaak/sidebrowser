@@ -13,7 +13,20 @@ export interface Tab {
   isLoading: boolean;
   canGoBack: boolean;
   canGoForward: boolean;
+  /**
+   * M16: false = no live page yet (lazy-restored at launch) or unloaded by the
+   * inactive-tab timer. Activating the tab loads / restores it.
+   */
+  loaded: boolean;
+  /** M16: the page is currently playing audio. */
+  audible: boolean;
+  /** M16: user mute (TabDrawer speaker button). Auto-mute is applied separately. */
+  muted: boolean;
+  /** M16: renderer gone / hung; null when healthy. */
+  crashed: TabCrashState;
 }
+
+export type TabCrashState = 'crashed' | 'unresponsive' | null;
 
 /**
  * Full tabs snapshot broadcast on create/close/activate events.
@@ -44,6 +57,10 @@ export function makeEmptyTab(id: string, url: string, isMobile: boolean = true):
     isLoading: false,
     canGoBack: false,
     canGoForward: false,
+    loaded: true,
+    audible: false,
+    muted: false,
+    crashed: null,
   };
 }
 
@@ -88,12 +105,16 @@ export interface EdgeDockSettings {
 
 export interface LifecycleSettings {
   restoreTabsOnLaunch: boolean;
+  /** M16: unload tabs inactive this long (minutes); 0 = never. One of DISCARD_AFTER_OPTIONS. */
+  discardAfterMin: number;
 }
 
 export interface BrowsingSettings {
   defaultIsMobile: boolean;
   /** Mobile UA (Android Chrome by default) — sourced from `MOBILE_UA` in @shared/settings-defaults at DEFAULTS construction. */
   mobileUserAgent: string;
+  /** M16: mute every tab while the window is hidden at the screen edge. */
+  muteWhenHidden: boolean;
 }
 
 export type ThemeChoice = 'system' | 'dark' | 'light';
@@ -186,3 +207,50 @@ export interface Suggestion {
   /** 0 = URL 前缀；1 = URL substring；2 = title substring。 */
   tier: 0 | 1 | 2;
 }
+
+/**
+ * NewTab "Frequent" tile (M17): one per host (leading `www.` ignored, so
+ * http/https/www variants merge), ranked by summed frecency.
+ */
+export interface TopSite {
+  /** Highest-scoring origin within the host group — the tile navigates here. */
+  origin: string;
+  /** Host with a leading `www.` stripped — tile label. */
+  host: string;
+  favicon: string | null;
+}
+
+/** One download in the M16 Downloads drawer (session lifetime). */
+export interface DownloadInfo {
+  id: string;
+  filename: string;
+  /** Absolute path the file is (being) saved to. */
+  path: string;
+  url: string;
+  /** 'blocked' = refused at start because the file type is dangerous (M16). */
+  state: 'progressing' | 'completed' | 'cancelled' | 'interrupted' | 'blocked';
+  receivedBytes: number;
+  /** 0 when the server sent no Content-Length. */
+  totalBytes: number;
+  startedAt: number;
+  /** Tab webContents that started it (null for e.g. a popup). */
+  webContentsId: number | null;
+  /** Executable / script type: never opened from the drawer, only shown in its folder. */
+  executable: boolean;
+}
+
+/** Find-in-page result for the active tab (M16). */
+export interface FindResult {
+  activeMatchOrdinal: number;
+  matches: number;
+}
+
+/** Settings → Storage usage breakdown in bytes (M16). */
+export interface StorageUsage {
+  httpCache: number;
+  codeCache: number;
+  serviceWorker: number;
+  other: number;
+  total: number;
+}
+

@@ -9,7 +9,7 @@
  * Module-isolated so the algorithm is unit-testable without IO / event flow.
  */
 
-import type { HistoryEntry, Suggestion } from '@shared/types';
+import type { HistoryEntry, Suggestion, TopSite } from '@shared/types';
 
 export const SUGGEST_LIMIT = 8;
 const DAY_MS = 86_400_000;
@@ -73,4 +73,57 @@ export function recentEntries(entries: HistoryEntry[], limit: number): HistoryEn
   return [...entries]
     .sort((a, b) => b.lastVisitedAt - a.lastVisitedAt)
     .slice(0, limit);
+}
+
+/**
+ * NewTab "Frequent" tiles (M17): http(s) history grouped by host (a leading
+ * `www.` ignored, so http/https/www variants merge into one tile), ranked by
+ * summed frecency. The tile opens the group's highest-scoring origin; its
+ * favicon is the highest-frecency entry in the group that has one.
+ */
+export function topSites(entries: HistoryEntry[], limit: number, now: number): TopSite[] {
+  interface Group {
+    host: string;
+    score: number;
+    originScores: Map<string, number>;
+    favicon: string | null;
+    faviconScore: number;
+  }
+  const groups = new Map<string, Group>();
+  for (const e of entries) {
+    let u: URL;
+    try {
+      u = new URL(e.url);
+    } catch {
+      continue;
+    }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') continue;
+    const s = frecency(e, now);
+    const host = u.host.replace(/^www\./i, '');
+    let g = groups.get(host);
+    if (!g) {
+      g = { host, score: 0, originScores: new Map(), favicon: null, faviconScore: -1 };
+      groups.set(host, g);
+    }
+    g.score += s;
+    g.originScores.set(u.origin, (g.originScores.get(u.origin) ?? 0) + s);
+    if (e.favicon !== null && s > g.faviconScore) {
+      g.favicon = e.favicon;
+      g.faviconScore = s;
+    }
+  }
+  return [...groups.values()]
+    .sort((a, b) => b.score - a.score || a.host.localeCompare(b.host))
+    .slice(0, limit)
+    .map((g) => {
+      let origin = '';
+      let best = -1;
+      for (const [o, sc] of g.originScores) {
+        if (sc > best) {
+          best = sc;
+          origin = o;
+        }
+      }
+      return { origin, host: g.host, favicon: g.favicon };
+    });
 }

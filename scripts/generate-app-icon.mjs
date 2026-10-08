@@ -1,5 +1,6 @@
 // generate-app-icon.mjs
-// Pipeline: resources/icon-source.png → resources/icon.ico (multi-size Windows icon).
+// Pipeline: resources/icon-source.png → resources/icon.ico (multi-size Windows icon)
+// + resources/newtab-icon.png (128 px NewTab hero image, M17).
 //
 // Source PNG is expected to be RGBA (alpha channel already baked in) and
 // square-ish. The pipeline is pure resize — no background removal — because
@@ -43,6 +44,14 @@ async function main() {
   const icoBuffer = await pngToIco(resizedBuffers);
   writeFileSync(ICO_PATH, icoBuffer);
   console.log(`[icon] wrote ${ICO_PATH} (${(icoBuffer.length / 1024).toFixed(1)} KB)`);
+
+  const NEWTAB_PNG_PATH = resolve(ROOT, 'resources', 'newtab-icon.png');
+  await sharp(SRC_PATH)
+    .ensureAlpha()
+    .resize(128, 128, { kernel: 'lanczos3', fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png({ compressionLevel: 9 })
+    .toFile(NEWTAB_PNG_PATH);
+  console.log(`[icon] wrote ${NEWTAB_PNG_PATH}`);
 }
 
 main().catch((err) => {

@@ -363,3 +363,17 @@ describe('clampSettings — search section', () => {
       .toEqual([...BUILTIN_SEARCH_ENGINES.map((e) => e.id), 'y']);
   });
 });
+
+describe('clampSettings — M16 fields', () => {
+  it('snaps lifecycle.discardAfterMin to the nearest option', () => {
+    expect(clampSettings({ lifecycle: { discardAfterMin: 20 } }, cur()).lifecycle?.discardAfterMin).toBe(15);
+    expect(clampSettings({ lifecycle: { discardAfterMin: 45 } }, cur()).lifecycle?.discardAfterMin).toBe(30);
+    expect(clampSettings({ lifecycle: { discardAfterMin: 999 } }, cur()).lifecycle?.discardAfterMin).toBe(60);
+    expect(clampSettings({ lifecycle: { discardAfterMin: -5 } }, cur()).lifecycle?.discardAfterMin).toBe(0);
+    expect(clampSettings({ lifecycle: { discardAfterMin: Number.NaN } }, cur()).lifecycle).toEqual({});
+  });
+  it('passes browsing.muteWhenHidden through', () => {
+    expect(clampSettings({ browsing: { muteWhenHidden: false } }, cur()).browsing).toEqual({ muteWhenHidden: false });
+  });
+});
+

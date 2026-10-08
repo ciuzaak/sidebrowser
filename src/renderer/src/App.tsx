@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactElement } from 'react';
 import { TopBar } from './components/TopBar';
 import { TabDrawer } from './components/TabDrawer';
 import { SettingsDrawer } from './components/SettingsDrawer';
 import { NewTab } from './components/NewTab';
 import { SearchSpotlight } from './components/SearchSpotlight';
+import { FindBar } from './components/FindBar';
+import { DownloadsDrawer } from './components/DownloadsDrawer';
+import { CrashOverlay } from './components/CrashOverlay';
+import { summarizeDownloads, useDownloads } from './hooks/useDownloads';
 import { useSettingsBridge } from './hooks/useSettingsBridge';
 import { useTabBridge } from './hooks/useTabBridge';
 import { useWindowStateBridge } from './hooks/useWindowStateBridge';
@@ -12,6 +16,7 @@ import { useActiveTab, useTabsStore } from './store/tab-store';
 import { useWindowStateStore } from './store/window-state-store';
 import { useTheme } from './theme/useTheme';
 import { computeChromeDimStyle } from './lib/chrome-dim';
+import { withTimeout } from './lib/spotlight-hint';
 
 export function App(): ReactElement {
   useTabBridge();
@@ -51,8 +56,86 @@ export function App(): ReactElement {
   }, []);
   const toggleSettings = useCallback(() => setSettingsOpen((v) => !v), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
-  const openSearch = useCallback(() => setSearchOpen(true), []);
-  const closeSearch = useCallback(() => setSearchOpen(false), []);
+
+  // M16: find bar + downloads drawer (both live in the top overlay stack).
+  const [findOpen, setFindOpen] = useState(false);
+  const [findFocusSignal, setFindFocusSignal] = useState(0);
+  const openFind = useCallback(() => {
+    setFindOpen(true);
+    setFindFocusSignal((n) => n + 1);
+  }, []);
+  const closeFind = useCallback(() => setFindOpen(false), []);
+  const downloads = useDownloads();
+  const [downloadsOpen, setDownloadsOpen] = useState(false);
+  const downloadsToggleRef = useRef<HTMLButtonElement | null>(null);
+  const toggleDownloads = useCallback(() => setDownloadsOpen((v) => !v), []);
+  const closeDownloads = useCallback(() => setDownloadsOpen(false), []);
+  // Open the drawer when a new download starts, so the user sees it landed.
+  const downloadCount = downloads.length;
+  const prevDownloadCount = useRef(downloadCount);
+  useEffect(() => {
+    if (downloadCount > prevDownloadCount.current) {
+      setDownloadsOpen(true);
+    }
+    prevDownloadCount.current = downloadCount;
+  }, [downloadCount]);
+
+  // M17/M16: the top overlay stack (TabDrawer, FindBar, Downloads) reports
+  // its height so main offsets — never resizes — the active page under it.
+  const overlayStackRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const el = overlayStackRef.current;
+    if (!el) return;
+    const report = (): void => window.sidebrowser.setTopInset(el.getBoundingClientRect().height);
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      window.sidebrowser.setTopInset(0);
+    };
+  }, []);
+  // M17: Spotlight backdrop — a snapshot of the live page painted under the
+  // scrim, since the native view is hidden while the Spotlight is open.
+  const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
+  const backdropClearTimer = useRef<number | null>(null);
+  // Mirrors searchOpen for the async open path (state is stale in its closure).
+  const searchOpenRef = useRef(false);
+  useEffect(() => {
+    searchOpenRef.current = searchOpen;
+  }, [searchOpen]);
+  // Bumped by every close / tab switch so an in-flight open (awaiting the
+  // capture) knows it was cancelled and must not open the Spotlight late.
+  const openRequest = useRef(0);
+  // Snapshot first, then open. NewTab has no native page to capture. Capped at
+  // 150 ms — on timeout the Spotlight opens without a backdrop. Re-opening an
+  // already-open Spotlight is a no-op (a capture now would return null — the
+  // view is suppressed — and wipe the existing backdrop).
+  const openSearch = useCallback(async (): Promise<void> => {
+    if (searchOpenRef.current) return;
+    const request = ++openRequest.current;
+    if (backdropClearTimer.current !== null) {
+      window.clearTimeout(backdropClearTimer.current);
+      backdropClearTimer.current = null;
+    }
+    const snap = isNewTab
+      ? null
+      : await withTimeout(window.sidebrowser.captureActiveView(), 150, null);
+    if (request !== openRequest.current) return;
+    setBackdropUrl(snap);
+    setSearchOpen(true);
+  }, [isNewTab]);
+  // Keep the backdrop briefly after close: the view re-shows over it, so no
+  // blank frame appears between unsuppress and the page repaint.
+  const closeSearch = useCallback(() => {
+    openRequest.current += 1;
+    setSearchOpen(false);
+    if (backdropClearTimer.current !== null) window.clearTimeout(backdropClearTimer.current);
+    backdropClearTimer.current = window.setTimeout(() => {
+      backdropClearTimer.current = null;
+      setBackdropUrl(null);
+    }, 100);
+  }, []);
 
   useEffect(() => {
     const el = chromeRef.current;
@@ -82,6 +165,8 @@ export function App(): ReactElement {
     prevActiveIdRef.current = activeId;
     if (prev === null || activeId === null) return;
     if (prev === activeId) return;
+    // M17: a Spotlight open still awaiting its capture belongs to the old tab.
+    openRequest.current += 1;
     // closeSettings / closeSearch are cascading setStates — intentional. We
     // can't merge them into a single setter (different state slices). The
     // rule fires once per offending if-statement; disable below each.
@@ -92,14 +177,23 @@ export function App(): ReactElement {
     if (searchOpen) {
       closeSearch();
     }
-  }, [activeId, settingsOpen, searchOpen, closeSettings, closeSearch]);
+    // M16: find results belong to the previous tab.
+    if (findOpen) {
+      closeFind();
+    }
+  }, [activeId, settingsOpen, searchOpen, findOpen, closeSettings, closeSearch, closeFind]);
 
   // M6 + M12 + M14: ViewManager suppression. SettingsDrawer, NewTab, and the
   // new SearchSpotlight all render OVER the page area in renderer DOM, so the
-  // underlying WebContentsView has to shrink to {0,0,0,0}. TabDrawer lives
-  // in the chrome bar (above the page area) — NOT in the suppression set;
-  // otherwise the page would go blank while the drawer is open.
-  const suppressed = settingsOpen || searchOpen || isNewTab;
+  // underlying WebContentsView is hidden (M17: View.setVisible, bounds kept).
+  // TabDrawer is NOT in the suppression set — it reports a top inset instead
+  // (M17), so the page stays live and un-resized below it. M16: a crashed
+  // active tab shows the CrashOverlay in place of its (blank) page.
+  // "Wait" on a hung page is keyed by tab + state, so a new hang shows again.
+  const [waitedKey, setWaitedKey] = useState<string | null>(null);
+  const crashKey = activeTab ? `${activeTab.id}:${activeTab.crashed}` : '';
+  const crashed = activeTab?.crashed != null && waitedKey !== crashKey;
+  const suppressed = settingsOpen || searchOpen || isNewTab || crashed;
   useEffect(() => {
     window.sidebrowser.setViewSuppressed(suppressed);
   }, [suppressed]);
@@ -111,15 +205,18 @@ export function App(): ReactElement {
     return window.sidebrowser.onShortcut((action) => {
       switch (action) {
         case 'focus-address-bar': {
-          openSearch();
+          void openSearch();
           return;
         }
         case 'toggle-settings-drawer':
           toggleSettings();
           return;
+        case 'open-find':
+          openFind();
+          return;
       }
     });
-  }, [openSearch, toggleSettings]);
+  }, [openSearch, toggleSettings, openFind]);
 
   // M13 hotfix: tab WebContents focus → close all chrome drawers. Page-area
   // clicks can't be detected via DOM events (WebContentsView is in another
@@ -130,8 +227,9 @@ export function App(): ReactElement {
       closeDrawer();
       closeSettings();
       closeSearch();
+      closeDownloads();
     });
-  }, [closeDrawer, closeSettings, closeSearch]);
+  }, [closeDrawer, closeSettings, closeSearch, closeDownloads]);
 
   // M13: chrome dim — re-use the existing windowState.dimmed signal driven
   // by EdgeDock. Settings hydrate within a frame; while null, render
@@ -151,28 +249,50 @@ export function App(): ReactElement {
           settingsOpen={settingsOpen}
           onToggleSettings={toggleSettings}
           searchOpen={searchOpen}
-          onOpenSearch={openSearch}
+          onOpenSearch={() => void openSearch()}
           tabsToggleRef={tabsToggleRef}
           settingsToggleRef={settingsToggleRef}
           searchPillRef={searchPillRef}
-        />
-        <TabDrawer
-          open={drawerOpen}
-          onSelect={closeDrawer}
-          onOutsideClose={closeDrawer}
-          toggleRef={tabsToggleRef}
+          downloads={summarizeDownloads(downloads)}
+          downloadsOpen={downloadsOpen}
+          onToggleDownloads={toggleDownloads}
+          downloadsToggleRef={downloadsToggleRef}
         />
       </div>
       <div className="relative flex-1">
         {isNewTab && <NewTab />}
+        {activeTab && crashed && <CrashOverlay tab={activeTab} onWait={() => setWaitedKey(crashKey)} />}
         <SettingsDrawer
           open={settingsOpen}
           onClose={closeSettings}
           toggleRef={settingsToggleRef}
         />
-        {searchOpen && (
-          <SearchSpotlight onClose={closeSearch} pillRef={searchPillRef} />
+        {/* M17: lives outside the Spotlight so it survives the 100 ms after close. */}
+        {backdropUrl !== null && (
+          <img
+            data-testid="spotlight-backdrop"
+            src={backdropUrl}
+            alt=""
+            aria-hidden
+            className="absolute inset-0 z-20 h-full w-full object-cover object-top"
+          />
         )}
+        {searchOpen && <SearchSpotlight onClose={closeSearch} pillRef={searchPillRef} />}
+        <div ref={overlayStackRef} className="absolute inset-x-0 top-0 z-30 flex flex-col">
+          {findOpen && <FindBar onClose={closeFind} focusSignal={findFocusSignal} />}
+          <TabDrawer
+            open={drawerOpen}
+            onSelect={closeDrawer}
+            onOutsideClose={closeDrawer}
+            toggleRef={tabsToggleRef}
+          />
+          <DownloadsDrawer
+            open={downloadsOpen}
+            downloads={downloads}
+            onOutsideClose={closeDownloads}
+            toggleRef={downloadsToggleRef}
+          />
+        </div>
       </div>
     </div>
   );

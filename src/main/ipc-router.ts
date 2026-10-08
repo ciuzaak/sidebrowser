@@ -3,7 +3,10 @@ import { IpcChannels, type IpcContract } from '@shared/ipc-contract';
 import type { ViewManager } from './view-manager';
 import type { SettingsStore } from './settings-store';
 import type { HistoryStore } from './history-store';
-import { rankSuggestions, recentEntries, SUGGEST_LIMIT } from './suggestion-ranker';
+import { rankSuggestions, recentEntries, SUGGEST_LIMIT, topSites } from './suggestion-ranker';
+import type { DownloadsManager } from './downloads';
+import { getPersistentSession } from './session-manager';
+import { clearAllSiteData, clearCaches, measureStorage } from './storage';
 
 /**
  * Wires up all ipcMain handlers in one place.
@@ -22,17 +25,8 @@ export function registerIpcRouter(
   viewManager: ViewManager,
   settingsStore: SettingsStore,
   historyStore: HistoryStore,
+  downloads: DownloadsManager,
 ): void {
-  // M0 smoke-test ping.
-  ipcMain.removeHandler(IpcChannels.appPing);
-  ipcMain.handle(
-    IpcChannels.appPing,
-    (_event, payload: IpcContract[typeof IpcChannels.appPing]['request']) => ({
-      reply: `pong: ${payload.message}`,
-      timestamp: Date.now(),
-    }),
-  );
-
   // Tab management.
   ipcMain.removeHandler(IpcChannels.tabCreate);
   ipcMain.handle(
@@ -104,6 +98,102 @@ export function registerIpcRouter(
     },
   );
 
+  ipcMain.removeHandler(IpcChannels.tabStop);
+  ipcMain.handle(
+    IpcChannels.tabStop,
+    (_event, payload: IpcContract[typeof IpcChannels.tabStop]['request']) => {
+      viewManager.stop(payload.id);
+    },
+  );
+
+  // M17: Spotlight backdrop snapshot.
+  ipcMain.removeHandler(IpcChannels.viewCaptureActive);
+  ipcMain.handle(IpcChannels.viewCaptureActive, () => viewManager.captureActiveForBackdrop());
+
+  // M17: TabDrawer top inset + self-drawn window controls — fire-and-forget.
+  const onSetTopInset = (
+    _event: IpcMainEvent,
+    payload: IpcContract[typeof IpcChannels.viewSetTopInset]['request'],
+  ): void => {
+    viewManager.setTopInset(payload.px);
+  };
+  const onMinimize = (): void => {
+    if (!window.isDestroyed()) window.minimize();
+  };
+  const onClose = (): void => {
+    if (!window.isDestroyed()) window.close();
+  };
+  ipcMain.on(IpcChannels.viewSetTopInset, onSetTopInset);
+  // A chrome reload/crash skips TabDrawer's effect cleanup, and the remounted
+  // (closed) drawer reports nothing — reset the inset whenever chrome reloads.
+  window.webContents.on('did-start-loading', () => viewManager.setTopInset(0));
+  ipcMain.on(IpcChannels.windowMinimize, onMinimize);
+  ipcMain.on(IpcChannels.windowClose, onClose);
+  window.once('closed', () => {
+    ipcMain.removeListener(IpcChannels.viewSetTopInset, onSetTopInset);
+    ipcMain.removeListener(IpcChannels.windowMinimize, onMinimize);
+    ipcMain.removeListener(IpcChannels.windowClose, onClose);
+  });
+
+  // M16: per-tab mute.
+  ipcMain.removeHandler(IpcChannels.tabSetMuted);
+  ipcMain.handle(
+    IpcChannels.tabSetMuted,
+    (_event, payload: IpcContract[typeof IpcChannels.tabSetMuted]['request']) => {
+      viewManager.setMuted(payload.id, payload.muted);
+    },
+  );
+
+  // M16: find in page (active tab). Results come back via found-in-page →
+  // find:result (wired in index.ts per tab webContents).
+  ipcMain.removeHandler(IpcChannels.findStart);
+  ipcMain.handle(
+    IpcChannels.findStart,
+    (_event, payload: IpcContract[typeof IpcChannels.findStart]['request']) => {
+      const wc = viewManager.getActiveWebContents();
+      if (!wc || payload.text === '') return;
+      wc.findInPage(payload.text, { forward: payload.forward, findNext: payload.newSession });
+    },
+  );
+  const onFindStop = (): void => {
+    viewManager.getActiveWebContents()?.stopFindInPage('clearSelection');
+  };
+
+  // M16: downloads.
+  ipcMain.removeHandler(IpcChannels.downloadsList);
+  ipcMain.handle(IpcChannels.downloadsList, () => downloads.list());
+  const onDownloadsOpen = (_e: IpcMainEvent, p: { id: string }): void => downloads.open(p.id);
+  const onDownloadsShow = (_e: IpcMainEvent, p: { id: string }): void => downloads.showInFolder(p.id);
+  const onDownloadsCancel = (_e: IpcMainEvent, p: { id: string }): void => downloads.cancel(p.id);
+  const onDownloadsClear = (): void => downloads.clear();
+
+  // M16: Settings → Storage.
+  ipcMain.removeHandler(IpcChannels.storageUsage);
+  ipcMain.handle(IpcChannels.storageUsage, () =>
+    measureStorage(getPersistentSession().getStoragePath() ?? ''),
+  );
+  ipcMain.removeHandler(IpcChannels.storageClearCache);
+  ipcMain.handle(IpcChannels.storageClearCache, () => clearCaches(getPersistentSession()));
+  ipcMain.removeHandler(IpcChannels.storageClearSiteData);
+  ipcMain.handle(IpcChannels.storageClearSiteData, async () => {
+    await clearAllSiteData(getPersistentSession());
+    // Live pages would otherwise keep (and re-set) the cleared session state.
+    viewManager.reloadAllLoaded();
+  });
+
+  ipcMain.on(IpcChannels.findStop, onFindStop);
+  ipcMain.on(IpcChannels.downloadsOpen, onDownloadsOpen);
+  ipcMain.on(IpcChannels.downloadsShowInFolder, onDownloadsShow);
+  ipcMain.on(IpcChannels.downloadsCancel, onDownloadsCancel);
+  ipcMain.on(IpcChannels.downloadsClear, onDownloadsClear);
+  window.once('closed', () => {
+    ipcMain.removeListener(IpcChannels.findStop, onFindStop);
+    ipcMain.removeListener(IpcChannels.downloadsOpen, onDownloadsOpen);
+    ipcMain.removeListener(IpcChannels.downloadsShowInFolder, onDownloadsShow);
+    ipcMain.removeListener(IpcChannels.downloadsCancel, onDownloadsCancel);
+    ipcMain.removeListener(IpcChannels.downloadsClear, onDownloadsClear);
+  });
+
   // Chrome layout — fire-and-forget. Scope listener to this window's lifetime.
   const onChromeSetHeight = (
     _event: IpcMainEvent,
@@ -166,6 +256,14 @@ export function registerIpcRouter(
       }
       return rankSuggestions(historyStore.all(), q, Date.now());
     },
+  );
+
+  // M17: NewTab "Frequent" tiles.
+  ipcMain.removeHandler(IpcChannels.historyTopSites);
+  ipcMain.handle(
+    IpcChannels.historyTopSites,
+    (_event, payload: IpcContract[typeof IpcChannels.historyTopSites]['request']) =>
+      topSites(historyStore.all(), payload.limit, Date.now()),
   );
 
   // history:remove — fire-and-forget.

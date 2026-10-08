@@ -214,3 +214,53 @@ describe('SettingsStore', () => {
     expect(backend.setCount).toBe(1);
   });
 });
+
+describe('SettingsStore — M16', () => {
+  it('fills fields missing inside an existing section from DEFAULTS', () => {
+    const legacy = freshDefaults();
+    delete (legacy.browsing as unknown as { muteWhenHidden?: unknown }).muteWhenHidden;
+    delete (legacy.lifecycle as unknown as { discardAfterMin?: unknown }).discardAfterMin;
+    const store = new SettingsStore(createFakeBackend(legacy));
+    expect(store.get().browsing.muteWhenHidden).toBe(true);
+    expect(store.get().lifecycle.discardAfterMin).toBe(30);
+  });
+
+  it('debounces backend writes but updates memory and listeners immediately', () => {
+    vi.useFakeTimers();
+    try {
+      const backend = createFakeBackend();
+      const store = new SettingsStore(backend, { writeDebounceMs: 300 });
+      const cb = vi.fn();
+      store.onChanged(cb);
+      store.update({ dim: { blurPx: 10 } });
+      store.update({ dim: { blurPx: 11 } });
+      store.update({ dim: { blurPx: 12 } });
+      expect(store.get().dim.blurPx).toBe(12);
+      expect(cb).toHaveBeenCalledTimes(3);
+      expect(backend.setCount).toBe(0);
+      vi.advanceTimersByTime(300);
+      expect(backend.setCount).toBe(1);
+      expect(backend.lastSet?.dim.blurPx).toBe(12);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('flush() writes a pending update immediately and only once', () => {
+    vi.useFakeTimers();
+    try {
+      const backend = createFakeBackend();
+      const store = new SettingsStore(backend, { writeDebounceMs: 300 });
+      store.update({ dim: { blurPx: 9 } });
+      store.flush();
+      expect(backend.setCount).toBe(1);
+      vi.advanceTimersByTime(1000);
+      expect(backend.setCount).toBe(1);
+      store.flush();
+      expect(backend.setCount).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+

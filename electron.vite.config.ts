@@ -52,6 +52,9 @@ export default defineConfig({
     },
     plugins: [react(), tailwindcss()],
     build: {
+      // M17: electron-vite leaves the renderer unminified by default
+      // (~560 KB of readable JS at v1.4.1).
+      minify: true,
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/renderer/index.html') },
       },

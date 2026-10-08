@@ -1,6 +1,8 @@
-import { X, Plus, type LucideIcon } from 'lucide-react';
+import { X, Plus, TriangleAlert, Volume2, VolumeX, type LucideIcon } from 'lucide-react';
 import { useEffect, useRef, type ReactElement, type RefObject } from 'react';
 import { useTabsStore } from '../store/tab-store';
+import { tabLabel } from '../lib/chrome-labels';
+import { Favicon } from './Favicon';
 
 interface TabDrawerProps {
   open: boolean;
@@ -44,6 +46,11 @@ export function TabDrawer({ open, onSelect, onOutsideClose, toggleRef }: TabDraw
     onSelect();
   };
 
+  const toggleMute = (e: React.MouseEvent, id: string, muted: boolean): void => {
+    e.stopPropagation();
+    void window.sidebrowser.setMuted(id, !muted);
+  };
+
   const close = async (e: React.MouseEvent, id: string): Promise<void> => {
     e.stopPropagation();
     await window.sidebrowser.closeTab(id);
@@ -54,7 +61,7 @@ export function TabDrawer({ open, onSelect, onOutsideClose, toggleRef }: TabDraw
     <div
       ref={drawerRef}
       data-testid="tab-drawer"
-      className="flex max-h-[60vh] w-full flex-col overflow-y-auto border-b border-[var(--border)] bg-[var(--surface)]"
+      className="flex max-h-[60vh] flex-col overflow-y-auto border-b border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-elevated)]"
     >
       <DrawerButton
         icon={Plus}
@@ -65,7 +72,7 @@ export function TabDrawer({ open, onSelect, onOutsideClose, toggleRef }: TabDraw
       {order.map((id) => {
         const tab = tabs[id];
         if (!tab) return null;
-        const label = tab.title.trim() || tab.url || 'Loading…';
+        const label = tabLabel(tab);
         const isActive = id === activeId;
         return (
           <button
@@ -84,21 +91,27 @@ export function TabDrawer({ open, onSelect, onOutsideClose, toggleRef }: TabDraw
                 : 'text-[var(--fg)] ')
             }
           >
-            {tab.favicon ? (
-              <img
-                src={tab.favicon}
-                alt=""
-                width={14}
-                height={14}
-                className="shrink-0 rounded-sm"
-                onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
-                }}
-              />
-            ) : (
-              <span className="inline-block h-[14px] w-[14px] shrink-0 rounded-[var(--radius-sm)] bg-[var(--border)] opacity-60" aria-hidden />
+            {/* M16: unloaded tabs (lazy restore / auto-unload) are dimmed. */}
+            <span className={`contents ${tab.loaded ? '' : '[&>*]:opacity-55'}`}>
+              <Favicon src={tab.favicon} size={14} />
+              <span className="flex-1 truncate" data-loaded={tab.loaded ? 'true' : 'false'}>
+                {label}
+              </span>
+            </span>
+            {tab.crashed !== null && (
+              <TriangleAlert size={14} className="shrink-0 text-[var(--danger)]" aria-label="Page crashed" />
             )}
-            <span className="flex-1 truncate">{label}</span>
+            {(tab.audible || tab.muted) && (
+              <span
+                role="button"
+                aria-label={tab.muted ? 'Unmute tab' : 'Mute tab'}
+                data-testid="tab-drawer-audio"
+                onClick={(e) => toggleMute(e, id, tab.muted)}
+                className="rounded-[var(--radius-sm)] p-1 text-[var(--fg-muted)] hover:bg-[var(--accent-tint)] hover:text-[var(--fg)]"
+              >
+                {tab.muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+              </span>
+            )}
             <span
               role="button"
               aria-label="Close tab"

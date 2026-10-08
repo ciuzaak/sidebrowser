@@ -31,7 +31,8 @@ import { buildContextMenuTemplate as buildContextMenuTemplateForTest } from './c
 import { handleSecondInstance } from './single-instance';
 import { installMobileHeaderRewriter } from './mobile-emulation';
 import { getPersistentSession } from './session-manager';
-import { resolveTitleBarOverlay } from './title-bar-overlay';
+import { installPermissionPolicy } from './permissions';
+import { DownloadsManager } from './downloads';
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -41,25 +42,24 @@ if (!gotLock) {
 }
 
 /**
- * Resolve a `ThemeChoice` against the current OS preference. Lives next to
- * the callers that need it (createWindow + recomputeTitleBarOverlay) so the
- * 'system' branch is computed identically at both sites.
+ * E2E quiet mode: under Playwright (SIDEBROWSER_E2E=1) the window is shown
+ * inactive (no focus steal), fully transparent, click-through and off the
+ * taskbar, so test runs don't disturb the developer's desktop. Rendering is
+ * unchanged — CDP input and capturePage don't depend on OS visibility.
+ * Native occlusion tracking is disabled so pages never flip to
+ * visibilityState=hidden just because other windows cover the invisible one.
+ * Set SIDEBROWSER_E2E_VISIBLE=1 to watch a run.
  */
-function resolveActiveTheme(choice: 'system' | 'dark' | 'light'): 'dark' | 'light' {
-  if (choice === 'dark' || choice === 'light') return choice;
-  return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+const E2E_QUIET =
+  process.env['SIDEBROWSER_E2E'] === '1' && process.env['SIDEBROWSER_E2E_VISIBLE'] !== '1';
+if (E2E_QUIET) {
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 }
 
 function createWindow(
   initialBounds: Rectangle,
   initialAlwaysOnTop: boolean,
-  initialThemeChoice: 'system' | 'dark' | 'light',
 ): BrowserWindow {
-  // Codex review (M14): respect the persisted appearance.theme at startup —
-  // otherwise the OS-side titleBarOverlay paints with the OS theme even when
-  // the user has explicitly overridden it (e.g. theme='light' on a dark OS),
-  // and the mismatch only resolves on the next settings:changed event.
-  const initialOverlay = resolveTitleBarOverlay(resolveActiveTheme(initialThemeChoice));
   const win = new BrowserWindow({
     x: initialBounds.x,
     y: initialBounds.y,
@@ -67,16 +67,14 @@ function createWindow(
     height: initialBounds.height,
     title: 'sidebrowser',
     alwaysOnTop: initialAlwaysOnTop,
-    // M14: frameless + Windows-native titleBarOverlay. Windows draws min/max/
-    // close in the top-right; everything else (drag region, chrome layout) is
-    // ours. Title-bar height matches the chrome strip height (36 px) so the
-    // overlay sits flush with our IconButton row.
+    // M17: frameless (`titleBarStyle: 'hidden'`; the thick frame keeps edge
+    // resize). Window controls are self-drawn in the renderer
+    // (WindowControls.tsx) instead of the Windows-native titleBarOverlay, which
+    // reserved 138 px of the 393 px chrome row. `maximizable: false` stops a
+    // double-click on the drag region from maximizing a side panel.
     titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: initialOverlay.color,
-      symbolColor: initialOverlay.symbolColor,
-      height: 36,
-    },
+    maximizable: false,
+    show: !E2E_QUIET,
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       sandbox: true,
@@ -95,6 +93,15 @@ function createWindow(
   // standard title bar's "empty bar row" symptom — titleBarStyle: 'hidden' removes
   // that symptom on its own, so we no longer need the visibility lock.
   win.setAutoHideMenuBar(true);
+
+  if (E2E_QUIET) {
+    win.setOpacity(0);
+    win.setIgnoreMouseEvents(true);
+    win.setSkipTaskbar(true);
+    win.once('ready-to-show', () => {
+      if (!win.isDestroyed()) win.showInactive();
+    });
+  }
 
   if (process.env['ELECTRON_RENDERER_URL']) {
     void win.loadURL(process.env['ELECTRON_RENDERER_URL']);
@@ -128,32 +135,22 @@ function applyEffectiveAlwaysOnTop(
   }
 }
 
-/**
- * M14: keep the titleBarOverlay color pair in sync with the resolved theme.
- * Called on `settings:changed` (user toggled appearance.theme) and on
- * `nativeTheme.on('updated')` (OS appearance change).
- */
-function recomputeTitleBarOverlay(
-  win: BrowserWindow,
-  themeChoice: 'system' | 'dark' | 'light',
-): void {
-  const overlay = resolveTitleBarOverlay(resolveActiveTheme(themeChoice));
-  if (!win.isDestroyed()) {
-    win.setTitleBarOverlay({
-      color: overlay.color,
-      symbolColor: overlay.symbolColor,
-      height: 36,
-    });
-  }
-}
-
 function seedTabs(viewManager: ViewManager, persisted: PersistedTabs | null): void {
   if (persisted) {
-    // Create tabs in stored order; last-created becomes active by default,
-    // but we then explicitly activate the stored activeId.
+    // M16 lazy restore: create every tab as an unloaded placeholder in stored
+    // order (title / favicon / back-forward history from the file), then
+    // activate the stored active tab — only its page is created now; the
+    // others restore on first activation.
     for (const pt of persisted.tabs) {
-      viewManager.createTab(pt.url, pt.id, pt.isMobile);
-      // createTab auto-activates — we override the active tab below.
+      viewManager.createTab(pt.url, {
+        id: pt.id,
+        isMobile: pt.isMobile,
+        title: pt.title,
+        favicon: pt.favicon,
+        history: pt.history,
+        activate: false,
+        load: false,
+      });
     }
     viewManager.activateTab(persisted.activeId);
   } else {
@@ -198,7 +195,8 @@ interface ElectronStoreInstance {
 
 app.whenReady().then(() => {
   // 1. Settings store + window-bounds persister.
-  const settingsStore = new SettingsStore(createElectronBackend());
+  // M16: slider drags fire many updates; coalesce the synchronous file write.
+  const settingsStore = new SettingsStore(createElectronBackend(), { writeDebounceMs: 300 });
   const boundsPersister = new WindowBoundsPersister(
     createBoundsBackend(),
     screen,
@@ -213,7 +211,7 @@ app.whenReady().then(() => {
   const historyRecorder = new HistoryRecorder(historyStore);
 
   // 2. Window + ViewManager + IPC router.
-  const win = createWindow(initialBounds, initial.alwaysOnTop, settingsStore.get().appearance.theme);
+  const win = createWindow(initialBounds, initial.alwaysOnTop);
   // Latest "edge-dock is currently engaged" view, fed by the broadcast handler
   // below. Combined with the user's alwaysOnTop setting in
   // applyEffectiveAlwaysOnTop() — edge-dock force-overrides while docked so
@@ -230,15 +228,30 @@ app.whenReady().then(() => {
     return {
       defaultIsMobile: s.browsing.defaultIsMobile,
       mobileUserAgent: s.browsing.mobileUserAgent,
+      muteWhenHidden: s.browsing.muteWhenHidden,
     };
   }, historyRecorder);
+  // M16: deny site permission requests except a harmless allowlist (no
+  // notification toasts, no silent geolocation / camera / mic). Before the
+  // first tab exists.
+  installPermissionPolicy(getPersistentSession());
   // M10: Sec-CH-UA-* 头改写。挂在 persistent session 上，按 viewManager 的 per-tab
   // isMobile 状态决定改不改。必须在 ViewManager 之后、第一个 createTab 之前——
   // seedTabs 在 did-finish-load 才跑，这里安全。
   installMobileHeaderRewriter(getPersistentSession(), (wcId) =>
     viewManager.getMobileEmulationState(wcId),
   );
-  registerIpcRouter(win, viewManager, settingsStore, historyStore);
+  // M16: downloads go straight to the Downloads folder (overridable in E2E).
+  const downloads: DownloadsManager = new DownloadsManager({
+    getDirectory: () => process.env['SIDEBROWSER_E2E_DOWNLOADS_DIR'] ?? app.getPath('downloads'),
+    onChanged: () => {
+      if (!win.isDestroyed()) win.webContents.send(IpcChannels.downloadsChanged, downloads.list());
+    },
+    openPath: (p) => shell.openPath(p),
+    showItemInFolder: (p) => { shell.showItemInFolder(p); },
+  });
+  downloads.install(getPersistentSession());
+  registerIpcRouter(win, viewManager, settingsStore, historyStore, downloads);
 
   // 2b. Hidden Application Menu — spec §15 keyboard shortcuts. Installed once
   // globally per-process (Menu.setApplicationMenu is app-wide, not per-window),
@@ -254,6 +267,9 @@ app.whenReady().then(() => {
     onGoForward: () => { viewManager.goForwardActive(); },
     onToggleDevTools: () => { viewManager.toggleDevToolsActive(); },
     onResetZoom: () => { viewManager.resetActiveZoom(); },
+    onZoomIn: () => { viewManager.zoomActive('in'); },
+    onZoomOut: () => { viewManager.zoomActive('out'); },
+    onReopenClosedTab: () => { viewManager.reopenClosedTab(); },
     emitToRenderer: (action) => {
       if (!win.isDestroyed()) win.webContents.send(IpcChannels.chromeShortcut, { action });
     },
@@ -261,8 +277,8 @@ app.whenReady().then(() => {
 
   // 2c. M13 web context-menu deps. The deps reference viewManager + settingsStore
   // via closures so search-engine selection / tab creation always sees current
-  // state. canGoBack/canGoForward are placeholders here — view-manager refreshes
-  // them per-event from the right tab's nav history.
+  // state. ViewManager adds the per-event fields (nav state, edit / image /
+  // zoom actions) for the clicked tab.
   const buildSearchUrlForSelection = (text: string): string => {
     const s = settingsStore.get().search;
     const tpl =
@@ -288,8 +304,6 @@ app.whenReady().then(() => {
       else if (a === 'forward') viewManager.goForwardActive();
       else viewManager.reloadActive();
     },
-    canGoBack: false,
-    canGoForward: false,
     get activeSearchEngineName(): string {
       const s = settingsStore.get().search;
       return s.engines.find((e) => e.id === s.activeId)?.name ?? 'Google';
@@ -331,6 +345,14 @@ app.whenReady().then(() => {
     wc.on('focus', () => {
       if (!win.isDestroyed()) win.webContents.send(IpcChannels.tabFocused, {});
     });
+    // M16: find-in-page results for the renderer's FindBar (active tab only).
+    wc.on('found-in-page', (_e, result) => {
+      if (win.isDestroyed() || wc !== viewManager.getActiveWebContents()) return;
+      win.webContents.send(IpcChannels.findResult, {
+        activeMatchOrdinal: result.activeMatchOrdinal,
+        matches: result.matches,
+      });
+    });
   });
   win.on('blur', () => cycler.end());
   // M13: renderer-driven cycle end. The renderer's closeDrawer (outside-
@@ -358,14 +380,21 @@ app.whenReady().then(() => {
   // 3. Tab persistence — save on any snapshot change or per-tab URL update.
   const store = createTabStore();
   const saver = createPersistedTabSaver(store);
-  viewManager.onSnapshot(() => {
-    const snap = viewManager.serializeForPersistence();
-    if (snap) saver.save(snap);
-  });
-  viewManager.onTabUpdated(() => {
-    const snap = viewManager.serializeForPersistence();
-    if (snap) saver.save(snap);
-  });
+  // M16: the producer runs only when the debounced write happens.
+  const produceTabs = (): PersistedTabs | null => viewManager.serializeForPersistence();
+  viewManager.onSnapshot(() => saver.save(produceTabs));
+  viewManager.onTabUpdated(() => saver.save(produceTabs));
+
+  // M16: unload background tabs idle longer than lifecycle.discardAfterMin.
+  const DISCARD_CHECK_MS = 60_000;
+  const discardTimer = setInterval(() => {
+    void viewManager.discardInactive(
+      Date.now(),
+      settingsStore.get().lifecycle.discardAfterMin,
+      downloads.busyWebContentsIds(),
+    );
+  }, DISCARD_CHECK_MS);
+  win.once('closed', () => { clearInterval(discardTimer); });
 
   // Defer seeding until the renderer bundle has loaded so the tabs:snapshot
   // broadcast lands on a renderer that has registered its IPC listeners.
@@ -418,6 +447,8 @@ app.whenReady().then(() => {
         edgeDockActive = nextActive;
         applyEffectiveAlwaysOnTop(win, settingsStore.get().window.alwaysOnTop, edgeDockActive);
       }
+      // M16: fully hidden at the edge → stop rendering the page + auto-mute.
+      viewManager.setWindowHidden(s.hidden);
       if (!win.isDestroyed()) win.webContents.send(IpcChannels.windowState, s);
     },
     now: () => Date.now(),
@@ -457,9 +488,6 @@ app.whenReady().then(() => {
         shouldUseDarkColors: nativeTheme.shouldUseDarkColors,
       });
     }
-    // M14: refresh titleBarOverlay if the user's theme choice is 'system' —
-    // recomputeTitleBarOverlay itself handles the resolution.
-    recomputeTitleBarOverlay(win, settingsStore.get().appearance.theme);
   };
   nativeTheme.on('updated', onNativeThemeUpdated);
 
@@ -493,6 +521,8 @@ app.whenReady().then(() => {
   let lastAlwaysOnTop = settingsStore.get().window.alwaysOnTop;
   let lastEdgeDockEnabled = settingsStore.get().edgeDock.enabled;
   settingsStore.onChanged((settings) => {
+    // M16: browsing.muteWhenHidden may have changed.
+    viewManager.refreshAudio();
     if (dim.isActive) void dim.restyle(settings.dim);
     watcher.setDelayMs(settings.mouseLeave.delayMs);
     if (settings.window.preset !== lastPreset) {
@@ -525,8 +555,6 @@ app.whenReady().then(() => {
       // first-paint path; app:ready is a backup hint.
       win.webContents.send(IpcChannels.settingsChanged, settings);
     }
-    // M14: keep titleBarOverlay color in sync with appearance.theme.
-    recomputeTitleBarOverlay(win, settings.appearance.theme);
   });
 
   // 7. app:ready broadcast + initial EdgeDock seed (one-shot on ready-to-show).
@@ -579,7 +607,12 @@ app.whenReady().then(() => {
       requestWindowClose: () => win.close(),
       getIsWindowVisible: () => !win.isDestroyed() && win.isVisible(),
       // M11 zoom hooks.
-      getActiveZoomFactor: (): number => viewManager.getActiveWebContents()?.getZoomFactor() ?? 1.0,
+      // M16: the tab's logical zoom (mobile tabs zoom via CDP metrics, so
+      // webContents.getZoomFactor() stays 1 for them).
+      getActiveZoomFactor: (): number => {
+        const id = viewManager.getActiveId();
+        return id === null ? 1.0 : viewManager.getZoom(id);
+      },
       emitZoomChange: (dir: 'in' | 'out'): void => {
         const wc = viewManager.getActiveWebContents();
         if (wc) wc.emit('zoom-changed', null, dir);
@@ -614,6 +647,13 @@ app.whenReady().then(() => {
             navigateActive: () => {},
             canGoBack: true,
             canGoForward: true,
+            edit: () => {},
+            replaceMisspelling: () => {},
+            addToDictionary: () => {},
+            copyImageAt: () => {},
+            saveUrl: () => {},
+            zoom: () => {},
+            zoomPercent: 100,
             activeSearchEngineName: settingsStore.get().search.engines.find((e) =>
               e.id === settingsStore.get().search.activeId,
             )?.name ?? 'Google',
@@ -621,6 +661,21 @@ app.whenReady().then(() => {
           wc.getURL(),
         );
         return tpl.map((i) => i.label ?? (i.type === 'separator' ? '---' : ''));
+      },
+      // M17 hooks.
+      getActiveViewVisible: (): boolean | null => viewManager.getActiveViewVisibleForTest(),
+      getIsMinimized: (): boolean => !win.isDestroyed() && win.isMinimized(),
+      // M16 hooks.
+      crashActive: (): void => { viewManager.getActiveWebContents()?.forcefullyCrashRenderer(); },
+      unloadTab: (id: string): boolean => viewManager.unloadTab(id),
+      discardNow: (minutes: number): Promise<string[]> =>
+        viewManager.discardInactive(Date.now() + minutes * 60_000 + 1, minutes, downloads.busyWebContentsIds()),
+      reopenClosedTab: (): boolean => viewManager.reopenClosedTab(),
+      zoomActive: (action: 'in' | 'out' | 'reset'): void => { viewManager.zoomActive(action); },
+      setWindowHidden: (hidden: boolean): void => { viewManager.setWindowHidden(hidden); },
+      isActiveAudioMuted: (): boolean => viewManager.getActiveWebContents()?.isAudioMuted() ?? false,
+      sendShortcut: (action: string): void => {
+        if (!win.isDestroyed()) win.webContents.send(IpcChannels.chromeShortcut, { action });
       },
     };
   } else {
@@ -642,15 +697,16 @@ app.whenReady().then(() => {
       // this is best-effort. Extract a shared bootstrapWindow helper when
       // adding macOS support. Browsing defaults below now read live from
       // settingsStore, matching the primary-window wiring.
-      const newWin = createWindow(initialBounds, settingsStore.get().window.alwaysOnTop, settingsStore.get().appearance.theme);
+      const newWin = createWindow(initialBounds, settingsStore.get().window.alwaysOnTop);
       const newViewManager = new ViewManager(newWin, () => {
         const s = settingsStore.get();
         return {
           defaultIsMobile: s.browsing.defaultIsMobile,
           mobileUserAgent: s.browsing.mobileUserAgent,
+          muteWhenHidden: s.browsing.muteWhenHidden,
         };
       }, historyRecorder);
-      registerIpcRouter(newWin, newViewManager, settingsStore, historyStore);
+      registerIpcRouter(newWin, newViewManager, settingsStore, historyStore, downloads);
       newWin.webContents.once('did-finish-load', () => {
         newViewManager.createTab('about:blank');
       });
@@ -660,6 +716,7 @@ app.whenReady().then(() => {
   // 9. Before-quit: flush both bounds debounce and tab-save debounce so the
   // last rect/tab-state mutation always hits disk.
   app.on('before-quit', () => {
+    settingsStore.flush();
     boundsPersister.flush();
     saver.flush();
     historyStore.flush();

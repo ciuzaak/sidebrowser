@@ -94,14 +94,27 @@ test('per-tab UA toggle reloads under new UA and persists across restart', async
           .poll(async () => (await getActiveUrl(app)).endsWith('/ua'), { timeout: 10_000 })
           .toBeTruthy();
 
-        // The restored tab auto-loads /ua; persisted isMobile=false ⇒ request
-        // should carry the desktop UA.
+        // M16: the restored tab comes back via navigationHistory.restore,
+        // which may be served from the HTTP cache (like Chrome's session
+        // restore) — so don't require a fresh request. Assert the restored
+        // page runs under the persisted desktop UA, and any request that did
+        // go out carried it too.
         await expect
-          .poll(() => log.length > snapshotBeforeRestart, { timeout: 10_000 })
+          .poll(async () => {
+            const ua = await app.evaluate(async () => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const h = (globalThis as any).__sidebrowserTestHooks as {
+                getActiveWebContents: () => Electron.WebContents | null;
+              };
+              const wc = h.getActiveWebContents();
+              return wc ? ((await wc.executeJavaScript('navigator.userAgent')) as string) : '';
+            });
+            return ua.length > 0 && !/Android/.test(ua);
+          }, { timeout: 10_000 })
           .toBeTruthy();
-        const restoredUa = log[log.length - 1];
-        expect(restoredUa).not.toMatch(/Android/);
-        expect(restoredUa.length).toBeGreaterThan(0);
+        for (const ua of log.slice(snapshotBeforeRestart)) {
+          expect(ua).not.toMatch(/Android/);
+        }
       } finally {
         await app.close();
       }

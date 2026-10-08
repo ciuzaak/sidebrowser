@@ -55,6 +55,12 @@ export interface ShortcutDeps {
   onToggleDevTools: () => void;
   /** Ctrl+0 — resets the active tab's zoom to 100%. */
   onResetZoom: () => void;
+  /** M16 Ctrl+= / Ctrl+Plus — zoom the active tab in (desktop and mobile tabs). */
+  onZoomIn: () => void;
+  /** M16 Ctrl+- — zoom the active tab out. */
+  onZoomOut: () => void;
+  /** M16 Ctrl+Shift+T — reopen the most recently closed tab. */
+  onReopenClosedTab: () => void;
   /** Fires a spec §15 renderer-bound action (address-bar focus, drawer toggles). */
   emitToRenderer: (action: ShortcutAction) => void;
 }
@@ -76,6 +82,12 @@ export function buildShortcutMenuTemplate(deps: ShortcutDeps): MenuItemConstruct
     // owns it via before-input-event so we can detect Ctrl release.
     { label: 'Toggle Settings',   accelerator: 'CmdOrCtrl+,',   click: () => deps.emitToRenderer('toggle-settings-drawer') },
     { label: 'Reset Zoom',        accelerator: 'CmdOrCtrl+0',   click: () => deps.onResetZoom() },
+    // M16
+    { label: 'Zoom In',           accelerator: 'CmdOrCtrl+=',   click: () => deps.onZoomIn() },
+    { label: 'Zoom In (+)',       accelerator: 'CmdOrCtrl+Plus', click: () => deps.onZoomIn() },
+    { label: 'Zoom Out',          accelerator: 'CmdOrCtrl+-',   click: () => deps.onZoomOut() },
+    { label: 'Find in Page',      accelerator: 'CmdOrCtrl+F',   click: () => deps.emitToRenderer('open-find') },
+    { label: 'Reopen Closed Tab', accelerator: 'CmdOrCtrl+Shift+T', click: () => deps.onReopenClosedTab() },
     { label: 'Toggle DevTools',   accelerator: 'F12',           click: () => deps.onToggleDevTools() },
   ];
 

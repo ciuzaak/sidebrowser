@@ -33,23 +33,17 @@ function startTestServer(): Promise<{ server: Server; baseUrl: string }> {
 }
 
 /**
- * Wait for the loading spinner (animate-spin) inside the Reload button to
- * appear then disappear.  This is the most reliable "navigation committed"
- * fence available in the renderer: it corresponds to the did-stop-loading
- * Electron event flowing through IPC → Zustand → React.
- *
- * We first wait for the spinner to be present (so we don't declare "done"
- * before the load even starts) and then wait for it to be absent.
+ * Wait for the active tab's load to finish. The TopBar exposes
+ * `data-loading` (M17), driven by did-start/stop-loading → IPC → Zustand →
+ * React. Wait for it to flip true (may be skipped on very fast responses)
+ * and then false.
  */
 async function waitForLoadComplete(window: Awaited<ReturnType<typeof getChromeWindow>>): Promise<void> {
-  const spinner = window.locator('.animate-spin');
-  // The spinner may flicker on very fast responses, so we give it a generous
-  // window to appear and then to go away.
-  await expect(spinner).toBeVisible({ timeout: 5_000 }).catch(() => {
-    // Spinner may have already disappeared if the load was extremely fast —
-    // that's fine; we just fall through and check it's gone.
+  const bar = window.getByTestId('topbar');
+  await expect(bar).toHaveAttribute('data-loading', 'true', { timeout: 5_000 }).catch(() => {
+    // Load may already have finished — fall through.
   });
-  await expect(spinner).not.toBeVisible({ timeout: 10_000 });
+  await expect(bar).toHaveAttribute('data-loading', 'false', { timeout: 10_000 });
 }
 
 test('address bar navigation updates URL and history', async () => {

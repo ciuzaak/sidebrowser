@@ -1,4 +1,6 @@
 import Store from 'electron-store';
+import { buildHistorySnapshot, type HistorySnapshot } from './tab-history';
+import { storableFavicon } from './history-filter';
 
 // M8: dropped `data:` from the whitelist to align with the new ViewManager-level
 // `sanitizeUrl` guard (src/main/url-validator.ts). A persisted `data:` URL
@@ -9,11 +11,19 @@ import Store from 'electron-store';
 const SAFE_SCHEME = /^(https?|about|file):/i;
 const DEBOUNCE_MS = 1000;
 
-/** The persisted shape. Keep it minimal — transient state (title, loading, history flags) is not saved. */
+/**
+ * The persisted shape. Transient state (loading, audio, crash) is not saved.
+ * M16 adds `title` + `favicon` (unloaded tabs show them in the drawer before
+ * their page exists) and `history` (back/forward survives restarts). Older
+ * files without these fields still load.
+ */
 export interface PersistedTab {
   id: string;
   url: string;
   isMobile: boolean;
+  title: string;
+  favicon: string | null;
+  history: HistorySnapshot | null;
 }
 export interface PersistedTabs {
   tabs: PersistedTab[];
@@ -38,11 +48,15 @@ export function sanitizePersisted(raw: unknown): PersistedTabs | null {
   const cleaned: PersistedTab[] = [];
   for (const entry of obj.tabs) {
     if (!entry || typeof entry !== 'object') continue;
-    const e = entry as { id?: unknown; url?: unknown; isMobile?: unknown };
+    const e = entry as {
+      id?: unknown; url?: unknown; isMobile?: unknown; title?: unknown; favicon?: unknown; history?: unknown;
+    };
     if (typeof e.id !== 'string' || e.id === '' || typeof e.url !== 'string') continue;
     if (!SAFE_SCHEME.test(e.url)) continue;
     const isMobile = typeof e.isMobile === 'boolean' ? e.isMobile : true;
-    cleaned.push({ id: e.id, url: e.url, isMobile });
+    const title = typeof e.title === 'string' ? e.title : '';
+    const favicon = typeof e.favicon === 'string' ? storableFavicon(e.favicon) : null;
+    cleaned.push({ id: e.id, url: e.url, isMobile, title, favicon, history: sanitizeHistory(e.history) });
   }
   if (cleaned.length === 0) return null;
 
@@ -56,6 +70,25 @@ export function sanitizePersisted(raw: unknown): PersistedTabs | null {
   return { tabs: cleaned, activeId };
 }
 
+/** Validate a persisted history blob (M16); null when absent or unusable. */
+function sanitizeHistory(raw: unknown): HistorySnapshot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const h = raw as { entries?: unknown; index?: unknown };
+  if (!Array.isArray(h.entries) || typeof h.index !== 'number' || !Number.isInteger(h.index)) return null;
+  const entries: { url: string; title?: string; pageState?: string }[] = [];
+  for (const item of h.entries) {
+    if (!item || typeof item !== 'object') return null;
+    const x = item as { url?: unknown; title?: unknown; pageState?: unknown };
+    if (typeof x.url !== 'string') return null;
+    entries.push({
+      url: x.url,
+      title: typeof x.title === 'string' ? x.title : '',
+      ...(typeof x.pageState === 'string' ? { pageState: x.pageState } : {}),
+    });
+  }
+  return buildHistorySnapshot(entries, h.index);
+}
+
 /** Load persisted tabs from the store; null if none or malformed. */
 export function loadPersistedTabs(store: Store<StoreSchema>): PersistedTabs | null {
   try {
@@ -66,33 +99,47 @@ export function loadPersistedTabs(store: Store<StoreSchema>): PersistedTabs | nu
   }
 }
 
+/** M16: a burst of updates (e.g. a ticking title) can't postpone the write longer than this. */
+const MAX_WAIT_MS = 5000;
+
 /**
- * Returns a save function that coalesces rapid writes into one persisted update
- * after DEBOUNCE_MS of quiescence. flush() forces an immediate write (used on quit).
+ * Returns a scheduler that coalesces rapid saves into one persisted update
+ * after DEBOUNCE_MS of quiescence — or MAX_WAIT_MS after the first pending
+ * change, whichever comes first. M16: takes a *producer* that is only called
+ * when the write actually happens, so serializing every tab's history isn't
+ * paid on every tab event. flush() writes immediately (used on quit).
  */
-export function createPersistedTabSaver(store: Store<StoreSchema>): {
-  save: (snapshot: PersistedTabs) => void;
+export function createPersistedTabSaver(
+  store: Pick<Store<StoreSchema>, 'set'>,
+): {
+  save: (produce: () => PersistedTabs | null) => void;
   flush: () => void;
 } {
-  let timer: NodeJS.Timeout | null = null;
-  let pending: PersistedTabs | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let firstPendingAt: number | null = null;
+  let produce: (() => PersistedTabs | null) | null = null;
 
   const commit = (): void => {
-    if (pending) {
-      store.set('tabs', pending);
-      pending = null;
-    }
+    if (timer) clearTimeout(timer);
     timer = null;
+    firstPendingAt = null;
+    const p = produce;
+    produce = null;
+    if (!p) return;
+    const snapshot = p();
+    if (snapshot) store.set('tabs', snapshot);
   };
 
   return {
-    save(snapshot: PersistedTabs): void {
-      pending = snapshot;
+    save(next: () => PersistedTabs | null): void {
+      produce = next;
+      const now = Date.now();
+      firstPendingAt ??= now;
       if (timer) clearTimeout(timer);
-      timer = setTimeout(commit, DEBOUNCE_MS);
+      const wait = Math.max(0, Math.min(DEBOUNCE_MS, firstPendingAt + MAX_WAIT_MS - now));
+      timer = setTimeout(commit, wait);
     },
     flush(): void {
-      if (timer) clearTimeout(timer);
       commit();
     },
   };

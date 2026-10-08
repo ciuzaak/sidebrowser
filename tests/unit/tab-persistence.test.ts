@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { sanitizePersisted } from '../../src/main/tab-persistence';
+import { describe, it, expect, vi } from 'vitest';
+import { createPersistedTabSaver, sanitizePersisted, type PersistedTabs } from '../../src/main/tab-persistence';
 
 describe('sanitizePersisted', () => {
   it('returns null when input is missing or malformed', () => {
@@ -21,8 +21,8 @@ describe('sanitizePersisted', () => {
     });
     expect(result).toEqual({
       tabs: [
-        { id: 'a', url: 'https://example.com', isMobile: true },
-        { id: 'c', url: 'about:blank', isMobile: true },
+        { id: 'a', url: 'https://example.com', isMobile: true, title: '', favicon: null, history: null },
+        { id: 'c', url: 'about:blank', isMobile: true, title: '', favicon: null, history: null },
       ],
       activeId: 'c',
     });
@@ -56,7 +56,7 @@ describe('sanitizePersisted', () => {
       activeId: 'a',
     });
     expect(result?.tabs).toEqual([
-      { id: 'a', url: 'file:///C:/x.html', isMobile: true },
+      { id: 'a', url: 'file:///C:/x.html', isMobile: true, title: '', favicon: null, history: null },
     ]);
   });
 
@@ -69,18 +69,18 @@ describe('sanitizePersisted', () => {
       activeId: '',
     });
     expect(result).toEqual({
-      tabs: [{ id: 'a', url: 'https://example.com', isMobile: true }],
+      tabs: [{ id: 'a', url: 'https://example.com', isMobile: true, title: '', favicon: null, history: null }],
       activeId: 'a',
     });
   });
 
   it('preserves isMobile when present', () => {
     const result = sanitizePersisted({
-      tabs: [{ id: 'a', url: 'https://a.com', isMobile: false }],
+      tabs: [{ id: 'a', url: 'https://a.com', isMobile: false, title: '', favicon: null, history: null }],
       activeId: 'a',
     });
     expect(result).toEqual({
-      tabs: [{ id: 'a', url: 'https://a.com', isMobile: false }],
+      tabs: [{ id: 'a', url: 'https://a.com', isMobile: false, title: '', favicon: null, history: null }],
       activeId: 'a',
     });
   });
@@ -95,10 +95,95 @@ describe('sanitizePersisted', () => {
     });
     expect(result).toEqual({
       tabs: [
-        { id: 'a', url: 'https://a.com', isMobile: true },
-        { id: 'b', url: 'https://b.com', isMobile: true },
+        { id: 'a', url: 'https://a.com', isMobile: true, title: '', favicon: null, history: null },
+        { id: 'b', url: 'https://b.com', isMobile: true, title: '', favicon: null, history: null },
       ],
       activeId: 'a',
     });
   });
 });
+
+describe('sanitizePersisted — M16 fields', () => {
+  it('keeps title, favicon and a valid history snapshot', () => {
+    const out = sanitizePersisted({
+      tabs: [{
+        id: 'a',
+        url: 'https://a.com/2',
+        isMobile: false,
+        title: 'Two',
+        favicon: 'https://a.com/f.ico',
+        history: { entries: [{ url: 'https://a.com/1', title: 'One', pageState: 'ps' }, { url: 'https://a.com/2', title: 'Two' }], index: 1 },
+      }],
+      activeId: 'a',
+    });
+    expect(out?.tabs[0]).toEqual({
+      id: 'a',
+      url: 'https://a.com/2',
+      isMobile: false,
+      title: 'Two',
+      favicon: 'https://a.com/f.ico',
+      history: { entries: [{ url: 'https://a.com/1', title: 'One', pageState: 'ps' }, { url: 'https://a.com/2', title: 'Two' }], index: 1 },
+    });
+  });
+
+  it('drops malformed history but keeps the tab', () => {
+    for (const history of [{ entries: 'x', index: 0 }, { entries: [{ url: 1 }], index: 0 }, { entries: [], index: 0 }, { entries: [{ url: 'https://a.com' }], index: 0.5 }]) {
+      const out = sanitizePersisted({ tabs: [{ id: 'a', url: 'https://a.com', isMobile: true, history }], activeId: 'a' });
+      expect(out?.tabs[0]?.history).toBeNull();
+    }
+  });
+
+  it('loads pre-M16 files (no title/favicon/history)', () => {
+    const out = sanitizePersisted({ tabs: [{ id: 'a', url: 'https://a.com', isMobile: true }], activeId: 'a' });
+    expect(out?.tabs[0]).toEqual({ id: 'a', url: 'https://a.com', isMobile: true, title: '', favicon: null, history: null });
+  });
+});
+
+describe('createPersistedTabSaver (M16)', () => {
+  const snap: PersistedTabs = { tabs: [], activeId: 'a' };
+
+  it('calls the producer only when writing, once per burst', () => {
+    vi.useFakeTimers();
+    try {
+      const set = vi.fn();
+      const saver = createPersistedTabSaver({ set } as never);
+      const produce = vi.fn(() => snap);
+      saver.save(produce);
+      saver.save(produce);
+      saver.save(produce);
+      expect(produce).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1000);
+      expect(produce).toHaveBeenCalledTimes(1);
+      expect(set).toHaveBeenCalledWith('tabs', snap);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a continuous stream of updates still writes within the max wait', () => {
+    vi.useFakeTimers();
+    try {
+      const set = vi.fn();
+      const saver = createPersistedTabSaver({ set } as never);
+      for (let t = 0; t < 6000; t += 500) {
+        saver.save(() => snap);
+        vi.advanceTimersByTime(500);
+      }
+      expect(set.mock.calls.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('flush writes immediately; null snapshots are skipped', () => {
+    const set = vi.fn();
+    const saver = createPersistedTabSaver({ set } as never);
+    saver.save(() => null);
+    saver.flush();
+    expect(set).not.toHaveBeenCalled();
+    saver.save(() => snap);
+    saver.flush();
+    expect(set).toHaveBeenCalledTimes(1);
+  });
+});
+

@@ -14,7 +14,7 @@
 // exe into the installer — so the installed app shows our icon, not Electron's.
 
 import { resolve, join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 // rcedit@5 ships as CJS with a named export; pull it via createRequire +
@@ -41,5 +41,19 @@ export default async function afterPack(context) {
 
   console.log(`[afterPack] rcedit --set-icon on ${exePath}`);
   await rcedit(exePath, { icon: iconPath });
+  // Fail the build if any source icon image is missing from the patched exe.
+  const ico = readFileSync(iconPath);
+  const exe = readFileSync(exePath);
+  const count = ico.readUInt16LE(4);
+  if (count === 0) throw new Error('[afterPack] icon has no images');
+  for (let i = 0; i < count; i++) {
+    const entry = 6 + i * 16;
+    const size = ico.readUInt32LE(entry + 8);
+    const offset = ico.readUInt32LE(entry + 12);
+    if (size === 0 || offset + size > ico.length ||
+        !exe.includes(ico.subarray(offset, offset + size))) {
+      throw new Error(`[afterPack] packaged exe is missing icon image ${i}`);
+    }
+  }
   console.log(`[afterPack] icon injected`);
 }

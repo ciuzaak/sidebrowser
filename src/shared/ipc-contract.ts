@@ -1,12 +1,21 @@
 // Centralized IPC channel names and payload types.
 // All main/renderer IPC must go through this module — never use string literals inline.
 
-import type { HistoryEntry, Settings, SettingsPatch, Suggestion, Tab, TabsSnapshot, WindowState } from './types';
+import type {
+  DownloadInfo,
+  FindResult,
+  HistoryEntry,
+  Settings,
+  SettingsPatch,
+  Suggestion,
+  Tab,
+  TabsSnapshot,
+  StorageUsage,
+  TopSite,
+  WindowState,
+} from './types';
 
 export const IpcChannels = {
-  // Smoke-test channel kept from M0 for the preload API sanity check.
-  appPing: 'app:ping',
-
   // Multi-tab management (M2).
   tabCreate: 'tab:create',
   tabClose: 'tab:close',
@@ -85,6 +94,40 @@ export const IpcChannels = {
    * was started by Ctrl+Tab. There is no automatic Ctrl-release detection.
    */
   cycleEnd: 'cycle:end',
+
+  /** R→M send (M17). Self-drawn window controls. */
+  windowMinimize: 'window:minimize',
+  windowClose: 'window:close',
+  /** R→M invoke (M17). Stop button in the address pill. */
+  tabStop: 'tab:stop',
+  /** R→M send (M17). TabDrawer overlay height; offsets the active view. */
+  viewSetTopInset: 'view:set-top-inset',
+  /** R→M invoke (M17). Half-res JPEG data URL of the active page, or null. */
+  viewCaptureActive: 'view:capture-active',
+  /** R→M invoke (M17). NewTab "Frequent" tiles, grouped by host, ranked by frecency. */
+  historyTopSites: 'history:top-sites',
+
+  /** R→M invoke (M16). User mute for a tab. */
+  tabSetMuted: 'tab:set-muted',
+  /** R→M invoke (M16). Find in the active tab (start or step). */
+  findStart: 'find:start',
+  /** R→M send (M16). Stop finding, clear the selection. */
+  findStop: 'find:stop',
+  /** M→R event (M16). found-in-page result for the active tab. */
+  findResult: 'find:result',
+  /** R→M invoke (M16). Current downloads list (most recent first). */
+  downloadsList: 'downloads:list',
+  /** M→R event (M16). Full downloads list after any change (throttled). */
+  downloadsChanged: 'downloads:changed',
+  /** R→M send (M16). Download item actions. */
+  downloadsOpen: 'downloads:open',
+  downloadsShowInFolder: 'downloads:show-in-folder',
+  downloadsCancel: 'downloads:cancel',
+  downloadsClear: 'downloads:clear',
+  /** R→M invoke (M16). Settings → Storage. */
+  storageUsage: 'storage:usage',
+  storageClearCache: 'storage:clear-cache',
+  storageClearSiteData: 'storage:clear-site-data',
 } as const;
 
 /**
@@ -94,16 +137,13 @@ export const IpcChannels = {
  */
 export type ShortcutAction =
   | 'focus-address-bar'
-  | 'toggle-settings-drawer';
+  | 'toggle-settings-drawer'
+  /** M16 Ctrl+F. */
+  | 'open-find';
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];
 
 export interface IpcContract {
-  [IpcChannels.appPing]: {
-    request: { message: string };
-    response: { reply: string; timestamp: number };
-  };
-
   [IpcChannels.tabCreate]: {
     /** Optional initial URL; defaults to about:blank. */
     request: { url?: string };
@@ -144,6 +184,10 @@ export interface IpcContract {
     response: void;
   };
   [IpcChannels.tabReload]: {
+    request: { id: string };
+    response: void;
+  };
+  [IpcChannels.tabStop]: {
     request: { id: string };
     response: void;
   };
@@ -191,9 +235,9 @@ export interface IpcContract {
   };
   [IpcChannels.viewSetSuppressed]: {
     /**
-     * R→M send. When true, ViewManager shrinks active tab view bounds to
-     * {0,0,0,0} so the settings drawer can render over the native
-     * WebContentsView layer.
+     * R→M send. When true, ViewManager hides the active tab's view
+     * (View.setVisible(false); bounds unchanged — M17) so renderer overlays
+     * can render over the native WebContentsView layer.
      */
     request: { suppressed: boolean };
     response: void;
@@ -246,6 +290,86 @@ export interface IpcContract {
   };
   [IpcChannels.cycleEnd]: {
     /** R→M send: end any active Ctrl+Tab cycle. Fired by closeDrawer. */
+    request: Record<string, never>;
+    response: void;
+  };
+
+  [IpcChannels.windowMinimize]: {
+    request: Record<string, never>;
+    response: void;
+  };
+  [IpcChannels.windowClose]: {
+    request: Record<string, never>;
+    response: void;
+  };
+  [IpcChannels.viewSetTopInset]: {
+    /** TabDrawer height in CSS px; 0 when the drawer closes. */
+    request: { px: number };
+    response: void;
+  };
+  [IpcChannels.viewCaptureActive]: {
+    request: Record<string, never>;
+    response: string | null;
+  };
+  [IpcChannels.historyTopSites]: {
+    request: { limit: number };
+    response: TopSite[];
+  };
+
+  [IpcChannels.tabSetMuted]: {
+    request: { id: string; muted: boolean };
+    response: void;
+  };
+  [IpcChannels.findStart]: {
+    /**
+     * `newSession: true` starts a new search (text changed); false steps to
+     * the next/previous match. Maps to Electron's (confusingly named)
+     * `findInPage({ findNext })`, which is true for a NEW session.
+     */
+    request: { text: string; forward: boolean; newSession: boolean };
+    response: void;
+  };
+  [IpcChannels.findStop]: {
+    request: Record<string, never>;
+    response: void;
+  };
+  [IpcChannels.findResult]: {
+    request: FindResult;
+    response: void;
+  };
+  [IpcChannels.downloadsList]: {
+    request: Record<string, never>;
+    response: DownloadInfo[];
+  };
+  [IpcChannels.downloadsChanged]: {
+    request: DownloadInfo[];
+    response: void;
+  };
+  [IpcChannels.downloadsOpen]: {
+    request: { id: string };
+    response: void;
+  };
+  [IpcChannels.downloadsShowInFolder]: {
+    request: { id: string };
+    response: void;
+  };
+  [IpcChannels.downloadsCancel]: {
+    request: { id: string };
+    response: void;
+  };
+  [IpcChannels.downloadsClear]: {
+    request: Record<string, never>;
+    response: void;
+  };
+  [IpcChannels.storageUsage]: {
+    request: Record<string, never>;
+    response: StorageUsage;
+  };
+  [IpcChannels.storageClearCache]: {
+    request: Record<string, never>;
+    response: void;
+  };
+  [IpcChannels.storageClearSiteData]: {
     request: Record<string, never>;
     response: void;
   };

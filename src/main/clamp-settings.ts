@@ -45,6 +45,7 @@ import type {
 import {
   BUILTIN_SEARCH_ENGINES,
   BUILTIN_SEARCH_ENGINE_IDS,
+  DISCARD_AFTER_OPTIONS,
 } from '@shared/settings-defaults';
 
 /**
@@ -157,6 +158,13 @@ function clampLifecycle(
   if (partial.restoreTabsOnLaunch !== undefined) {
     out.restoreTabsOnLaunch = partial.restoreTabsOnLaunch;
   }
+  if (typeof partial.discardAfterMin === 'number' && Number.isFinite(partial.discardAfterMin)) {
+    // Snap to the nearest allowed option (0 / 15 / 30 / 60).
+    const v = partial.discardAfterMin;
+    out.discardAfterMin = DISCARD_AFTER_OPTIONS.reduce((best, opt) =>
+      Math.abs(opt - v) < Math.abs(best - v) ? opt : best,
+    );
+  }
   return out;
 }
 
@@ -166,6 +174,9 @@ function clampBrowsing(
   const out: Partial<BrowsingSettings> = {};
   if (partial.defaultIsMobile !== undefined) {
     out.defaultIsMobile = partial.defaultIsMobile;
+  }
+  if (partial.muteWhenHidden !== undefined) {
+    out.muteWhenHidden = partial.muteWhenHidden;
   }
   // Empty-string guard: drop the field so current is preserved.
   if (

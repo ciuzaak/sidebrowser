@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeUrlInput } from '@shared/url';
+import { hostSchemeFor, normalizeUrlInput } from '@shared/url';
 
 const GOOGLE_T = 'https://www.google.com/search?q={query}';
 const DDG_T = 'https://duckduckgo.com/?q={query}';
@@ -56,5 +56,52 @@ describe('normalizeUrlInput', () => {
   it('returns about:blank for empty or whitespace-only input', () => {
     expect(normalizeUrlInput('', GOOGLE_T)).toBe('about:blank');
     expect(normalizeUrlInput('   ', GOOGLE_T)).toBe('about:blank');
+  });
+});
+
+describe('normalizeUrlInput — local / intranet hosts (M16)', () => {
+  it('IPv4 literals open over http, with optional port and path', () => {
+    expect(normalizeUrlInput('192.168.1.1', GOOGLE_T)).toBe('http://192.168.1.1');
+    expect(normalizeUrlInput('192.168.1.1:8080/admin', GOOGLE_T)).toBe('http://192.168.1.1:8080/admin');
+    expect(normalizeUrlInput('10.0.0.5/x?y=1', GOOGLE_T)).toBe('http://10.0.0.5/x?y=1');
+  });
+
+  it('localhost opens over http', () => {
+    expect(normalizeUrlInput('localhost', GOOGLE_T)).toBe('http://localhost');
+    expect(normalizeUrlInput('localhost:3000/app', GOOGLE_T)).toBe('http://localhost:3000/app');
+  });
+
+  it('single-label host with an explicit port opens over http', () => {
+    expect(normalizeUrlInput('nas:5000', GOOGLE_T)).toBe('http://nas:5000');
+  });
+
+  it('IPv6 literals open over http', () => {
+    expect(normalizeUrlInput('[::1]:8080', GOOGLE_T)).toBe('http://[::1]:8080');
+  });
+
+  it('dotted hosts with a port keep https', () => {
+    expect(normalizeUrlInput('example.com:8443/x', GOOGLE_T)).toBe('https://example.com:8443/x');
+  });
+
+  it('still searches plain words, bad IPs, bad ports and non-numeric "ports"', () => {
+    expect(normalizeUrlInput('electron', GOOGLE_T)).toContain('google.com/search?q=electron');
+    expect(normalizeUrlInput('999.1.1.1', GOOGLE_T)).toContain('google.com/search');
+    expect(normalizeUrlInput('nas:70000', GOOGLE_T)).toContain('google.com/search');
+    expect(normalizeUrlInput('mailto:x', GOOGLE_T)).toContain('google.com/search');
+  });
+});
+
+describe('hostSchemeFor', () => {
+  it('classifies hosts', () => {
+    expect(hostSchemeFor('127.0.0.1')).toBe('http');
+    expect(hostSchemeFor('LOCALHOST:80')).toBe('http');
+    expect(hostSchemeFor('github.com')).toBe('https');
+    expect(hostSchemeFor('1.2.3')).toBeNull();
+    expect(hostSchemeFor('foo')).toBeNull();
+    expect(hostSchemeFor('a@b.com')).toBeNull();
+    expect(hostSchemeFor('bücher.de')).toBe('https');
+    expect(hostSchemeFor('例子.中国')).toBe('https');
+    expect(hostSchemeFor('my_host.example.com')).toBe('https');
+    expect(hostSchemeFor('xn--bcher-kva.xn--p1ai')).toBe('https');
   });
 });

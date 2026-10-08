@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type ReactElement, type MouseEvent } from 'react';
 import { X } from 'lucide-react';
-import type { HistoryEntry } from '@shared/types';
-import appIconUrl from '@resources/icon.ico';
+import type { HistoryEntry, TopSite } from '@shared/types';
+import appIconUrl from '@resources/newtab-icon.png';
 import { useActiveTab } from '../store/tab-store';
 import { Favicon } from './Favicon';
 
 const NEWTAB_RECENT_LIMIT = 12;
+const NEWTAB_TOP_SITES_LIMIT = 8;
 
 function greetingFor(hour: number): string {
   if (hour >= 5 && hour < 12) return 'Good morning';
@@ -17,6 +18,7 @@ function greetingFor(hour: number): string {
 export function NewTab(): ReactElement {
   const tab = useActiveTab();
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  const [sites, setSites] = useState<TopSite[]>([]);
   // Computed once at mount — page is short-lived; we don't redraw on tick.
   const greeting = useMemo(() => greetingFor(new Date().getHours()), []);
 
@@ -27,6 +29,10 @@ export function NewTab(): ReactElement {
         .historyRecent(NEWTAB_RECENT_LIMIT)
         .then((es) => { if (!cancelled) setEntries(es); })
         .catch((err: unknown) => { console.error('[sidebrowser] NewTab historyRecent failed', err); });
+      void window.sidebrowser
+        .historyTopSites(NEWTAB_TOP_SITES_LIMIT)
+        .then((ts) => { if (!cancelled) setSites(ts); })
+        .catch((err: unknown) => { console.error('[sidebrowser] NewTab historyTopSites failed', err); });
     };
     load();
     const off = window.sidebrowser.onHistoryChanged(load);
@@ -50,6 +56,7 @@ export function NewTab(): ReactElement {
     window.sidebrowser.historyClear();
     // Optimistic — main will broadcast history:changed which re-loads anyway.
     setEntries([]);
+    setSites([]);
   };
 
   return (
@@ -57,18 +64,46 @@ export function NewTab(): ReactElement {
       className="absolute inset-0 flex flex-col items-stretch overflow-y-auto bg-[var(--surface)] text-[var(--fg)]"
       data-testid="newtab"
     >
-      <div className="flex flex-col items-center px-4 pt-12 pb-6">
+      <div className="flex flex-col items-center px-4 pt-8 pb-4">
         <img
           src={appIconUrl}
           alt=""
           aria-hidden="true"
-          className="mb-4 size-14 rounded-[var(--radius-lg)] shadow-[var(--shadow-card)]"
+          className="mb-3 size-10 rounded-[var(--radius-md)] shadow-[var(--shadow-card)]"
         />
-        <h1 className="text-lg font-semibold tracking-tight">{greeting}</h1>
+        <h1 className="text-base font-semibold tracking-tight">{greeting}</h1>
         <p className="mt-1 text-xs text-[var(--fg-muted)]">
           Pick up where you left off, or search above.
         </p>
       </div>
+
+      {sites.length > 0 && (
+        <section className="px-4 pb-2" data-testid="newtab-frequent">
+          <div className="py-2 text-xs font-semibold uppercase tracking-wider text-[var(--fg-muted)]">
+            Frequent
+          </div>
+          <ul className="grid grid-cols-4 gap-x-2 gap-y-3">
+            {sites.map((site) => (
+              <li key={site.origin}>
+                <button
+                  type="button"
+                  data-testid="newtab-topsite"
+                  title={site.origin}
+                  onMouseDown={(ev) => { ev.preventDefault(); navigate(`${site.origin}/`); }}
+                  className="group flex w-full flex-col items-center gap-1 rounded-[var(--radius-md)] p-1 hover:bg-[var(--accent-tint)]"
+                >
+                  <span className="flex size-10 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--surface-elevated)] shadow-[var(--shadow-card)]">
+                    <Favicon src={site.favicon} size={20} />
+                  </span>
+                  <span className="w-full truncate text-center text-[11px] text-[var(--fg-muted)] group-hover:text-[var(--fg)]">
+                    {site.host}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <div className="flex items-center justify-between px-4 py-2">
         <span className="text-xs font-semibold uppercase tracking-wider text-[var(--fg-muted)]">

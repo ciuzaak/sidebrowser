@@ -11,6 +11,7 @@ import {
 import { useActiveTab } from '../store/tab-store';
 import { useSettingsStore } from '../store/settings-store';
 import { normalizeUrlInput } from '@shared/url';
+import { spotlightHint } from '../lib/spotlight-hint';
 import { AddressSuggestions, type AddressSuggestionsHandle } from './AddressSuggestions';
 
 interface Props {
@@ -23,10 +24,11 @@ interface Props {
 /**
  * Spotlight — centered modal that owns the address-bar input + suggestions.
  *
- * Chrome's old inline address bar was unusable on a 380 px side-panel window
- * (titleBarOverlay reservation + 6 IconButtons left ~50 px for the input).
  * The Spotlight defers all typing/searching to a wider floating panel that
  * pops up when the user clicks the SearchPill in TopBar (or presses Cmd+L).
+ * M17: one card (input → suggestions → Enter hint) over a blurred scrim; the
+ * scrim sits on a snapshot of the page (rendered by App, beneath this
+ * component) because the native view is hidden while the Spotlight is open.
  *
  * Mounted only while open: the parent (App.tsx) conditionally renders this
  * via `{searchOpen && <SearchSpotlight … />}`, so the `useState` initializer
@@ -53,6 +55,12 @@ export function SearchSpotlight({ onClose, pillRef }: Props): ReactElement {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const suggestionsRef = useRef<AddressSuggestionsHandle | null>(null);
   const [suggestionsOpen, setSuggestionsOpen] = useState(true);
+  const [highlighted, setHighlighted] = useState<string | null>(null);
+
+  const search = settings?.search;
+  const engine = search?.engines.find((eng) => eng.id === search.activeId);
+  const tpl = engine?.urlTemplate ?? 'https://www.google.com/search?q={query}';
+  const hint = spotlightHint(draft, highlighted, tpl, engine?.name ?? 'Google');
 
   // Focus + select on mount. useLayoutEffect to avoid a flash where the user
   // could see the input unfocused before the autofocus tick runs.
@@ -94,10 +102,6 @@ export function SearchSpotlight({ onClose, pillRef }: Props): ReactElement {
     if (picked !== null) {
       url = picked;
     } else {
-      const search = settings?.search;
-      const tpl =
-        search?.engines.find((eng) => eng.id === search.activeId)?.urlTemplate ??
-        'https://www.google.com/search?q={query}';
       url = normalizeUrlInput(draft, tpl);
     }
     void window.sidebrowser.navigate(tab.id, url);
@@ -123,38 +127,48 @@ export function SearchSpotlight({ onClose, pillRef }: Props): ReactElement {
   };
 
   return (
-    <div
-      data-testid="search-spotlight"
-      className="absolute inset-0 z-20 flex items-start justify-center bg-black/30"
-    >
-      <div
-        ref={panelRef}
-        className="mt-12 flex w-[88%] max-w-[420px] flex-col rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-elevated)]"
-      >
-        <form onSubmit={submit} className="relative p-1.5">
-          <input
-            ref={inputRef}
-            type="text"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onFocus={() => setSuggestionsOpen(true)}
-            onKeyDown={onKeyDown}
-            placeholder="Search or enter URL"
-            spellCheck={false}
-            data-testid="address-bar"
-            className={
-              'h-9 w-full rounded-[var(--radius-md)] px-3 text-sm ' +
-              'bg-transparent text-[var(--fg)] placeholder-[var(--fg-muted)] ' +
-              'outline-none'
-            }
-          />
+    <div data-testid="search-spotlight" className="absolute inset-0 z-20">
+      <div className="absolute inset-0 bg-[var(--scrim)] backdrop-blur-[6px]" />
+      <div className="relative flex justify-center">
+        <div
+          ref={panelRef}
+          className="mt-12 flex w-[88%] max-w-[420px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-elevated)] shadow-[var(--shadow-elevated)]"
+        >
+          <form onSubmit={submit} className="p-1.5">
+            <input
+              ref={inputRef}
+              type="text"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onFocus={() => setSuggestionsOpen(true)}
+              onKeyDown={onKeyDown}
+              placeholder="Search or enter URL"
+              spellCheck={false}
+              data-testid="address-bar"
+              className={
+                'h-9 w-full rounded-[var(--radius-md)] px-3 text-sm ' +
+                'bg-transparent text-[var(--fg)] placeholder-[var(--fg-muted)] ' +
+                'outline-none'
+              }
+            />
+          </form>
           <AddressSuggestions
             ref={suggestionsRef}
             query={draft}
             open={suggestionsOpen}
             onPick={handlePick}
+            onHighlightChange={setHighlighted}
           />
-        </form>
+          <div
+            data-testid="spotlight-hint"
+            className="flex items-center justify-between gap-2 border-t border-[var(--border-subtle)] px-3 py-1.5 text-[11px] text-[var(--fg-muted)]"
+          >
+            <span className="truncate">{hint}</span>
+            <kbd className="shrink-0 rounded-[var(--radius-sm)] border border-[var(--border)] px-1 font-sans">
+              ↵
+            </kbd>
+          </div>
+        </div>
       </div>
     </div>
   );

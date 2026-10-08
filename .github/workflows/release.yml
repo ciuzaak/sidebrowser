@@ -1,0 +1,48 @@
+name: Release
+
+# Push a vX.Y.Z tag (matching package.json) to build the Windows installer on a
+# clean runner and attach it to a *draft* GitHub release. Write the release
+# notes, then publish the draft by hand.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    name: Build installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Check tag matches package.json
+        shell: bash
+        run: |
+          v="v$(node -p "require('./package.json').version")"
+          if [ "$v" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json ($v)"
+            exit 1
+          fi
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      # resources/icon.ico → installer icon (win.icon) + app exe (scripts/after-pack.mjs).
+      - run: pnpm build:installer --publish never
+      - name: Attach installer to draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "$GITHUB_REF_NAME" --notes ""
+          fi
+          gh release upload "$GITHUB_REF_NAME" release/*.exe --clobber
