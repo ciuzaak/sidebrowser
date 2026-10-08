@@ -96,9 +96,9 @@ export function App(): ReactElement {
 
   // M6 + M12 + M14: ViewManager suppression. SettingsDrawer, NewTab, and the
   // new SearchSpotlight all render OVER the page area in renderer DOM, so the
-  // underlying WebContentsView has to shrink to {0,0,0,0}. TabDrawer lives
-  // in the chrome bar (above the page area) — NOT in the suppression set;
-  // otherwise the page would go blank while the drawer is open.
+  // underlying WebContentsView is hidden (M17: View.setVisible, bounds kept).
+  // TabDrawer is NOT in the suppression set — it reports a top inset instead
+  // (M17), so the page stays live and un-resized below it.
   const suppressed = settingsOpen || searchOpen || isNewTab;
   useEffect(() => {
     window.sidebrowser.setViewSuppressed(suppressed);
@@ -156,12 +156,6 @@ export function App(): ReactElement {
           settingsToggleRef={settingsToggleRef}
           searchPillRef={searchPillRef}
         />
-        <TabDrawer
-          open={drawerOpen}
-          onSelect={closeDrawer}
-          onOutsideClose={closeDrawer}
-          toggleRef={tabsToggleRef}
-        />
       </div>
       <div className="relative flex-1">
         {isNewTab && <NewTab />}
@@ -173,6 +167,12 @@ export function App(): ReactElement {
         {searchOpen && (
           <SearchSpotlight onClose={closeSearch} pillRef={searchPillRef} />
         )}
+        <TabDrawer
+          open={drawerOpen}
+          onSelect={closeDrawer}
+          onOutsideClose={closeDrawer}
+          toggleRef={tabsToggleRef}
+        />
       </div>
     </div>
   );
