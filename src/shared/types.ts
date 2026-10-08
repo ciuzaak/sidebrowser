@@ -227,13 +227,16 @@ export interface DownloadInfo {
   /** Absolute path the file is (being) saved to. */
   path: string;
   url: string;
-  state: 'progressing' | 'completed' | 'cancelled' | 'interrupted';
+  /** 'blocked' = refused at start because the file type is dangerous (M16). */
+  state: 'progressing' | 'completed' | 'cancelled' | 'interrupted' | 'blocked';
   receivedBytes: number;
   /** 0 when the server sent no Content-Length. */
   totalBytes: number;
   startedAt: number;
   /** Tab webContents that started it (null for e.g. a popup). */
   webContentsId: number | null;
+  /** Executable / script type: never opened from the drawer, only shown in its folder. */
+  executable: boolean;
 }
 
 /** Find-in-page result for the active tab (M16). */

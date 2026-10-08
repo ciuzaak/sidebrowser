@@ -48,7 +48,10 @@ export function StorageSection({
     try {
       if (action === 'cache') await window.sidebrowser.storageClearCache();
       else await window.sidebrowser.storageClearSiteData();
-      setDone(action === 'cache' ? 'Cache cleared' : 'All site data cleared');
+      setDone(action === 'cache' ? 'Cache cleared' : 'All site data cleared — open tabs reloaded');
+    } catch (err) {
+      console.error('[sidebrowser] storage clear failed', err);
+      setDone('Clearing failed — try again');
     } finally {
       setBusy(null);
       await refresh();

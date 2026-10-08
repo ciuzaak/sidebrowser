@@ -106,6 +106,21 @@ describe('bindHistoryRecorderEvents', () => {
     expect(recorder.revokeFailed).not.toHaveBeenCalled();
   });
 
+  it('a restore navigation is skipped once, later navigations are recorded (M16)', () => {
+    detach();
+    let skip = true;
+    const d2 = bindHistoryRecorderEvents('tab3', wc as never, recorder as never, () => currentUrl, () => {
+      const r = skip;
+      skip = false;
+      return r;
+    });
+    wc.emit('did-navigate', null, 'https://a.com/restored');
+    expect(recorder.recordNavigation).not.toHaveBeenCalled();
+    wc.emit('did-navigate', null, 'https://a.com/next');
+    expect(recorder.recordNavigation).toHaveBeenCalledWith('tab3', 'https://a.com/next');
+    d2();
+  });
+
   it('null recorder is a no-op (no throws when bound with null)', () => {
     detach();
     const noopDetach = bindHistoryRecorderEvents('tab2', wc as never, null, () => 'https://a.com');

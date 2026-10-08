@@ -20,14 +20,25 @@ export const ALLOWED_PERMISSIONS: ReadonlySet<string> = new Set([
   'top-level-storage-access',
 ]);
 
-export function isPermissionAllowed(permission: string): boolean {
+/** External protocols a page may hand to the OS (mail client / dialer). */
+const ALLOWED_EXTERNAL_PROTOCOLS: ReadonlySet<string> = new Set(['mailto:', 'tel:']);
+
+export function isPermissionAllowed(permission: string, externalURL?: string): boolean {
+  if (permission === 'openExternal') {
+    try {
+      return externalURL !== undefined && ALLOWED_EXTERNAL_PROTOCOLS.has(new URL(externalURL).protocol);
+    } catch {
+      return false;
+    }
+  }
   return ALLOWED_PERMISSIONS.has(permission);
 }
 
 /** Install the request + check handlers on the shared browsing session. */
 export function installPermissionPolicy(session: Session): void {
-  session.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(isPermissionAllowed(permission));
+  session.setPermissionRequestHandler((_wc, permission, callback, details) => {
+    const externalURL = 'externalURL' in details ? (details.externalURL as string | undefined) : undefined;
+    callback(isPermissionAllowed(permission, externalURL));
   });
   session.setPermissionCheckHandler((_wc, permission) => isPermissionAllowed(permission));
 }

@@ -99,33 +99,47 @@ export function loadPersistedTabs(store: Store<StoreSchema>): PersistedTabs | nu
   }
 }
 
+/** M16: a burst of updates (e.g. a ticking title) can't postpone the write longer than this. */
+const MAX_WAIT_MS = 5000;
+
 /**
- * Returns a save function that coalesces rapid writes into one persisted update
- * after DEBOUNCE_MS of quiescence. flush() forces an immediate write (used on quit).
+ * Returns a scheduler that coalesces rapid saves into one persisted update
+ * after DEBOUNCE_MS of quiescence — or MAX_WAIT_MS after the first pending
+ * change, whichever comes first. M16: takes a *producer* that is only called
+ * when the write actually happens, so serializing every tab's history isn't
+ * paid on every tab event. flush() writes immediately (used on quit).
  */
-export function createPersistedTabSaver(store: Store<StoreSchema>): {
-  save: (snapshot: PersistedTabs) => void;
+export function createPersistedTabSaver(
+  store: Pick<Store<StoreSchema>, 'set'>,
+): {
+  save: (produce: () => PersistedTabs | null) => void;
   flush: () => void;
 } {
-  let timer: NodeJS.Timeout | null = null;
-  let pending: PersistedTabs | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let firstPendingAt: number | null = null;
+  let produce: (() => PersistedTabs | null) | null = null;
 
   const commit = (): void => {
-    if (pending) {
-      store.set('tabs', pending);
-      pending = null;
-    }
+    if (timer) clearTimeout(timer);
     timer = null;
+    firstPendingAt = null;
+    const p = produce;
+    produce = null;
+    if (!p) return;
+    const snapshot = p();
+    if (snapshot) store.set('tabs', snapshot);
   };
 
   return {
-    save(snapshot: PersistedTabs): void {
-      pending = snapshot;
+    save(next: () => PersistedTabs | null): void {
+      produce = next;
+      const now = Date.now();
+      firstPendingAt ??= now;
       if (timer) clearTimeout(timer);
-      timer = setTimeout(commit, DEBOUNCE_MS);
+      const wait = Math.max(0, Math.min(DEBOUNCE_MS, firstPendingAt + MAX_WAIT_MS - now));
+      timer = setTimeout(commit, wait);
     },
     flush(): void {
-      if (timer) clearTimeout(timer);
       commit();
     },
   };

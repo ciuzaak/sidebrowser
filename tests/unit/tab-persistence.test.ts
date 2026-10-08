@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { sanitizePersisted } from '../../src/main/tab-persistence';
+import { describe, it, expect, vi } from 'vitest';
+import { createPersistedTabSaver, sanitizePersisted, type PersistedTabs } from '../../src/main/tab-persistence';
 
 describe('sanitizePersisted', () => {
   it('returns null when input is missing or malformed', () => {
@@ -136,6 +136,54 @@ describe('sanitizePersisted — M16 fields', () => {
   it('loads pre-M16 files (no title/favicon/history)', () => {
     const out = sanitizePersisted({ tabs: [{ id: 'a', url: 'https://a.com', isMobile: true }], activeId: 'a' });
     expect(out?.tabs[0]).toEqual({ id: 'a', url: 'https://a.com', isMobile: true, title: '', favicon: null, history: null });
+  });
+});
+
+describe('createPersistedTabSaver (M16)', () => {
+  const snap: PersistedTabs = { tabs: [], activeId: 'a' };
+
+  it('calls the producer only when writing, once per burst', () => {
+    vi.useFakeTimers();
+    try {
+      const set = vi.fn();
+      const saver = createPersistedTabSaver({ set } as never);
+      const produce = vi.fn(() => snap);
+      saver.save(produce);
+      saver.save(produce);
+      saver.save(produce);
+      expect(produce).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1000);
+      expect(produce).toHaveBeenCalledTimes(1);
+      expect(set).toHaveBeenCalledWith('tabs', snap);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a continuous stream of updates still writes within the max wait', () => {
+    vi.useFakeTimers();
+    try {
+      const set = vi.fn();
+      const saver = createPersistedTabSaver({ set } as never);
+      for (let t = 0; t < 6000; t += 500) {
+        saver.save(() => snap);
+        vi.advanceTimersByTime(500);
+      }
+      expect(set.mock.calls.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('flush writes immediately; null snapshots are skipped', () => {
+    const set = vi.fn();
+    const saver = createPersistedTabSaver({ set } as never);
+    saver.save(() => null);
+    saver.flush();
+    expect(set).not.toHaveBeenCalled();
+    saver.save(() => snap);
+    saver.flush();
+    expect(set).toHaveBeenCalledTimes(1);
   });
 });
 

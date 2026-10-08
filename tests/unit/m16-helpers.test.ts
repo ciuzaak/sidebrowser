@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { join } from 'node:path';
 import { isPermissionAllowed } from '../../src/main/permissions';
 import { decideWindowOpen, popupSizeFromFeatures } from '../../src/main/window-open';
-import { sanitizeFilename, uniqueFilename } from '../../src/main/downloads-naming';
+import { classifyDownload, sanitizeFilename, uniqueFilename } from '../../src/main/downloads-naming';
 import { mobileZoomMetrics } from '../../src/main/mobile-zoom';
 import { pickTabsToDiscard, type DiscardCandidate } from '../../src/main/tab-discard';
 import { effectiveMuted } from '../../src/main/audio';
@@ -17,12 +17,19 @@ describe('isPermissionAllowed', () => {
       expect(isPermissionAllowed(p)).toBe(false);
     }
   });
+  it('openExternal only for mailto: / tel:', () => {
+    expect(isPermissionAllowed('openExternal', 'mailto:a@b.c')).toBe(true);
+    expect(isPermissionAllowed('openExternal', 'tel:+123')).toBe(true);
+    expect(isPermissionAllowed('openExternal', 'ms-settings:privacy')).toBe(false);
+    expect(isPermissionAllowed('openExternal', 'not a url')).toBe(false);
+  });
 });
 
 describe('decideWindowOpen', () => {
   it('popups for new-window http(s) only', () => {
     expect(decideWindowOpen({ disposition: 'new-window', url: 'https://accounts.google.com/x' })).toEqual({ kind: 'popup' });
     expect(decideWindowOpen({ disposition: 'new-window', url: 'javascript:alert(1)' })).toEqual({ kind: 'tab', activate: true });
+    expect(decideWindowOpen({ disposition: 'new-window', url: 'about:blank' })).toEqual({ kind: 'popup' });
   });
   it('background-tab opens without activating; others activate', () => {
     expect(decideWindowOpen({ disposition: 'background-tab', url: 'https://a.com' })).toEqual({ kind: 'tab', activate: false });
@@ -50,6 +57,18 @@ describe('downloads naming', () => {
     expect(uniqueFilename('D', 'f.zip', (p) => taken.has(p))).toBe(join('D', 'f (2).zip'));
     expect(uniqueFilename('D', 'g.zip', (p) => taken.has(p))).toBe(join('D', 'g.zip'));
     expect(uniqueFilename('D', 'README', () => false)).toBe(join('D', 'README'));
+  });
+});
+
+describe('classifyDownload', () => {
+  it('blocks NTLM-leaking shortcut types, flags executables', () => {
+    expect(classifyDownload('evil.scf')).toBe('blocked');
+    expect(classifyDownload('Docs.URL')).toBe('blocked');
+    expect(classifyDownload('x.library-ms')).toBe('blocked');
+    expect(classifyDownload('setup.exe')).toBe('executable');
+    expect(classifyDownload('run.PS1')).toBe('executable');
+    expect(classifyDownload('report.pdf')).toBe('normal');
+    expect(classifyDownload('archive.zip')).toBe('normal');
   });
 });
 

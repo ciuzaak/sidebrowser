@@ -214,6 +214,11 @@ describe('buildContextMenuTemplate — M16 tiers', () => {
     expect(deps.saveUrl).toHaveBeenCalledWith(src);
   });
 
+  it('data: images only offer copy / save', () => {
+    const tpl = buildContextMenuTemplate(makeParams({ mediaType: 'image', srcURL: 'data:image/png;base64,AA' }), makeDeps(), URL);
+    expect(labelsOf(tpl).slice(0, 3)).toEqual(['Copy image', 'Save image…', '---']);
+  });
+
   it('zoom items route to deps.zoom and show the current percent', () => {
     const deps = makeDeps({ zoomPercent: 120 });
     const tpl = buildContextMenuTemplate(makeParams(), deps, URL);

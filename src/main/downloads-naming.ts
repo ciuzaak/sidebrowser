@@ -11,6 +11,33 @@ export function sanitizeFilename(name: string): string {
 }
 
 /**
+ * Windows shortcut / shell-handler types. Merely landing in a folder that
+ * Explorer then lists (e.g. via "Show in folder") can make Windows fetch an
+ * attacker-controlled UNC path and leak NTLM credentials — never saved.
+ */
+const BLOCKED_EXTENSIONS: ReadonlySet<string> = new Set([
+  '.scf', '.url', '.lnk', '.library-ms', '.search-ms', '.searchconnector-ms',
+  '.settingcontent-ms', '.appref-ms',
+]);
+
+/** Executables / scripts: saved, but never launched from the drawer. */
+const EXECUTABLE_EXTENSIONS: ReadonlySet<string> = new Set([
+  '.exe', '.msi', '.msix', '.msixbundle', '.appx', '.appxbundle', '.bat', '.cmd', '.com', '.scr',
+  '.pif', '.cpl', '.ps1', '.psm1', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh', '.hta', '.jar',
+  '.reg', '.msc', '.application', '.gadget', '.inf', '.dll', '.sys',
+]);
+
+export type DownloadKind = 'blocked' | 'executable' | 'normal';
+
+/** M16: classify a download by its (sanitized) file name. */
+export function classifyDownload(name: string): DownloadKind {
+  const ext = extname(sanitizeFilename(name)).toLowerCase();
+  if (BLOCKED_EXTENSIONS.has(ext)) return 'blocked';
+  if (EXECUTABLE_EXTENSIONS.has(ext)) return 'executable';
+  return 'normal';
+}
+
+/**
  * First free path in `dir` for `name`: `name.ext`, `name (1).ext`, `name (2).ext`, …
  * `exists` is injected so the function stays pure/testable.
  */

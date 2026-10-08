@@ -4,14 +4,15 @@
  *
  * - `new-window` (window.open with features — OAuth / payment popups) becomes a
  *   real popup window so `window.opener` survives and the flow can postMessage
- *   back. Only for http(s) URLs.
+ *   back. Only for http(s) URLs and `about:blank` (the "open blank, then set
+ *   location" pattern).
  * - `background-tab` (Ctrl / middle click) opens a tab without activating it.
  * - Everything else opens and activates a tab (pre-M16 behavior).
  */
 export type WindowOpenDecision = { kind: 'popup' } | { kind: 'tab'; activate: boolean };
 
 export function decideWindowOpen(details: { disposition: string; url: string }): WindowOpenDecision {
-  if (details.disposition === 'new-window' && /^https?:/i.test(details.url)) {
+  if (details.disposition === 'new-window' && (/^https?:/i.test(details.url) || details.url === 'about:blank' || details.url === '')) {
     return { kind: 'popup' };
   }
   if (details.disposition === 'background-tab') return { kind: 'tab', activate: false };

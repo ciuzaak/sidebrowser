@@ -189,7 +189,10 @@ export function App(): ReactElement {
   // TabDrawer is NOT in the suppression set — it reports a top inset instead
   // (M17), so the page stays live and un-resized below it. M16: a crashed
   // active tab shows the CrashOverlay in place of its (blank) page.
-  const crashed = activeTab?.crashed != null;
+  // "Wait" on a hung page is keyed by tab + state, so a new hang shows again.
+  const [waitedKey, setWaitedKey] = useState<string | null>(null);
+  const crashKey = activeTab ? `${activeTab.id}:${activeTab.crashed}` : '';
+  const crashed = activeTab?.crashed != null && waitedKey !== crashKey;
   const suppressed = settingsOpen || searchOpen || isNewTab || crashed;
   useEffect(() => {
     window.sidebrowser.setViewSuppressed(suppressed);
@@ -258,7 +261,7 @@ export function App(): ReactElement {
       </div>
       <div className="relative flex-1">
         {isNewTab && <NewTab />}
-        {activeTab && crashed && <CrashOverlay tab={activeTab} />}
+        {activeTab && crashed && <CrashOverlay tab={activeTab} onWait={() => setWaitedKey(crashKey)} />}
         <SettingsDrawer
           open={settingsOpen}
           onClose={closeSettings}

@@ -1,22 +1,21 @@
-import { useState, type ReactElement } from 'react';
+import type { ReactElement } from 'react';
 import { RotateCw, TriangleAlert } from 'lucide-react';
 import type { Tab } from '@shared/types';
 
 interface Props {
   tab: Tab;
+  /** Hung page: hide the overlay (App then shows the page again). */
+  onWait: () => void;
 }
 
 /**
  * M16: shown over the page area when the active tab's renderer crashed or
  * stopped responding (the native view is suppressed meanwhile). Reload
- * restarts the page; for a hung page "Wait" dismisses the overlay until the
- * state changes again.
+ * restarts the page; for a hung page "Wait" dismisses the overlay (App stops
+ * suppressing the view) until the state changes again.
  */
-export function CrashOverlay({ tab }: Props): ReactElement | null {
-  // Keyed by tab id + state so a new crash shows the overlay again.
-  const [waitedKey, setWaitedKey] = useState<string | null>(null);
-  const key = `${tab.id}:${tab.crashed}`;
-  if (tab.crashed === null || waitedKey === key) return null;
+export function CrashOverlay({ tab, onWait }: Props): ReactElement | null {
+  if (tab.crashed === null) return null;
 
   const hung = tab.crashed === 'unresponsive';
   return (
@@ -37,7 +36,7 @@ export function CrashOverlay({ tab }: Props): ReactElement | null {
         {hung && (
           <button
             type="button"
-            onClick={() => setWaitedKey(key)}
+            onClick={onWait}
             className="rounded-[var(--radius-md)] border border-[var(--border)] px-3 py-1 text-sm text-[var(--fg)] hover:bg-[var(--accent-tint)]"
           >
             Wait

@@ -2,13 +2,14 @@
  * DownloadsManager (M16). Saves every download straight into the Downloads
  * folder under a unique name (no Save dialog — it would open behind our
  * always-on-top window) and keeps a session-lifetime list for the renderer's
- * Downloads drawer.
+ * Downloads drawer. Shortcut / shell-handler types are refused outright;
+ * executables are saved but never launched from the drawer.
  */
 import { existsSync, mkdirSync } from 'node:fs';
 import { basename } from 'node:path';
 import type { DownloadItem, Session } from 'electron';
 import type { DownloadInfo } from '@shared/types';
-import { uniqueFilename } from './downloads-naming';
+import { classifyDownload, sanitizeFilename, uniqueFilename } from './downloads-naming';
 
 const NOTIFY_THROTTLE_MS = 250;
 
@@ -35,7 +36,30 @@ export class DownloadsManager {
   constructor(private readonly deps: DownloadsManagerDeps) {}
 
   install(session: Session): void {
-    session.on('will-download', (_event, item, webContents) => {
+    session.on('will-download', (event, item, webContents) => {
+      const kind = classifyDownload(item.getFilename());
+      if (kind === 'blocked') {
+        // Never write NTLM-leaking shortcut / shell-handler files to disk.
+        event.preventDefault();
+        const id = `dl-${++this.seq}`;
+        this.items.set(id, {
+          item,
+          info: {
+            id,
+            filename: sanitizeFilename(item.getFilename()),
+            path: '',
+            url: item.getURL(),
+            state: 'blocked',
+            receivedBytes: 0,
+            totalBytes: item.getTotalBytes(),
+            startedAt: Date.now(),
+            webContentsId: webContents?.id ?? null,
+            executable: false,
+          },
+        });
+        this.notifyNow();
+        return;
+      }
       const dir = this.deps.getDirectory();
       try {
         mkdirSync(dir, { recursive: true });
@@ -59,13 +83,15 @@ export class DownloadsManager {
         totalBytes: item.getTotalBytes(),
         startedAt: Date.now(),
         webContentsId: webContents?.id ?? null,
+        executable: kind === 'executable',
       };
       this.items.set(id, { info, item });
 
       item.on('updated', (_e, state) => {
         info.receivedBytes = item.getReceivedBytes();
         info.totalBytes = item.getTotalBytes();
-        if (state === 'interrupted') info.state = 'interrupted';
+        // Chromium may auto-resume an interrupted download — follow it back.
+        info.state = state === 'interrupted' ? 'interrupted' : 'progressing';
         this.scheduleNotify();
       });
       item.once('done', (_e, state) => {
@@ -82,19 +108,20 @@ export class DownloadsManager {
     return [...this.items.values()].map((t) => ({ ...t.info })).reverse();
   }
 
+  /** Open a finished, non-executable file with its default app. */
   open(id: string): void {
     const t = this.items.get(id);
-    if (t?.info.state === 'completed') void this.deps.openPath(t.info.path);
+    if (t?.info.state === 'completed' && !t.info.executable) void this.deps.openPath(t.info.path);
   }
 
   showInFolder(id: string): void {
     const t = this.items.get(id);
-    if (t) this.deps.showItemInFolder(t.info.path);
+    if (t && t.info.path !== '') this.deps.showItemInFolder(t.info.path);
   }
 
   cancel(id: string): void {
     const t = this.items.get(id);
-    if (t?.info.state === 'progressing') t.item.cancel();
+    if (t?.info.state === 'progressing' || t?.info.state === 'interrupted') t.item.cancel();
   }
 
   /** Remove finished entries (completed / cancelled / interrupted) from the list. */

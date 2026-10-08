@@ -29,6 +29,7 @@ import { isFragmentOnlyChange, storableFavicon } from './history-filter';
 import {
   buildHistorySnapshot,
   snapshotNavState,
+  withoutPageState,
   type HistorySnapshot,
 } from './tab-history';
 
@@ -64,12 +65,18 @@ export function bindHistoryRecorderEvents(
   wc: Electron.WebContents,
   recorder: HistoryRecorder | null,
   getCurrentUrl: () => string,
+  /**
+   * M16: returns true (once) when the next main-frame navigation is a
+   * session restore of an already-visited page — not a new visit.
+   */
+  consumeSkipNextVisit: () => boolean = () => false,
 ): () => void {
   if (recorder === null) return () => {};
 
   let lastRecorded = '';
   const onNavigate = (_e: Electron.Event, url: string): void => {
     lastRecorded = url;
+    if (consumeSkipNextVisit()) return;
     recorder.recordNavigation(tabId, url);
   };
   const onNavigateInPage = (_e: Electron.Event, url: string, isMainFrame: boolean): void => {
@@ -215,7 +222,32 @@ interface ManagedTab {
   lastActiveAt: number;
   /** Zoom factor (1 = 100%). Survives unload; not persisted across restarts. */
   zoom: number;
+  /** epoch ms the page was last heard playing audio (auto-unload grace). */
+  lastAudibleAt: number;
+  /** The next did-navigate is a history restore, not a new visit. */
+  skipNextVisit: boolean;
+  /** Popups currently open from this tab (window.open with features). */
+  popups: number;
 }
+
+/** Auto-unload never takes a tab that played audio this recently. */
+const AUDIO_GRACE_MS = 5 * 60_000;
+/** At most this many concurrent popup windows per tab; extra ones open as tabs. */
+const MAX_POPUPS_PER_TAB = 3;
+/**
+ * Run in a page before auto-unloading it: true when a text field or
+ * contenteditable holds user-typed content (unload would lose it — restore
+ * brings back scroll position but not form values).
+ */
+const DIRTY_INPUT_CHECK = `(() => {
+  const skip = ['hidden', 'button', 'submit', 'reset', 'checkbox', 'radio', 'image', 'file', 'range', 'color'];
+  for (const el of document.querySelectorAll('textarea, input')) {
+    if (el.tagName === 'INPUT' && skip.includes((el.type || '').toLowerCase())) continue;
+    if (el.value !== el.defaultValue && el.value.trim() !== '') return true;
+  }
+  const ae = document.activeElement;
+  return !!(ae && ae.isContentEditable && (ae.textContent || '').trim() !== '');
+})()`;
 
 /** Persistable shape of one tab — see tab-persistence.ts. */
 export interface SerializedTab {
@@ -359,6 +391,9 @@ export class ViewManager {
       history,
       lastActiveAt: Date.now(),
       zoom: 1,
+      lastAudibleAt: 0,
+      skipNextVisit: false,
+      popups: 0,
     };
     this.tabs.set(id, managed);
 
@@ -378,9 +413,7 @@ export class ViewManager {
     this.recorder?.forgetTab(id);
 
     // M16: remember it for Ctrl+Shift+T (skip blank tabs with no history).
-    const history = managed.view
-      ? this.captureHistory(managed.view.webContents)
-      : managed.history;
+    const history = this.historyOf(managed);
     if (managed.tab.url !== 'about:blank' || (history !== null && history.entries.length > 1)) {
       this.closedTabs.push({
         url: managed.tab.url,
@@ -393,9 +426,11 @@ export class ViewManager {
     }
 
     const neighbour = neighbourAfterClose(Array.from(this.tabs.keys()), id);
-    if (this.fullscreenTabId === id) this.fullscreenTabId = null;
+    const wasFullscreen = this.fullscreenTabId === id;
+    if (wasFullscreen) this.fullscreenTabId = null;
     this.destroyView(id, managed);
     this.tabs.delete(id);
+    if (wasFullscreen) this.reapplyMobileEmulationAll();
 
     if (this.tabs.size === 0) {
       // Spec §10: never leave the user with zero tabs — auto-seed a blank.
@@ -438,11 +473,20 @@ export class ViewManager {
       if (prev) {
         prev.lastActiveAt = now;
         if (this.fullscreenTabId === prevId) this.exitFullscreen(prev);
+        // M16: find highlights belong to the tab the FindBar searched.
+        const pwc = prev.view?.webContents;
+        if (pwc && !pwc.isDestroyed()) pwc.stopFindInPage('clearSelection');
       }
     }
     this.activeId = id;
     managed.lastActiveAt = now;
-    if (!managed.view) this.ensureView(id);
+    if (!managed.view) {
+      try {
+        this.ensureView(id);
+      } catch (err) {
+        console.error('[sidebrowser] could not create the page for tab', id, err);
+      }
+    }
     this.applyBounds();
     this.emitSnapshot();
   }
@@ -597,8 +641,13 @@ export class ViewManager {
         url: m.tab.url,
         isMobile: m.tab.isMobile,
         title: m.tab.title,
-        favicon: m.tab.favicon,
-        history: m.view ? this.captureHistory(m.view.webContents) : m.history,
+        favicon: storableFavicon(m.tab.favicon),
+        // Page state (scroll etc.) stays in memory for unload / reopen; the
+        // file only keeps URLs + titles so it stays small.
+        history: (() => {
+          const h = this.historyOf(m);
+          return h ? withoutPageState(h) : null;
+        })(),
       })),
       activeId: this.activeId,
     };
@@ -730,13 +779,19 @@ export class ViewManager {
    * `busyWcIds` are webContents with an in-progress download. Returns the
    * unloaded tab ids.
    */
-  discardInactive(now: number, minutes: number, busyWcIds: ReadonlySet<number> = new Set()): string[] {
+  async discardInactive(
+    now: number,
+    minutes: number,
+    busyWcIds: ReadonlySet<number> = new Set(),
+  ): Promise<string[]> {
     const ids = pickTabsToDiscard(
       Array.from(this.tabs.values()).map((m) => ({
         id: m.tab.id,
         active: m.tab.id === this.activeId,
         loaded: m.view !== null,
-        audible: m.tab.audible,
+        // Recently audible counts as audible: a playlist pausing between
+        // tracks must not be unloaded mid-listen.
+        audible: m.tab.audible || now - m.lastAudibleAt < AUDIO_GRACE_MS,
         isLoading: m.tab.isLoading,
         crashed: m.tab.crashed,
         lastActiveAt: m.lastActiveAt,
@@ -745,8 +800,28 @@ export class ViewManager {
       now,
       minutes,
     );
-    for (const id of ids) this.unloadTab(id);
-    return ids;
+    const unloaded: string[] = [];
+    for (const id of ids) {
+      const wc = this.tabs.get(id)?.view?.webContents;
+      if (!wc || wc.isDestroyed()) continue;
+      // Unsaved text in a field would be lost (restore keeps scroll, not
+      // form values). Unknown (script failed) counts as dirty.
+      const dirty = await wc
+        .executeJavaScript(DIRTY_INPUT_CHECK, false)
+        .then((v: unknown) => v === true)
+        .catch(() => true);
+      if (dirty) continue;
+      if (this.unloadTab(id)) unloaded.push(id);
+    }
+    return unloaded;
+  }
+
+  /** M16: reload every loaded tab (after "Clear all site data"). */
+  reloadAllLoaded(): void {
+    for (const m of this.tabs.values()) {
+      const wc = m.view?.webContents;
+      if (wc && !wc.isDestroyed()) wc.reload();
+    }
   }
 
   /**
@@ -756,7 +831,7 @@ export class ViewManager {
   unloadTab(id: string): boolean {
     const managed = this.tabs.get(id);
     if (!managed?.view || id === this.activeId) return false;
-    managed.history = this.captureHistory(managed.view.webContents);
+    managed.history = this.historyOf(managed);
     this.destroyView(id, managed);
     this.updateTab(id, {
       loaded: false,
@@ -878,19 +953,42 @@ export class ViewManager {
     this.applyBounds();
 
     // Intentionally not awaited: events update the tab as the load proceeds.
+    // The snapshot stays on `managed.history` until the restore settles, so a
+    // close / save / unload in that window still sees the full stack.
     const history = managed.history;
-    managed.history = null;
-    if (history !== null && history.entries.length > 0) {
-      wc.navigationHistory
-        .restore({ entries: history.entries, index: history.index })
-        .catch((err: unknown) => {
-          console.error('[sidebrowser] history restore failed:', err);
-        });
-    } else {
+    const loadUrl = (): void => {
       void wc.loadURL(managed.tab.url).catch((err: unknown) => {
         console.error('[sidebrowser] loadURL failed:', err);
       });
+    };
+    if (history !== null && history.entries.length > 0) {
+      managed.skipNextVisit = true; // a restore is not a new history visit
+      wc.navigationHistory
+        .restore({ entries: history.entries, index: history.index })
+        .then(() => {
+          if (managed.view === view) managed.history = null;
+        })
+        .catch((err: unknown) => {
+          console.error('[sidebrowser] history restore failed:', err);
+          if (managed.view !== view) return;
+          managed.history = null;
+          managed.skipNextVisit = false;
+          // Nothing committed (e.g. the active entry failed) -> plain load.
+          if (wc.navigationHistory.length() === 0) loadUrl();
+        });
+    } else {
+      managed.history = null;
+      loadUrl();
     }
+  }
+
+  /**
+   * Current back/forward stack of a tab: the pending / unloaded snapshot if
+   * there is one, else captured from the live page.
+   */
+  private historyOf(managed: ManagedTab): HistorySnapshot | null {
+    if (managed.history !== null) return managed.history;
+    return managed.view ? this.captureHistory(managed.view.webContents) : null;
   }
 
   /** Close a tab's page (if any) and forget its webContents. */
@@ -1047,6 +1145,8 @@ export class ViewManager {
     const opts: Electron.BrowserWindowConstructorOptions = {
       width,
       height,
+      // Owned by the main window: stays above it and closes with it.
+      parent: this.window,
       alwaysOnTop: true,
       autoHideMenuBar: true,
       minimizable: false,
@@ -1069,8 +1169,30 @@ export class ViewManager {
     return opts;
   }
 
-  private setupPopup(child: BrowserWindow): void {
+  private setupPopup(openerId: string, child: BrowserWindow): void {
+    const opener = this.tabs.get(openerId);
+    if (opener) {
+      opener.popups += 1;
+      child.once('closed', () => { opener.popups = Math.max(0, opener.popups - 1); });
+    }
     child.setAlwaysOnTop(true, 'screen-saver', 1);
+    // Show where the popup really is (it has no address bar): "host — title".
+    const retitle = (): void => {
+      if (child.isDestroyed()) return;
+      let host = '';
+      try {
+        host = new URL(child.webContents.getURL()).host;
+      } catch {
+        // about:blank etc.
+      }
+      const title = child.webContents.getTitle();
+      child.setTitle(host ? `${host} — ${title}` : title);
+    };
+    child.webContents.on('page-title-updated', (e) => {
+      e.preventDefault();
+      retitle();
+    });
+    child.webContents.on('did-navigate', retitle);
     if (process.env['SIDEBROWSER_E2E'] === '1' && process.env['SIDEBROWSER_E2E_VISIBLE'] !== '1') {
       child.setOpacity(0);
       child.setIgnoreMouseEvents(true);
@@ -1122,14 +1244,19 @@ export class ViewManager {
       this.updateTab(id, { favicon: favicons[0] ?? null });
 
     // M16: audio indicator.
-    const onAudio = (e: Electron.Event<Electron.WebContentsAudioStateChangedEventParams>): void =>
+    const onAudio = (e: Electron.Event<Electron.WebContentsAudioStateChangedEventParams>): void => {
+      const managed = this.tabs.get(id);
+      // Either edge marks "recently audible" for the auto-unload grace period.
+      if (managed) managed.lastAudibleAt = Date.now();
       this.updateTab(id, { audible: e.audible });
+    };
 
     // M16: crash / hang recovery (overlay in the renderer).
     const onGone = (): void => {
       if (this.fullscreenTabId === id) {
         this.fullscreenTabId = null;
         this.applyBounds();
+        this.reapplyMobileEmulationAll();
       }
       this.updateTab(id, { crashed: 'crashed', isLoading: false, audible: false });
     };
@@ -1217,15 +1344,20 @@ export class ViewManager {
     };
 
     // M16: route window.open / target=_blank by disposition.
-    const onDidCreateWindow = (child: BrowserWindow): void => this.setupPopup(child);
+    const onDidCreateWindow = (child: BrowserWindow): void => this.setupPopup(id, child);
     wc.setWindowOpenHandler((details) => {
       const decision = decideWindowOpen(details);
-      if (decision.kind === 'popup') {
+      const popups = this.tabs.get(id)?.popups ?? 0;
+      if (decision.kind === 'popup' && popups < MAX_POPUPS_PER_TAB) {
         return { action: 'allow', overrideBrowserWindowOptions: this.popupWindowOptions(details.features) };
+      }
+      if (decision.kind === 'popup' && !/^https?:/i.test(details.url)) {
+        // Over the popup limit and nothing loadable as a tab (about:blank).
+        return { action: 'deny' };
       }
       // Note: Electron has no API to unregister setWindowOpenHandler — it's
       // cleaned up when the webContents closes.
-      this.createTab(details.url, { activate: decision.activate });
+      this.createTab(details.url, { activate: decision.kind === 'tab' ? decision.activate : true });
       return { action: 'deny' };
     });
 
@@ -1252,6 +1384,12 @@ export class ViewManager {
       wc,
       this.recorder,
       () => this.tabs.get(id)?.tab.url ?? '',
+      () => {
+        const managed = this.tabs.get(id);
+        if (!managed?.skipNextVisit) return false;
+        managed.skipNextVisit = false;
+        return true;
+      },
     );
 
     return (): void => {

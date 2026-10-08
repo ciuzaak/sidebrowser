@@ -380,19 +380,15 @@ app.whenReady().then(() => {
   // 3. Tab persistence — save on any snapshot change or per-tab URL update.
   const store = createTabStore();
   const saver = createPersistedTabSaver(store);
-  viewManager.onSnapshot(() => {
-    const snap = viewManager.serializeForPersistence();
-    if (snap) saver.save(snap);
-  });
-  viewManager.onTabUpdated(() => {
-    const snap = viewManager.serializeForPersistence();
-    if (snap) saver.save(snap);
-  });
+  // M16: the producer runs only when the debounced write happens.
+  const produceTabs = (): PersistedTabs | null => viewManager.serializeForPersistence();
+  viewManager.onSnapshot(() => saver.save(produceTabs));
+  viewManager.onTabUpdated(() => saver.save(produceTabs));
 
   // M16: unload background tabs idle longer than lifecycle.discardAfterMin.
   const DISCARD_CHECK_MS = 60_000;
   const discardTimer = setInterval(() => {
-    viewManager.discardInactive(
+    void viewManager.discardInactive(
       Date.now(),
       settingsStore.get().lifecycle.discardAfterMin,
       downloads.busyWebContentsIds(),
@@ -672,7 +668,7 @@ app.whenReady().then(() => {
       // M16 hooks.
       crashActive: (): void => { viewManager.getActiveWebContents()?.forcefullyCrashRenderer(); },
       unloadTab: (id: string): boolean => viewManager.unloadTab(id),
-      discardNow: (minutes: number): string[] =>
+      discardNow: (minutes: number): Promise<string[]> =>
         viewManager.discardInactive(Date.now() + minutes * 60_000 + 1, minutes, downloads.busyWebContentsIds()),
       reopenClosedTab: (): boolean => viewManager.reopenClosedTab(),
       zoomActive: (action: 'in' | 'out' | 'reset'): void => { viewManager.zoomActive(action); },

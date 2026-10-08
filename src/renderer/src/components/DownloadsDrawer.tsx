@@ -25,6 +25,8 @@ function statusLine(d: DownloadInfo): string {
       return 'Cancelled';
     case 'interrupted':
       return 'Failed';
+    case 'blocked':
+      return 'Blocked — unsafe file type';
   }
 }
 
@@ -90,12 +92,17 @@ export function DownloadsDrawer({ open, downloads, onOutsideClose, toggleRef }: 
                 <button
                   type="button"
                   disabled={d.state !== 'completed'}
-                  onClick={() => window.sidebrowser.downloadsOpen(d.id)}
+                  onClick={() =>
+                    // Executables are never launched from here — show them instead.
+                    d.executable
+                      ? window.sidebrowser.downloadsShowInFolder(d.id)
+                      : window.sidebrowser.downloadsOpen(d.id)
+                  }
                   className="min-w-0 flex-1 text-left disabled:cursor-default"
                   title={d.path}
                 >
                   <div
-                    className={`truncate text-sm ${d.state === 'cancelled' || d.state === 'interrupted' ? 'text-[var(--fg-muted)] line-through' : 'text-[var(--fg)]'}`}
+                    className={`truncate text-sm ${d.state === 'cancelled' || d.state === 'interrupted' || d.state === 'blocked' ? 'text-[var(--fg-muted)] line-through' : 'text-[var(--fg)]'}`}
                   >
                     {d.filename}
                   </div>
@@ -111,11 +118,11 @@ export function DownloadsDrawer({ open, downloads, onOutsideClose, toggleRef }: 
                     </div>
                   )}
                 </button>
-                {d.state === 'progressing' ? (
+                {d.state === 'progressing' || d.state === 'interrupted' ? (
                   <button type="button" aria-label="Cancel download" onClick={() => window.sidebrowser.downloadsCancel(d.id)} className={action}>
                     <X size={14} />
                   </button>
-                ) : (
+                ) : d.state === 'blocked' ? null : (
                   <button type="button" aria-label="Show in folder" data-testid="download-show" onClick={() => window.sidebrowser.downloadsShowInFolder(d.id)} className={action}>
                     <FolderOpen size={14} />
                   </button>

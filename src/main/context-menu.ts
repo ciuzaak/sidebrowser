@@ -132,13 +132,13 @@ export function buildContextMenuTemplate(
   // ── Image ─────────────────────────────────────────────────────────────────
   const src = params.srcURL ?? '';
   if (params.mediaType === 'image' && src !== '') {
-    out.push(
-      { label: 'Open image in new tab', click: () => deps.openInNewTab(src) },
-      { label: 'Copy image', click: () => deps.copyImageAt(params.x, params.y) },
-      { label: 'Copy image address', click: () => deps.copyToClipboard(src) },
-      { label: 'Save image…', click: () => deps.saveUrl(src) },
-      SEP,
-    );
+    // data: / blob: sources can't be opened as a tab (sanitized to blank)
+    // and make a useless "address"; copy / save still work.
+    const http = /^https?:/i.test(src);
+    if (http) out.push({ label: 'Open image in new tab', click: () => deps.openInNewTab(src) });
+    out.push({ label: 'Copy image', click: () => deps.copyImageAt(params.x, params.y) });
+    if (http) out.push({ label: 'Copy image address', click: () => deps.copyToClipboard(src) });
+    out.push({ label: 'Save image…', click: () => deps.saveUrl(src) }, SEP);
   }
 
   // ── Link ──────────────────────────────────────────────────────────────────

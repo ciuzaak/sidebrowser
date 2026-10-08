@@ -266,3 +266,20 @@ Manual smoke (user): §22.
 10. Audio stops when the window hides at the edge and resumes on reveal; per-tab mute works.
 11. Mobile tab: Ctrl+= / Ctrl+- / Ctrl+0 zoom with reflow.
 12. Settings → Storage shows usage; Clear cache keeps logins; Clear all site data signs out.
+
+## 23. Implementation notes (post-execution, 2026-10-08)
+
+Deviations from the sections above, made during execution and the final review:
+
+- **§4.4 persistence.** The file stores history **without `pageState`** (URLs + titles only; page state stays in memory for unload / Ctrl+Shift+T). The tab saver takes a *producer* that only runs when the debounced write happens (1 s quiet, **5 s max wait** so a ticking title can't postpone it forever). Favicons go through the same 16 KB `data:` cap as history.
+- **§4.2 restore.** The snapshot stays on the tab until `navigationHistory.restore()` settles (close / save / unload during the ~0.5 s restore keep the full stack); on failure with nothing committed the tab falls back to `loadURL`. Restores don't count as new history visits.
+- **§4.2 auto-unload.** Also skips tabs that played audio in the last 5 min and tabs whose text fields / focused contenteditable hold typed content (checked in the page right before unloading; unknown counts as dirty). `discardInactive` is async.
+- **§13 popups.** `about:blank` / empty-URL `new-window` requests are popups too ("open blank, then set location"). Popups are owned by the main window (`parent`), titled `host — title`, and capped at 3 concurrent per tab (extra http(s) ones open as tabs).
+- **§12 downloads.** Shortcut / shell-handler types (`.scf .url .lnk .library-ms .search-ms .searchconnector-ms .settingcontent-ms .appref-ms`) are refused and listed as *Blocked*; executables / scripts are saved but clicking them only shows them in their folder. Interrupted → auto-resumed items return to *progressing*.
+- **§6 permissions.** `openExternal` is allowed for `mailto:` / `tel:` only.
+- **§7 address bar.** Internationalized hostnames (`bücher.de`, `例子.中国`, punycode) and underscores count as hosts.
+- **§8 context menu.** `data:` / `blob:` images offer only Copy / Save.
+- **§9 crash overlay.** "Wait" lives in App and un-suppresses the view (the hung page is shown again).
+- **§11 find.** Switching tabs clears the previous tab's highlight in main.
+- **§17 storage.** "Clear all site data" reloads every open tab afterwards; UI reports failures.
+- **Known, pre-existing (not changed):** Chromium zoom is per-origin, so zooming a desktop tab also zooms other open tabs of the same host until they navigate.

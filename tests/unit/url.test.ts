@@ -99,5 +99,9 @@ describe('hostSchemeFor', () => {
     expect(hostSchemeFor('1.2.3')).toBeNull();
     expect(hostSchemeFor('foo')).toBeNull();
     expect(hostSchemeFor('a@b.com')).toBeNull();
+    expect(hostSchemeFor('bücher.de')).toBe('https');
+    expect(hostSchemeFor('例子.中国')).toBe('https');
+    expect(hostSchemeFor('my_host.example.com')).toBe('https');
+    expect(hostSchemeFor('xn--bcher-kva.xn--p1ai')).toBe('https');
   });
 });

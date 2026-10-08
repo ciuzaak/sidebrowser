@@ -175,7 +175,11 @@ export function registerIpcRouter(
   ipcMain.removeHandler(IpcChannels.storageClearCache);
   ipcMain.handle(IpcChannels.storageClearCache, () => clearCaches(getPersistentSession()));
   ipcMain.removeHandler(IpcChannels.storageClearSiteData);
-  ipcMain.handle(IpcChannels.storageClearSiteData, () => clearAllSiteData(getPersistentSession()));
+  ipcMain.handle(IpcChannels.storageClearSiteData, async () => {
+    await clearAllSiteData(getPersistentSession());
+    // Live pages would otherwise keep (and re-set) the cleared session state.
+    viewManager.reloadAllLoaded();
+  });
 
   ipcMain.on(IpcChannels.findStop, onFindStop);
   ipcMain.on(IpcChannels.downloadsOpen, onDownloadsOpen);

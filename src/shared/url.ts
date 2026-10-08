@@ -55,7 +55,9 @@ export function hostSchemeFor(token: string): 'http' | 'https' | null {
   if (host === 'localhost') return 'http';
   if (isIpv4(host)) return 'http';
   if (port !== undefined && /^[a-z0-9-]+$/.test(host)) return 'http';
-  if (/\.[a-z]{2,}$/i.test(host) && /^[a-z0-9.-]+$/i.test(host)) return 'https';
+  // Letters / digits / '-' / '_' in any script (IDN like bücher.de), and an
+  // alphabetic TLD of 2+ letters (punycode xn-- TLDs included).
+  if (/\.(?:\p{L}{2,}|xn--[a-z0-9-]+)$/iu.test(host) && /^[\p{L}\p{N}._-]+$/u.test(host)) return 'https';
   return null;
 }
 
