@@ -66,6 +66,9 @@ export function TopBar({
   const label = pillLabelFor(url);
   const isPlaceholder = label === PILL_PLACEHOLDER;
   const loading = tab?.isLoading === true;
+  // The startup about:blank load would flash the bar over NewTab; a real
+  // navigation away from blank sets the new URL first, so it still shows.
+  const showLoadBar = loading && !isPlaceholder;
   const badge = formatTabCount(tabCount);
 
   return (
@@ -171,7 +174,7 @@ export function TopBar({
       </div>
 
       <WindowControls />
-      <span className="load-bar" data-loading={loading ? 'true' : 'false'} aria-hidden />
+      <span className="load-bar" data-loading={showLoadBar ? 'true' : 'false'} aria-hidden />
     </div>
   );
 }
