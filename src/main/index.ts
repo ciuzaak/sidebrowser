@@ -39,6 +39,21 @@ if (!gotLock) {
   process.exit(0);
 }
 
+/**
+ * E2E quiet mode: under Playwright (SIDEBROWSER_E2E=1) the window is shown
+ * inactive (no focus steal), fully transparent, click-through and off the
+ * taskbar, so test runs don't disturb the developer's desktop. Rendering is
+ * unchanged — CDP input and capturePage don't depend on OS visibility.
+ * Native occlusion tracking is disabled so pages never flip to
+ * visibilityState=hidden just because other windows cover the invisible one.
+ * Set SIDEBROWSER_E2E_VISIBLE=1 to watch a run.
+ */
+const E2E_QUIET =
+  process.env['SIDEBROWSER_E2E'] === '1' && process.env['SIDEBROWSER_E2E_VISIBLE'] !== '1';
+if (E2E_QUIET) {
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+}
+
 function createWindow(
   initialBounds: Rectangle,
   initialAlwaysOnTop: boolean,
@@ -57,6 +72,7 @@ function createWindow(
     // double-click on the drag region from maximizing a side panel.
     titleBarStyle: 'hidden',
     maximizable: false,
+    show: !E2E_QUIET,
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       sandbox: true,
@@ -75,6 +91,15 @@ function createWindow(
   // standard title bar's "empty bar row" symptom — titleBarStyle: 'hidden' removes
   // that symptom on its own, so we no longer need the visibility lock.
   win.setAutoHideMenuBar(true);
+
+  if (E2E_QUIET) {
+    win.setOpacity(0);
+    win.setIgnoreMouseEvents(true);
+    win.setSkipTaskbar(true);
+    win.once('ready-to-show', () => {
+      if (!win.isDestroyed()) win.showInactive();
+    });
+  }
 
   if (process.env['ELECTRON_RENDERER_URL']) {
     void win.loadURL(process.env['ELECTRON_RENDERER_URL']);
