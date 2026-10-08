@@ -1,6 +1,6 @@
-import { RotateCcw, X, Plus } from 'lucide-react';
+import { ChevronsUpDown, RotateCcw, X, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import type { ChangeEvent, ReactElement, ReactNode, RefObject } from 'react';
+import type { ChangeEvent, CSSProperties, ReactElement, ReactNode, RefObject } from 'react';
 import type { Settings, ThemeChoice, SearchEngine } from '@shared/types';
 import { DEFAULTS, BUILTIN_SEARCH_ENGINES } from '@shared/settings-defaults';
 import { nanoid } from 'nanoid';
@@ -12,9 +12,9 @@ import { useSettingsStore } from '../store/settings-store';
  * **View-suppression coordination.** React DOM cannot cover the native
  * `WebContentsView` that hosts the active tab. The drawer relies on App.tsx
  * firing `view:set-suppressed` IPC on `open` state transitions — main then
- * shrinks the active view to `{0,0,0,0}`, leaving the browser surface empty
- * so this absolutely-positioned panel renders unobstructed. Closing the
- * drawer restores the view bounds via the inverse IPC. See spec §4.2 for the
+ * hides the active view (M17: View.setVisible(false), bounds unchanged), so
+ * this absolutely-positioned panel renders unobstructed. Closing the drawer
+ * shows the view again via the inverse IPC. See spec §4.2 for the
  * "covered-over-web-content" contract and plan §Task 10 for the v1 implementation note.
  *
  * **Null gate.** `useSettingsStore` exposes `settings: Settings | null`; until
@@ -98,18 +98,15 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
               />
             }
           >
-            <select
-              data-testid="settings-theme"
+            <SelectField
+              testId="settings-theme"
               value={settings.appearance.theme}
-              onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-                void update({ appearance: { theme: e.target.value as ThemeChoice } })
-              }
-              className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] px-2 py-1 text-sm text-[var(--fg)] outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
+              onChange={(v) => void update({ appearance: { theme: v as ThemeChoice } })}
             >
               <option value="system">System</option>
               <option value="dark">Dark</option>
               <option value="light">Light</option>
-            </select>
+            </SelectField>
           </Row>
         </Section>
 
@@ -125,18 +122,15 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
               />
             }
           >
-            <select
-              data-testid="settings-window-preset"
+            <SelectField
+              testId="settings-window-preset"
               value={settings.window.preset}
-              onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-                void update({ window: { preset: e.target.value as WindowPreset } })
-              }
-              className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] px-2 py-1 text-sm text-[var(--fg)] outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
+              onChange={(v) => void update({ window: { preset: v as WindowPreset } })}
             >
               <option value="iphone14pro">iPhone 14 Pro (393x852)</option>
               <option value="iphonese">iPhone SE (375x667)</option>
               <option value="pixel7">Pixel 7 (412x915)</option>
-            </select>
+            </SelectField>
           </Row>
           <Slider
             label="Edge threshold"
@@ -209,72 +203,72 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
               />
             }
           >
-            <select
-              data-testid="settings-dim-effect"
+            <SelectField
+              testId="settings-dim-effect"
               value={settings.dim.effect}
-              onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-                void update({ dim: { effect: e.target.value as DimEffect } })
-              }
-              className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] px-2 py-1 text-sm text-[var(--fg)] outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
+              onChange={(v) => void update({ dim: { effect: v as DimEffect } })}
             >
               <option value="dark">Dark</option>
               <option value="light">Light</option>
               <option value="blur">Blur</option>
               <option value="none">None</option>
-            </select>
+            </SelectField>
           </Row>
-          <Slider
-            label="Blur"
-            unit="px"
-            testId="settings-dim-blur"
-            value={settings.dim.blurPx}
-            min={0}
-            max={40}
-            step={1}
-            dimmed={settings.dim.effect !== 'blur'}
-            onChange={(n) => void update({ dim: { blurPx: n } })}
-            rightSlot={
-              <ResetIcon
-                show={settings.dim.blurPx !== DEFAULTS.dim.blurPx}
-                onClick={() => void update({ dim: { blurPx: DEFAULTS.dim.blurPx } })}
-                testId="reset-dim-blur"
-              />
-            }
-          />
-          <Slider
-            label="Dark brightness"
-            testId="settings-dim-dark-brightness"
-            value={settings.dim.darkBrightness}
-            min={0}
-            max={1}
-            step={0.05}
-            dimmed={settings.dim.effect !== 'dark'}
-            onChange={(n) => void update({ dim: { darkBrightness: n } })}
-            rightSlot={
-              <ResetIcon
-                show={settings.dim.darkBrightness !== DEFAULTS.dim.darkBrightness}
-                onClick={() => void update({ dim: { darkBrightness: DEFAULTS.dim.darkBrightness } })}
-                testId="reset-dim-dark-brightness"
-              />
-            }
-          />
-          <Slider
-            label="Light brightness"
-            testId="settings-dim-light-brightness"
-            value={settings.dim.lightBrightness}
-            min={0}
-            max={1}
-            step={0.05}
-            dimmed={settings.dim.effect !== 'light'}
-            onChange={(n) => void update({ dim: { lightBrightness: n } })}
-            rightSlot={
-              <ResetIcon
-                show={settings.dim.lightBrightness !== DEFAULTS.dim.lightBrightness}
-                onClick={() => void update({ dim: { lightBrightness: DEFAULTS.dim.lightBrightness } })}
-                testId="reset-dim-light-brightness"
-              />
-            }
-          />
+          {settings.dim.effect === 'blur' && (
+            <Slider
+              label="Blur"
+              unit="px"
+              testId="settings-dim-blur"
+              value={settings.dim.blurPx}
+              min={0}
+              max={40}
+              step={1}
+              onChange={(n) => void update({ dim: { blurPx: n } })}
+              rightSlot={
+                <ResetIcon
+                  show={settings.dim.blurPx !== DEFAULTS.dim.blurPx}
+                  onClick={() => void update({ dim: { blurPx: DEFAULTS.dim.blurPx } })}
+                  testId="reset-dim-blur"
+                />
+              }
+            />
+          )}
+          {settings.dim.effect === 'dark' && (
+            <Slider
+              label="Dark brightness"
+              testId="settings-dim-dark-brightness"
+              value={settings.dim.darkBrightness}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(n) => void update({ dim: { darkBrightness: n } })}
+              rightSlot={
+                <ResetIcon
+                  show={settings.dim.darkBrightness !== DEFAULTS.dim.darkBrightness}
+                  onClick={() => void update({ dim: { darkBrightness: DEFAULTS.dim.darkBrightness } })}
+                  testId="reset-dim-dark-brightness"
+                />
+              }
+            />
+          )}
+          {settings.dim.effect === 'light' && (
+            <Slider
+              label="Light brightness"
+              testId="settings-dim-light-brightness"
+              value={settings.dim.lightBrightness}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(n) => void update({ dim: { lightBrightness: n } })}
+              rightSlot={
+                <ResetIcon
+                  show={settings.dim.lightBrightness !== DEFAULTS.dim.lightBrightness}
+                  onClick={() => void update({ dim: { lightBrightness: DEFAULTS.dim.lightBrightness } })}
+                  testId="reset-dim-light-brightness"
+                />
+              }
+            />
+          )}
           <Slider
             label="Transition"
             unit="ms"
@@ -449,20 +443,17 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
           }
         >
           <Row label="Active engine">
-            <select
-              data-testid="settings-search-active"
+            <SelectField
+              testId="settings-search-active"
               value={settings.search.activeId}
-              onChange={(e) =>
-                void update({ search: { activeId: e.target.value } })
-              }
-              className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] px-2 py-1 text-sm text-[var(--fg)] outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent"
+              onChange={(v) => void update({ search: { activeId: v } })}
             >
               {settings.search.engines.map((eng) => (
                 <option key={eng.id} value={eng.id}>
                   {eng.name}
                 </option>
               ))}
-            </select>
+            </SelectField>
           </Row>
 
           <SearchEngineEditor
@@ -528,6 +519,37 @@ function Row({
   );
 }
 
+/** M17: styled <select> (globals.css `.mac-select`) with a chevron icon overlay. */
+function SelectField({
+  testId,
+  value,
+  onChange,
+  children,
+}: {
+  testId: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: ReactNode;
+}): ReactElement {
+  return (
+    <span className="relative inline-flex">
+      <select
+        data-testid={testId}
+        value={value}
+        onChange={(e: ChangeEvent<HTMLSelectElement>) => onChange(e.target.value)}
+        className="mac-select"
+      >
+        {children}
+      </select>
+      <ChevronsUpDown
+        size={12}
+        aria-hidden
+        className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[var(--fg-muted)]"
+      />
+    </span>
+  );
+}
+
 interface SliderProps {
   label: string;
   testId: string;
@@ -536,8 +558,6 @@ interface SliderProps {
   max: number;
   step: number;
   unit?: string;
-  /** Render the slider at reduced opacity (e.g. inactive dim effect controls). Still interactive. */
-  dimmed?: boolean;
   onChange: (n: number) => void;
   rightSlot?: ReactNode;
 }
@@ -550,13 +570,14 @@ function Slider({
   max,
   step,
   unit,
-  dimmed,
   onChange,
   rightSlot,
 }: SliderProps): ReactElement {
   const display = step < 1 ? value.toFixed(2) : String(value);
+  // M17: filled-track percentage, read by the .mac-slider track gradient.
+  const pct = max > min ? ((value - min) / (max - min)) * 100 : 0;
   return (
-    <div className={`flex flex-col gap-1 ${dimmed ? 'opacity-60' : ''}`}>
+    <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-2">
         <label className="text-sm text-[var(--fg)]">{label}</label>
         <div className="flex items-center gap-1">
@@ -576,6 +597,7 @@ function Slider({
         step={step}
         onChange={(e) => onChange(Number(e.target.value))}
         className="mac-slider"
+        style={{ '--fill': `${pct}%` } as CSSProperties}
       />
     </div>
   );
