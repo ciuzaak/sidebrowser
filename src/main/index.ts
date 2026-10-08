@@ -669,6 +669,18 @@ app.whenReady().then(() => {
       // M17 hooks.
       getActiveViewVisible: (): boolean | null => viewManager.getActiveViewVisibleForTest(),
       getIsMinimized: (): boolean => !win.isDestroyed() && win.isMinimized(),
+      // M16 hooks.
+      crashActive: (): void => { viewManager.getActiveWebContents()?.forcefullyCrashRenderer(); },
+      unloadTab: (id: string): boolean => viewManager.unloadTab(id),
+      discardNow: (minutes: number): string[] =>
+        viewManager.discardInactive(Date.now() + minutes * 60_000 + 1, minutes, downloads.busyWebContentsIds()),
+      reopenClosedTab: (): boolean => viewManager.reopenClosedTab(),
+      zoomActive: (action: 'in' | 'out' | 'reset'): void => { viewManager.zoomActive(action); },
+      setWindowHidden: (hidden: boolean): void => { viewManager.setWindowHidden(hidden); },
+      isActiveAudioMuted: (): boolean => viewManager.getActiveWebContents()?.isAudioMuted() ?? false,
+      sendShortcut: (action: string): void => {
+        if (!win.isDestroyed()) win.webContents.send(IpcChannels.chromeShortcut, { action });
+      },
     };
   } else {
     watcher.start();
