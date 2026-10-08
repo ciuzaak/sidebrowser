@@ -3,7 +3,7 @@ import { IpcChannels, type IpcContract } from '@shared/ipc-contract';
 import type { ViewManager } from './view-manager';
 import type { SettingsStore } from './settings-store';
 import type { HistoryStore } from './history-store';
-import { rankSuggestions, recentEntries, SUGGEST_LIMIT } from './suggestion-ranker';
+import { rankSuggestions, recentEntries, SUGGEST_LIMIT, topSites } from './suggestion-ranker';
 
 /**
  * Wires up all ipcMain handlers in one place.
@@ -200,6 +200,14 @@ export function registerIpcRouter(
       }
       return rankSuggestions(historyStore.all(), q, Date.now());
     },
+  );
+
+  // M17: NewTab "Frequent" tiles.
+  ipcMain.removeHandler(IpcChannels.historyTopSites);
+  ipcMain.handle(
+    IpcChannels.historyTopSites,
+    (_event, payload: IpcContract[typeof IpcChannels.historyTopSites]['request']) =>
+      topSites(historyStore.all(), payload.limit, Date.now()),
   );
 
   // history:remove — fire-and-forget.

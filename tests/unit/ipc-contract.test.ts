@@ -52,6 +52,7 @@ describe('IpcChannels', () => {
     expect(IpcChannels.tabStop).toBe('tab:stop');
     expect(IpcChannels.viewSetTopInset).toBe('view:set-top-inset');
     expect(IpcChannels.viewCaptureActive).toBe('view:capture-active');
+    expect(IpcChannels.historyTopSites).toBe('history:top-sites');
   });
 
   it('all channel values follow <domain>:<action> pattern', () => {

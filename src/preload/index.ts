@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { IpcChannels, type IpcContract, type ShortcutAction } from '@shared/ipc-contract';
 import type {
-  HistoryEntry, Settings, SettingsPatch, Suggestion, Tab, TabsSnapshot, WindowState,
+  HistoryEntry, Settings, SettingsPatch, Suggestion, Tab, TabsSnapshot, TopSite, WindowState,
 } from '@shared/types';
 
 const api = {
@@ -129,6 +129,10 @@ const api = {
 
   historySuggest: (query: string): Promise<Suggestion[]> =>
     ipcRenderer.invoke(IpcChannels.historySuggest, { query }),
+
+  /** R→M invoke (M17). NewTab "Frequent" tiles. */
+  historyTopSites: (limit: number): Promise<TopSite[]> =>
+    ipcRenderer.invoke(IpcChannels.historyTopSites, { limit }),
 
   historyRemove: (url: string): void => {
     ipcRenderer.send(IpcChannels.historyRemove, { url });

@@ -9,7 +9,7 @@
  * Module-isolated so the algorithm is unit-testable without IO / event flow.
  */
 
-import type { HistoryEntry, Suggestion } from '@shared/types';
+import type { HistoryEntry, Suggestion, TopSite } from '@shared/types';
 
 export const SUGGEST_LIMIT = 8;
 const DAY_MS = 86_400_000;
@@ -73,4 +73,43 @@ export function recentEntries(entries: HistoryEntry[], limit: number): HistoryEn
   return [...entries]
     .sort((a, b) => b.lastVisitedAt - a.lastVisitedAt)
     .slice(0, limit);
+}
+
+/**
+ * NewTab "Frequent" tiles (M17): http(s) history grouped by origin, ranked
+ * by summed frecency. Favicon = the highest-frecency entry in the group that
+ * has one.
+ */
+export function topSites(entries: HistoryEntry[], limit: number, now: number): TopSite[] {
+  interface Group {
+    host: string;
+    score: number;
+    favicon: string | null;
+    faviconScore: number;
+  }
+  const groups = new Map<string, Group>();
+  for (const e of entries) {
+    let u: URL;
+    try {
+      u = new URL(e.url);
+    } catch {
+      continue;
+    }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') continue;
+    const s = frecency(e, now);
+    let g = groups.get(u.origin);
+    if (!g) {
+      g = { host: u.host.replace(/^www\./i, ''), score: 0, favicon: null, faviconScore: -1 };
+      groups.set(u.origin, g);
+    }
+    g.score += s;
+    if (e.favicon !== null && s > g.faviconScore) {
+      g.favicon = e.favicon;
+      g.faviconScore = s;
+    }
+  }
+  return [...groups.entries()]
+    .sort((a, b) => b[1].score - a[1].score || a[1].host.localeCompare(b[1].host))
+    .slice(0, limit)
+    .map(([origin, g]) => ({ origin, host: g.host, favicon: g.favicon }));
 }

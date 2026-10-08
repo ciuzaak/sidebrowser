@@ -3,6 +3,7 @@ import {
   rankSuggestions,
   recentEntries,
   stripScheme,
+  topSites,
 } from '../../src/main/suggestion-ranker';
 import type { HistoryEntry } from '@shared/types';
 
@@ -104,5 +105,41 @@ describe('recentEntries', () => {
       mk(`https://e${i}.com`, { lastVisitedAt: i }),
     );
     expect(recentEntries(entries, 5)).toHaveLength(5);
+  });
+});
+
+describe('topSites', () => {
+  const e = (url: string, visitCount: number, favicon: string | null = null): HistoryEntry =>
+    mk(url, { visitCount, favicon, lastVisitedAt: NOW });
+
+  it('groups by origin and sums frecency', () => {
+    const r = topSites(
+      [e('https://a.com/1', 1), e('https://a.com/2', 1), e('https://b.com/', 1.5)],
+      8,
+      NOW,
+    );
+    expect(r.map((s) => s.origin)).toEqual(['https://a.com', 'https://b.com']);
+  });
+
+  it('strips www. from the host label', () => {
+    expect(topSites([e('https://www.bilibili.com/x', 1)], 8, NOW)[0]!.host).toBe('bilibili.com');
+  });
+
+  it('ignores non-http(s) and malformed URLs', () => {
+    expect(topSites([e('file:///x', 5), e('nope', 5)], 8, NOW)).toEqual([]);
+  });
+
+  it('favicon comes from the highest-frecency entry that has one', () => {
+    const r = topSites(
+      [e('https://a.com/1', 5, null), e('https://a.com/2', 2, 'f2'), e('https://a.com/3', 1, 'f3')],
+      8,
+      NOW,
+    );
+    expect(r[0]!.favicon).toBe('f2');
+  });
+
+  it('respects the limit', () => {
+    const many = Array.from({ length: 12 }, (_, i) => e(`https://s${i}.com/`, 12 - i));
+    expect(topSites(many, 8, NOW)).toHaveLength(8);
   });
 });

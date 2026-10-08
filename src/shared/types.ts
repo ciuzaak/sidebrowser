@@ -186,3 +186,11 @@ export interface Suggestion {
   /** 0 = URL 前缀；1 = URL substring；2 = title substring。 */
   tier: 0 | 1 | 2;
 }
+
+/** NewTab "Frequent" tile (M17): one per origin, ranked by summed frecency. */
+export interface TopSite {
+  origin: string;
+  /** Host with a leading `www.` stripped — tile label. */
+  host: string;
+  favicon: string | null;
+}

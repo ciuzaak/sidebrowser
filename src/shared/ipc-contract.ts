@@ -1,7 +1,16 @@
 // Centralized IPC channel names and payload types.
 // All main/renderer IPC must go through this module — never use string literals inline.
 
-import type { HistoryEntry, Settings, SettingsPatch, Suggestion, Tab, TabsSnapshot, WindowState } from './types';
+import type {
+  HistoryEntry,
+  Settings,
+  SettingsPatch,
+  Suggestion,
+  Tab,
+  TabsSnapshot,
+  TopSite,
+  WindowState,
+} from './types';
 
 export const IpcChannels = {
   // Smoke-test channel kept from M0 for the preload API sanity check.
@@ -95,6 +104,8 @@ export const IpcChannels = {
   viewSetTopInset: 'view:set-top-inset',
   /** R→M invoke (M17). Half-res JPEG data URL of the active page, or null. */
   viewCaptureActive: 'view:capture-active',
+  /** R→M invoke (M17). NewTab "Frequent" tiles, ranked by origin frecency. */
+  historyTopSites: 'history:top-sites',
 } as const;
 
 /**
@@ -280,5 +291,9 @@ export interface IpcContract {
   [IpcChannels.viewCaptureActive]: {
     request: Record<string, never>;
     response: string | null;
+  };
+  [IpcChannels.historyTopSites]: {
+    request: { limit: number };
+    response: TopSite[];
   };
 }
