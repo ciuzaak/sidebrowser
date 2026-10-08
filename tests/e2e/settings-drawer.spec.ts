@@ -128,6 +128,16 @@ async function getActiveViewBounds(app: ElectronApplication): Promise<Rect | nul
   });
 }
 
+async function getActiveViewVisible(app: ElectronApplication): Promise<boolean | null> {
+  return app.evaluate(async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const h = (globalThis as any).__sidebrowserTestHooks as {
+      getActiveViewVisible: () => boolean | null;
+    };
+    return h.getActiveViewVisible();
+  });
+}
+
 async function getSettings(app: ElectronApplication): Promise<SettingsLike> {
   return app.evaluate(async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -192,10 +202,11 @@ async function updateSettings(
 }
 
 // ---------------------------------------------------------------------------
-// Test 1 — drawer open/close suppresses and restores the active WebContentsView.
+// Test 1 — drawer open/close hides and re-shows the active WebContentsView.
+// M17: suppression is View.setVisible(false) with bounds unchanged (no reflow).
 // ---------------------------------------------------------------------------
 
-test('drawer open suppresses active view bounds; close restores them', async () => {
+test('drawer open hides the active view; close shows it again (bounds unchanged)', async () => {
   const { server, baseUrl } = await startPlainServer();
   const userDataDir = mkdtempSync(join(tmpdir(), 'sidebrowser-e2e-settings-'));
 
@@ -212,22 +223,21 @@ test('drawer open suppresses active view bounds; close restores them', async () 
       expect(initial!.width).toBeGreaterThan(0);
       expect(initial!.height).toBeGreaterThan(0);
 
-      // Open drawer → IPC view:set-suppressed fires → bounds shrink to zero.
+      expect(await getActiveViewVisible(app)).toBe(true);
+
+      // Open drawer → IPC view:set-suppressed fires → view hidden, bounds kept.
       await openSettingsDrawer(page);
       await expect
-        .poll(async () => (await getActiveViewBounds(app))?.width ?? -1, { timeout: 10_000 })
-        .toBe(0);
-      const suppressed = await getActiveViewBounds(app);
-      expect(suppressed).toEqual({ x: 0, y: 0, width: 0, height: 0 });
+        .poll(async () => getActiveViewVisible(app), { timeout: 10_000 })
+        .toBe(false);
+      expect(await getActiveViewBounds(app)).toEqual(initial);
 
-      // Close drawer → bounds restored to non-zero.
+      // Close drawer → view shown again, same bounds.
       await closeSettingsDrawer(page);
       await expect
-        .poll(async () => (await getActiveViewBounds(app))?.width ?? 0, { timeout: 10_000 })
-        .toBeGreaterThan(0);
-      const restored = await getActiveViewBounds(app);
-      expect(restored!.height).toBeGreaterThan(0);
-      expect(restored!.width).toBeGreaterThan(0);
+        .poll(async () => getActiveViewVisible(app), { timeout: 10_000 })
+        .toBe(true);
+      expect(await getActiveViewBounds(app)).toEqual(initial);
     } finally {
       await app.close();
     }
