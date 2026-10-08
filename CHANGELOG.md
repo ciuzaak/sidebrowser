@@ -5,6 +5,86 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 the project follows [Semantic Versioning](https://semver.org/) at the
 minor level (each numbered milestone bumps the minor version).
 
+## [1.5.0] — 2026-10-08
+
+Two milestones released together: M16 (browser essentials — the things
+a daily-driver browser is expected to do) and M17 (chrome polish).
+
+### Added — M16 (browser essentials)
+
+- **Permission policy.** Site permission requests (notifications,
+  geolocation, camera/mic, MIDI, …) are denied by default; only
+  harmless ones (sanitized clipboard write, fullscreen, pointer lock,
+  storage access) are granted. External protocol links open only for
+  `mailto:` and `tel:`.
+- **Find in page** (Ctrl+F) with match count, next/previous and
+  highlight cleared on tab switch.
+- **Downloads.** Files are saved straight to the Downloads folder under
+  a unique name (no Save dialog behind the always-on-top window), with a
+  Downloads drawer showing progress, open, show-in-folder and cancel.
+  Shortcut / shell-handler types (`.scf`, `.url`, `.lnk`, `.library-ms`,
+  …) are blocked; executables are saved but never launched from the
+  drawer.
+- **Crash and hang recovery.** A crashed or unresponsive page shows an
+  overlay with Reload (and Wait for a hung page); the tab list marks it.
+- **In-window video fullscreen.** HTML fullscreen fills the side window
+  instead of the screen; Esc exits; edge docking keeps working.
+- **Popups.** `window.open` with features (OAuth "Sign in with …"
+  flows) opens a real child window that can talk back to its opener and
+  closes itself; at most 3 per tab. Ctrl/middle-click opens links in a
+  background tab.
+- **Lazy session restore.** Only the active tab loads on startup; the
+  others keep title, favicon and back/forward history (up to 25 entries,
+  with scroll position) and load when first shown.
+- **Reopen closed tab** (Ctrl+Shift+T, last 10).
+- **Auto-unload idle tabs** after 15 / 30 / 60 minutes (Settings →
+  Session; default 30, or never). Tabs playing audio, with unsaved form
+  input or an active download are kept.
+- **Audio.** Per-tab mute in the tab list; optional auto-mute while the
+  window is hidden at the screen edge (on by default).
+- **Mobile zoom.** Ctrl+= / Ctrl+- / Ctrl+0 zoom mobile-mode pages with
+  a real reflow (CSS viewport shrinks) rather than pinch-zoom.
+- **Context menu.** Spelling suggestions, edit commands in text fields
+  (undo/redo/cut/copy/paste/paste as plain text/select all), image
+  items, and page zoom items.
+- **Storage card** in Settings: disk usage, Clear cache (keeps logins)
+  and Clear all site data (signs out of everything).
+- **Address bar** treats IP addresses, `localhost:port` and IDN hosts
+  as sites rather than searches.
+
+### Added — M17 (chrome polish)
+
+- **Self-drawn window controls** (minimize + close); the native title
+  bar overlay is gone and the window is no longer maximizable.
+- **Address pill** containing the mobile/desktop UA chip and
+  reload/stop; Forward appears only when there is somewhere to go;
+  thin load bar; tab-count badge.
+- **Overlay drawers.** The tab drawer, find bar and downloads drawer
+  slide over the page instead of resizing it, so the page no longer
+  jumps.
+- **Spotlight** shows a blurred snapshot of the page behind a single
+  search card, with match emphasis and an Enter hint.
+- **New-tab page** gets a Frequent sites grid (grouped by host).
+- **Settings** controls restyled: styled selects, filled sliders, dim
+  sliders shown only for the selected effect.
+
+### Changed
+
+- Settings writes are debounced and flushed on quit; tab-state saves
+  are debounced with a max wait. Missing settings fields are filled
+  individually on upgrade, so old profiles keep their values.
+- Renderer bundle is minified (571 KB → 232 KB).
+- E2E runs in quiet mode: the window is transparent, click-through and
+  off the taskbar, so a test run no longer interrupts other work
+  (`SIDEBROWSER_E2E_VISIBLE=1` to watch).
+
+### CI
+
+- GitHub Actions: typecheck, lint, unit tests, build and Playwright E2E
+  on windows-latest for every PR and push to `main`; pushing a `v*` tag
+  builds the installer on a clean runner and attaches it to a draft
+  release.
+
 ## [1.4.1] — 2026-05-28
 
 ### Fixed
