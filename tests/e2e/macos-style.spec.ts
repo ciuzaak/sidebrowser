@@ -128,14 +128,16 @@ test.describe('M14 macOS-style tokens', () => {
           () => document.documentElement.dataset.theme === 'dark',
         );
 
-        // M14: the inline address bar is gone; SearchPill in TopBar is the
-        // surface-sunken element now. Poll because the CSS variable cascade
-        // takes a paint cycle after dataset.theme flips.
+        // M14: the inline address bar is gone; the SearchPill is the
+        // surface-sunken element now. M17: the sunken surface lives on the
+        // pill container (UA chip + search-pill button + reload), i.e. the
+        // button's parent. Poll because the CSS variable cascade takes a
+        // paint cycle after dataset.theme flips.
         await expect
           .poll(
             async () => {
               const bg = await win.evaluate(() => {
-                const el = document.querySelector('[data-testid="search-pill"]');
+                const el = document.querySelector('[data-testid="search-pill"]')?.parentElement;
                 return el ? getComputedStyle(el).backgroundColor : '';
               });
               return rgbToHex(bg);
