@@ -16,6 +16,7 @@ import type { Tab, TabsSnapshot } from '@shared/types';
 import { makeEmptyTab } from '@shared/types';
 import type { HistoryRecorder } from './history-recorder';
 import { buildContextMenuTemplate, type ContextMenuDeps } from './context-menu';
+import { computeViewLayout } from './view-layout';
 
 // Lazy CommonJS bridge for `Menu` — keeps non-Electron contexts (vitest
 // importing the pure free functions in this module) free of an electron
@@ -165,6 +166,8 @@ export class ViewManager {
   private readonly tabs = new Map<string, ManagedTab>();
   private activeId: string | null = null;
   private chromeHeightPx = 0;
+  /** M17: TabDrawer overlay height — offsets (never resizes) the active view. */
+  private topInsetPx = 0;
   private suppressed = false;
   /** Web context-menu deps (M13). Wired via setContextMenuDeps() after construction. */
   private contextMenuDeps: ContextMenuDeps | null = null;
@@ -506,14 +509,58 @@ export class ViewManager {
   }
 
   /**
-   * Toggle the "suppressed" flag. While suppressed, every tab's view is
-   * shrunk to `{0,0,0,0}` so a renderer-layer overlay (e.g. the M6 settings
-   * drawer) can paint over the WebContentsView layer. Idempotent.
+   * Toggle the "suppressed" flag. While suppressed, the active tab's view is
+   * hidden via `View.setVisible(false)` so a renderer-layer overlay (settings
+   * drawer, Spotlight, NewTab) can paint over the WebContentsView layer.
+   * Bounds are unchanged, so the page does not reflow (M17). Idempotent.
    */
   setSuppressed(v: boolean): void {
     if (this.suppressed === v) return;
     this.suppressed = v;
     this.applyBounds();
+  }
+
+  /**
+   * M17: TabDrawer overlay height. Offsets the active view down without
+   * changing its size (see computeViewLayout). Unlike setChromeHeight this
+   * does NOT reapply mobile emulation — the emulated viewport is unchanged.
+   */
+  setTopInset(px: number): void {
+    const clamped = Math.max(0, Math.round(px));
+    if (clamped === this.topInsetPx) return;
+    this.topInsetPx = clamped;
+    this.applyBounds();
+  }
+
+  /** M17: Stop button in the address pill. */
+  stop(id: string): void {
+    this.tabs.get(id)?.view.webContents.stop();
+  }
+
+  /**
+   * M17: half-resolution JPEG snapshot of the active page for the Spotlight
+   * backdrop. Null when there is nothing visible to capture (no active tab,
+   * already suppressed, empty image) or capture fails.
+   */
+  async captureActiveForBackdrop(): Promise<string | null> {
+    const wc = this.getActiveWebContents();
+    if (!wc || wc.isDestroyed() || this.suppressed) return null;
+    try {
+      const img = await wc.capturePage();
+      if (img.isEmpty()) return null;
+      const width = Math.max(1, Math.round(img.getSize().width / 2));
+      const jpeg = img.resize({ width, quality: 'good' }).toJPEG(70);
+      return `data:image/jpeg;base64,${jpeg.toString('base64')}`;
+    } catch (err) {
+      console.error('[sidebrowser] captureActiveForBackdrop failed:', err);
+      return null;
+    }
+  }
+
+  /** E2E hook: whether the active tab's view is currently drawn. */
+  getActiveViewVisibleForTest(): boolean | null {
+    if (!this.activeId) return null;
+    return this.tabs.get(this.activeId)?.view.getVisible() ?? null;
   }
 
   /**
@@ -642,26 +689,18 @@ export class ViewManager {
     // Race guard — see webviewSize() comment. resize/closed event handlers can
     // fire after window destruction during teardown.
     if (this.window.isDestroyed()) return;
-    // Suppressed: every tab shrinks to zero so the renderer-layer drawer
-    // overlay can paint unobstructed. Background-tab bounds were already
-    // zero; this extends the same treatment to the active tab.
-    if (this.suppressed) {
-      const zero = { x: 0, y: 0, width: 0, height: 0 };
-      for (const [, managed] of this.tabs) managed.view.setBounds(zero);
-      return;
-    }
-
     const { width, height } = this.window.getContentBounds();
-    const realBounds = {
-      x: 0,
-      y: this.chromeHeightPx,
-      width,
-      height: Math.max(0, height - this.chromeHeightPx),
-    };
-    const hiddenBounds = { x: 0, y: 0, width: 0, height: 0 };
-
     for (const [id, managed] of this.tabs) {
-      managed.view.setBounds(id === this.activeId ? realBounds : hiddenBounds);
+      const { bounds, visible } = computeViewLayout({
+        contentWidth: width,
+        contentHeight: height,
+        chromeHeightPx: this.chromeHeightPx,
+        topInsetPx: this.topInsetPx,
+        suppressed: this.suppressed,
+        isActive: id === this.activeId,
+      });
+      managed.view.setBounds(bounds);
+      managed.view.setVisible(visible);
     }
   }
 
