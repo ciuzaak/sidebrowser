@@ -2,11 +2,13 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactElement,
 } from 'react';
 import type { Suggestion } from '@shared/types';
+import { splitMatch } from '../lib/split-match';
 import { Favicon } from './Favicon';
 
 const SUGGEST_DROPDOWN_MAX = 8;
@@ -24,23 +26,31 @@ interface Props {
   query: string;
   open: boolean;
   onPick: (url: string) => void;
+  /** M17: highlighted suggestion URL (null when none) — drives the Spotlight Enter hint. */
+  onHighlightChange?: (url: string | null) => void;
 }
 
 /**
- * Address-bar dropdown. Shows up to 8 history suggestions. Highlight state
- * is internal; parent (TopBar) drives navigation via ref methods because the
- * input owns the keyboard event channel.
+ * Address-bar suggestion list. Shows up to 8 history suggestions. Highlight
+ * state is internal; the parent (SearchSpotlight) drives navigation via ref
+ * methods because the input owns the keyboard event channel. M17: renders
+ * in-flow inside the Spotlight card (no floating dropdown) and emphasizes
+ * the query match in titles and URLs.
  */
 export const AddressSuggestions = forwardRef<AddressSuggestionsHandle, Props>(
-  function AddressSuggestions({ query, open, onPick }, ref): ReactElement | null {
+  function AddressSuggestions({ query, open, onPick, onHighlightChange }, ref): ReactElement | null {
     const [items, setItems] = useState<Suggestion[]>([]);
     const [highlightIdx, setHighlightIdx] = useState(-1);
     // Latest items kept in a ref so the imperative handle's currentUrl()
     // returns a fresh value without re-creating the handle on every list update.
+    // Synced in a layout effect (not during render) — the handle is only
+    // called from event handlers, which run after commit.
     const itemsRef = useRef<Suggestion[]>(items);
-    itemsRef.current = items;
     const highlightRef = useRef<number>(-1);
-    highlightRef.current = highlightIdx;
+    useLayoutEffect(() => {
+      itemsRef.current = items;
+      highlightRef.current = highlightIdx;
+    }, [items, highlightIdx]);
 
     // Fetch suggestions whenever query changes (or dropdown re-opens).
     useEffect(() => {
@@ -78,6 +88,10 @@ export const AddressSuggestions = forwardRef<AddressSuggestionsHandle, Props>(
       return off;
     }, [open, query]);
 
+    useEffect(() => {
+      onHighlightChange?.(highlightIdx >= 0 ? (items[highlightIdx]?.url ?? null) : null);
+    }, [highlightIdx, items, onHighlightChange]);
+
     useImperativeHandle(
       ref,
       () => ({
@@ -104,7 +118,7 @@ export const AddressSuggestions = forwardRef<AddressSuggestionsHandle, Props>(
 
     return (
       <ul
-        className="absolute left-0 right-0 top-full mt-1.5 z-10 max-h-96 overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-elevated)] p-1 shadow-[var(--shadow-elevated)]"
+        className="max-h-80 overflow-y-auto border-t border-[var(--border-subtle)] p-1"
         data-testid="address-suggestions"
       >
         {items.map((s, i) => (
@@ -125,8 +139,12 @@ export const AddressSuggestions = forwardRef<AddressSuggestionsHandle, Props>(
           >
             <Favicon src={s.favicon} />
             <div className="flex-1 min-w-0">
-              <div className="text-sm truncate">{s.title || s.url}</div>
-              <div className="text-xs text-[var(--fg-muted)] truncate">{s.url}</div>
+              <div className="text-sm truncate">
+                <Emph text={s.title || s.url} query={query} />
+              </div>
+              <div className="text-xs text-[var(--fg-muted)] truncate">
+                <Emph text={s.url} query={query} />
+              </div>
             </div>
           </li>
         ))}
@@ -134,3 +152,15 @@ export const AddressSuggestions = forwardRef<AddressSuggestionsHandle, Props>(
     );
   },
 );
+
+function Emph({ text, query }: { text: string; query: string }): ReactElement {
+  const parts = splitMatch(text, query);
+  if (parts === null) return <>{text}</>;
+  return (
+    <>
+      {parts[0]}
+      <mark className="bg-transparent font-semibold text-inherit">{parts[1]}</mark>
+      {parts[2]}
+    </>
+  );
+}

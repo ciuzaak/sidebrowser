@@ -12,6 +12,7 @@ import { useActiveTab, useTabsStore } from './store/tab-store';
 import { useWindowStateStore } from './store/window-state-store';
 import { useTheme } from './theme/useTheme';
 import { computeChromeDimStyle } from './lib/chrome-dim';
+import { withTimeout } from './lib/spotlight-hint';
 
 export function App(): ReactElement {
   useTabBridge();
@@ -51,8 +52,33 @@ export function App(): ReactElement {
   }, []);
   const toggleSettings = useCallback(() => setSettingsOpen((v) => !v), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
-  const openSearch = useCallback(() => setSearchOpen(true), []);
-  const closeSearch = useCallback(() => setSearchOpen(false), []);
+  // M17: Spotlight backdrop — a snapshot of the live page painted under the
+  // scrim, since the native view is hidden while the Spotlight is open.
+  const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
+  const backdropClearTimer = useRef<number | null>(null);
+  // Snapshot first, then open. NewTab has no native page to capture. Capped at
+  // 150 ms — on timeout the Spotlight opens without a backdrop.
+  const openSearch = useCallback(async (): Promise<void> => {
+    if (backdropClearTimer.current !== null) {
+      window.clearTimeout(backdropClearTimer.current);
+      backdropClearTimer.current = null;
+    }
+    const snap = isNewTab
+      ? null
+      : await withTimeout(window.sidebrowser.captureActiveView(), 150, null);
+    setBackdropUrl(snap);
+    setSearchOpen(true);
+  }, [isNewTab]);
+  // Keep the backdrop briefly after close: the view re-shows over it, so no
+  // blank frame appears between unsuppress and the page repaint.
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    if (backdropClearTimer.current !== null) window.clearTimeout(backdropClearTimer.current);
+    backdropClearTimer.current = window.setTimeout(() => {
+      backdropClearTimer.current = null;
+      setBackdropUrl(null);
+    }, 100);
+  }, []);
 
   useEffect(() => {
     const el = chromeRef.current;
@@ -111,7 +137,7 @@ export function App(): ReactElement {
     return window.sidebrowser.onShortcut((action) => {
       switch (action) {
         case 'focus-address-bar': {
-          openSearch();
+          void openSearch();
           return;
         }
         case 'toggle-settings-drawer':
@@ -151,7 +177,7 @@ export function App(): ReactElement {
           settingsOpen={settingsOpen}
           onToggleSettings={toggleSettings}
           searchOpen={searchOpen}
-          onOpenSearch={openSearch}
+          onOpenSearch={() => void openSearch()}
           tabsToggleRef={tabsToggleRef}
           settingsToggleRef={settingsToggleRef}
           searchPillRef={searchPillRef}
@@ -165,7 +191,7 @@ export function App(): ReactElement {
           toggleRef={settingsToggleRef}
         />
         {searchOpen && (
-          <SearchSpotlight onClose={closeSearch} pillRef={searchPillRef} />
+          <SearchSpotlight onClose={closeSearch} pillRef={searchPillRef} backdropUrl={backdropUrl} />
         )}
         <TabDrawer
           open={drawerOpen}
