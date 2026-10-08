@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactElement } from 'react';
 import { TopBar } from './components/TopBar';
 import { TabDrawer } from './components/TabDrawer';
 import { SettingsDrawer } from './components/SettingsDrawer';
 import { NewTab } from './components/NewTab';
 import { SearchSpotlight } from './components/SearchSpotlight';
+import { FindBar } from './components/FindBar';
+import { DownloadsDrawer } from './components/DownloadsDrawer';
+import { CrashOverlay } from './components/CrashOverlay';
+import { summarizeDownloads, useDownloads } from './hooks/useDownloads';
 import { useSettingsBridge } from './hooks/useSettingsBridge';
 import { useTabBridge } from './hooks/useTabBridge';
 import { useWindowStateBridge } from './hooks/useWindowStateBridge';
@@ -52,6 +56,45 @@ export function App(): ReactElement {
   }, []);
   const toggleSettings = useCallback(() => setSettingsOpen((v) => !v), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
+
+  // M16: find bar + downloads drawer (both live in the top overlay stack).
+  const [findOpen, setFindOpen] = useState(false);
+  const [findFocusSignal, setFindFocusSignal] = useState(0);
+  const openFind = useCallback(() => {
+    setFindOpen(true);
+    setFindFocusSignal((n) => n + 1);
+  }, []);
+  const closeFind = useCallback(() => setFindOpen(false), []);
+  const downloads = useDownloads();
+  const [downloadsOpen, setDownloadsOpen] = useState(false);
+  const downloadsToggleRef = useRef<HTMLButtonElement | null>(null);
+  const toggleDownloads = useCallback(() => setDownloadsOpen((v) => !v), []);
+  const closeDownloads = useCallback(() => setDownloadsOpen(false), []);
+  // Open the drawer when a new download starts, so the user sees it landed.
+  const downloadCount = downloads.length;
+  const prevDownloadCount = useRef(downloadCount);
+  useEffect(() => {
+    if (downloadCount > prevDownloadCount.current) {
+      setDownloadsOpen(true);
+    }
+    prevDownloadCount.current = downloadCount;
+  }, [downloadCount]);
+
+  // M17/M16: the top overlay stack (TabDrawer, FindBar, Downloads) reports
+  // its height so main offsets — never resizes — the active page under it.
+  const overlayStackRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const el = overlayStackRef.current;
+    if (!el) return;
+    const report = (): void => window.sidebrowser.setTopInset(el.getBoundingClientRect().height);
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      window.sidebrowser.setTopInset(0);
+    };
+  }, []);
   // M17: Spotlight backdrop — a snapshot of the live page painted under the
   // scrim, since the native view is hidden while the Spotlight is open.
   const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
@@ -134,14 +177,20 @@ export function App(): ReactElement {
     if (searchOpen) {
       closeSearch();
     }
-  }, [activeId, settingsOpen, searchOpen, closeSettings, closeSearch]);
+    // M16: find results belong to the previous tab.
+    if (findOpen) {
+      closeFind();
+    }
+  }, [activeId, settingsOpen, searchOpen, findOpen, closeSettings, closeSearch, closeFind]);
 
   // M6 + M12 + M14: ViewManager suppression. SettingsDrawer, NewTab, and the
   // new SearchSpotlight all render OVER the page area in renderer DOM, so the
   // underlying WebContentsView is hidden (M17: View.setVisible, bounds kept).
   // TabDrawer is NOT in the suppression set — it reports a top inset instead
-  // (M17), so the page stays live and un-resized below it.
-  const suppressed = settingsOpen || searchOpen || isNewTab;
+  // (M17), so the page stays live and un-resized below it. M16: a crashed
+  // active tab shows the CrashOverlay in place of its (blank) page.
+  const crashed = activeTab?.crashed != null;
+  const suppressed = settingsOpen || searchOpen || isNewTab || crashed;
   useEffect(() => {
     window.sidebrowser.setViewSuppressed(suppressed);
   }, [suppressed]);
@@ -159,9 +208,12 @@ export function App(): ReactElement {
         case 'toggle-settings-drawer':
           toggleSettings();
           return;
+        case 'open-find':
+          openFind();
+          return;
       }
     });
-  }, [openSearch, toggleSettings]);
+  }, [openSearch, toggleSettings, openFind]);
 
   // M13 hotfix: tab WebContents focus → close all chrome drawers. Page-area
   // clicks can't be detected via DOM events (WebContentsView is in another
@@ -172,8 +224,9 @@ export function App(): ReactElement {
       closeDrawer();
       closeSettings();
       closeSearch();
+      closeDownloads();
     });
-  }, [closeDrawer, closeSettings, closeSearch]);
+  }, [closeDrawer, closeSettings, closeSearch, closeDownloads]);
 
   // M13: chrome dim — re-use the existing windowState.dimmed signal driven
   // by EdgeDock. Settings hydrate within a frame; while null, render
@@ -197,10 +250,15 @@ export function App(): ReactElement {
           tabsToggleRef={tabsToggleRef}
           settingsToggleRef={settingsToggleRef}
           searchPillRef={searchPillRef}
+          downloads={summarizeDownloads(downloads)}
+          downloadsOpen={downloadsOpen}
+          onToggleDownloads={toggleDownloads}
+          downloadsToggleRef={downloadsToggleRef}
         />
       </div>
       <div className="relative flex-1">
         {isNewTab && <NewTab />}
+        {activeTab && crashed && <CrashOverlay tab={activeTab} />}
         <SettingsDrawer
           open={settingsOpen}
           onClose={closeSettings}
@@ -217,12 +275,21 @@ export function App(): ReactElement {
           />
         )}
         {searchOpen && <SearchSpotlight onClose={closeSearch} pillRef={searchPillRef} />}
-        <TabDrawer
-          open={drawerOpen}
-          onSelect={closeDrawer}
-          onOutsideClose={closeDrawer}
-          toggleRef={tabsToggleRef}
-        />
+        <div ref={overlayStackRef} className="absolute inset-x-0 top-0 z-30 flex flex-col">
+          {findOpen && <FindBar onClose={closeFind} focusSignal={findFocusSignal} />}
+          <TabDrawer
+            open={drawerOpen}
+            onSelect={closeDrawer}
+            onOutsideClose={closeDrawer}
+            toggleRef={tabsToggleRef}
+          />
+          <DownloadsDrawer
+            open={downloadsOpen}
+            downloads={downloads}
+            onOutsideClose={closeDownloads}
+            toggleRef={downloadsToggleRef}
+          />
+        </div>
       </div>
     </div>
   );

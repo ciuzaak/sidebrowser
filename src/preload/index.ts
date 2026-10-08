@@ -1,14 +1,11 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import { IpcChannels, type IpcContract, type ShortcutAction } from '@shared/ipc-contract';
+import { IpcChannels, type ShortcutAction } from '@shared/ipc-contract';
 import type {
-  HistoryEntry, Settings, SettingsPatch, Suggestion, Tab, TabsSnapshot, TopSite, WindowState,
+  DownloadInfo, FindResult, HistoryEntry, Settings, SettingsPatch, StorageUsage, Suggestion, Tab,
+  TabsSnapshot, TopSite, WindowState,
 } from '@shared/types';
 
 const api = {
-  // M0 smoke-test ping (kept for regression coverage).
-  ping: (message: string): Promise<IpcContract[typeof IpcChannels.appPing]['response']> =>
-    ipcRenderer.invoke(IpcChannels.appPing, { message }),
-
   // Tab management
   createTab: (url?: string): Promise<Tab> =>
     ipcRenderer.invoke(IpcChannels.tabCreate, { url }),
@@ -33,6 +30,46 @@ const api = {
     ipcRenderer.invoke(IpcChannels.tabSetMobile, { id, isMobile }),
   stop: (id: string): Promise<void> =>
     ipcRenderer.invoke(IpcChannels.tabStop, { id }),
+  /** M16: user mute for a tab. */
+  setMuted: (id: string, muted: boolean): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.tabSetMuted, { id, muted }),
+
+  // Find in page (M16)
+  findStart: (text: string, forward: boolean, newSession: boolean): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.findStart, { text, forward, newSession }),
+  findStop: (): void => {
+    ipcRenderer.send(IpcChannels.findStop, {});
+  },
+  onFindResult: (listener: (r: FindResult) => void): (() => void) => {
+    const handler = (_e: IpcRendererEvent, r: FindResult): void => listener(r);
+    ipcRenderer.on(IpcChannels.findResult, handler);
+    return () => ipcRenderer.off(IpcChannels.findResult, handler);
+  },
+
+  // Downloads (M16)
+  downloadsList: (): Promise<DownloadInfo[]> => ipcRenderer.invoke(IpcChannels.downloadsList, {}),
+  onDownloadsChanged: (listener: (list: DownloadInfo[]) => void): (() => void) => {
+    const handler = (_e: IpcRendererEvent, list: DownloadInfo[]): void => listener(list);
+    ipcRenderer.on(IpcChannels.downloadsChanged, handler);
+    return () => ipcRenderer.off(IpcChannels.downloadsChanged, handler);
+  },
+  downloadsOpen: (id: string): void => {
+    ipcRenderer.send(IpcChannels.downloadsOpen, { id });
+  },
+  downloadsShowInFolder: (id: string): void => {
+    ipcRenderer.send(IpcChannels.downloadsShowInFolder, { id });
+  },
+  downloadsCancel: (id: string): void => {
+    ipcRenderer.send(IpcChannels.downloadsCancel, { id });
+  },
+  downloadsClear: (): void => {
+    ipcRenderer.send(IpcChannels.downloadsClear, {});
+  },
+
+  // Settings → Storage (M16)
+  storageUsage: (): Promise<StorageUsage> => ipcRenderer.invoke(IpcChannels.storageUsage, {}),
+  storageClearCache: (): Promise<void> => ipcRenderer.invoke(IpcChannels.storageClearCache, {}),
+  storageClearSiteData: (): Promise<void> => ipcRenderer.invoke(IpcChannels.storageClearSiteData, {}),
 
   // Chrome layout
   setChromeHeight: (heightPx: number): void => {

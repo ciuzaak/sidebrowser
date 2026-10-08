@@ -2,6 +2,7 @@ import { forwardRef, type ReactElement, type ReactNode, type RefObject } from 'r
 import {
   ArrowLeft,
   ArrowRight,
+  Download,
   Globe,
   Layers,
   Lock,
@@ -37,10 +38,15 @@ interface TopBarProps {
   settingsToggleRef: RefObject<HTMLButtonElement | null>;
   /** Ref to the SearchPill so the SearchSpotlight can ignore mousedown on it (avoid reopen-on-close). */
   searchPillRef: RefObject<HTMLButtonElement | null>;
+  /** M16: Downloads button — rendered once the session has any download. */
+  downloads: { count: number; active: boolean; progress: number | null };
+  downloadsOpen: boolean;
+  onToggleDownloads: () => void;
+  downloadsToggleRef: RefObject<HTMLButtonElement | null>;
 }
 
 /**
- * M17 layout: [Tabs+badge] [Settings] [Back] [Forward?] [AddressPill] [Min][Close].
+ * M17 layout: [Tabs+badge] [Settings] [Back] [Forward?] [Downloads?] [AddressPill] [Min][Close].
  * Forward renders only when the tab can go forward; Reload/Stop and the
  * mobile/desktop toggle live inside the pill. `data-loading` on the root is
  * the E2E load-completion fence and drives the CSS load bar.
@@ -55,6 +61,10 @@ export function TopBar({
   tabsToggleRef,
   settingsToggleRef,
   searchPillRef,
+  downloads,
+  downloadsOpen,
+  onToggleDownloads,
+  downloadsToggleRef,
 }: TopBarProps): ReactElement {
   const tab = useActiveTab();
   const tabCount = useTabsStore((s) => s.tabOrder.length);
@@ -125,6 +135,25 @@ export function TopBar({
       {tab?.canGoForward === true && (
         <IconButton ariaLabel="Forward" onClick={() => id && void window.sidebrowser.goForward(id)}>
           <ArrowRight size={16} />
+        </IconButton>
+      )}
+      {downloads.count > 0 && (
+        <IconButton
+          ref={downloadsToggleRef}
+          ariaLabel="Downloads"
+          testId="topbar-downloads-toggle"
+          active={downloadsOpen || downloads.active}
+          onClick={onToggleDownloads}
+        >
+          <Download size={16} />
+          {downloads.active && (
+            <span className="absolute inset-x-1 bottom-0.5 h-[2px] overflow-hidden rounded-full bg-[var(--surface-sunken)]">
+              <span
+                className="block h-full bg-[var(--accent)]"
+                style={{ width: `${downloads.progress ?? 30}%` }}
+              />
+            </span>
+          )}
         </IconButton>
       )}
 

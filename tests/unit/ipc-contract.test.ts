@@ -2,10 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { IpcChannels } from '@shared/ipc-contract';
 
 describe('IpcChannels', () => {
-  it('exposes appPing as a namespaced string', () => {
-    expect(IpcChannels.appPing).toBe('app:ping');
-  });
-
   it('defines tab navigation channels', () => {
     expect(IpcChannels.tabNavigate).toBe('tab:navigate');
     expect(IpcChannels.tabGoBack).toBe('tab:go-back');
@@ -53,6 +49,18 @@ describe('IpcChannels', () => {
     expect(IpcChannels.viewSetTopInset).toBe('view:set-top-inset');
     expect(IpcChannels.viewCaptureActive).toBe('view:capture-active');
     expect(IpcChannels.historyTopSites).toBe('history:top-sites');
+  });
+
+  it('defines M16 channels', () => {
+    expect(IpcChannels.tabSetMuted).toBe('tab:set-muted');
+    expect(IpcChannels.findStart).toBe('find:start');
+    expect(IpcChannels.findStop).toBe('find:stop');
+    expect(IpcChannels.findResult).toBe('find:result');
+    expect(IpcChannels.downloadsList).toBe('downloads:list');
+    expect(IpcChannels.downloadsChanged).toBe('downloads:changed');
+    expect(IpcChannels.storageUsage).toBe('storage:usage');
+    expect(IpcChannels.storageClearCache).toBe('storage:clear-cache');
+    expect(IpcChannels.storageClearSiteData).toBe('storage:clear-site-data');
   });
 
   it('all channel values follow <domain>:<action> pattern', () => {

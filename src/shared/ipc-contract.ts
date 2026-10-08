@@ -16,9 +16,6 @@ import type {
 } from './types';
 
 export const IpcChannels = {
-  // Smoke-test channel kept from M0 for the preload API sanity check.
-  appPing: 'app:ping',
-
   // Multi-tab management (M2).
   tabCreate: 'tab:create',
   tabClose: 'tab:close',
@@ -147,11 +144,6 @@ export type ShortcutAction =
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];
 
 export interface IpcContract {
-  [IpcChannels.appPing]: {
-    request: { message: string };
-    response: { reply: string; timestamp: number };
-  };
-
   [IpcChannels.tabCreate]: {
     /** Optional initial URL; defaults to about:blank. */
     request: { url?: string };

@@ -27,16 +27,6 @@ export function registerIpcRouter(
   historyStore: HistoryStore,
   downloads: DownloadsManager,
 ): void {
-  // M0 smoke-test ping.
-  ipcMain.removeHandler(IpcChannels.appPing);
-  ipcMain.handle(
-    IpcChannels.appPing,
-    (_event, payload: IpcContract[typeof IpcChannels.appPing]['request']) => ({
-      reply: `pong: ${payload.message}`,
-      timestamp: Date.now(),
-    }),
-  );
-
   // Tab management.
   ipcMain.removeHandler(IpcChannels.tabCreate);
   ipcMain.handle(

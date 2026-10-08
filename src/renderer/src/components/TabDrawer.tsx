@@ -1,5 +1,5 @@
-import { X, Plus, type LucideIcon } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, type ReactElement, type RefObject } from 'react';
+import { X, Plus, TriangleAlert, Volume2, VolumeX, type LucideIcon } from 'lucide-react';
+import { useEffect, useRef, type ReactElement, type RefObject } from 'react';
 import { useTabsStore } from '../store/tab-store';
 import { tabLabel } from '../lib/chrome-labels';
 import { Favicon } from './Favicon';
@@ -34,22 +34,6 @@ export function TabDrawer({ open, onSelect, onOutsideClose, toggleRef }: TabDraw
     return () => document.removeEventListener('mousedown', onDown);
   }, [open, onOutsideClose, toggleRef]);
 
-  // M17: the drawer overlays the top of the page area. Report its height so
-  // main offsets (never resizes) the active view underneath; 0 on close.
-  useLayoutEffect(() => {
-    if (!open) return;
-    const el = drawerRef.current;
-    if (!el) return;
-    const report = (): void => window.sidebrowser.setTopInset(el.getBoundingClientRect().height);
-    report();
-    const ro = new ResizeObserver(report);
-    ro.observe(el);
-    return () => {
-      ro.disconnect();
-      window.sidebrowser.setTopInset(0);
-    };
-  }, [open]);
-
   if (!open) return null;
 
   const createTab = async (): Promise<void> => {
@@ -62,6 +46,11 @@ export function TabDrawer({ open, onSelect, onOutsideClose, toggleRef }: TabDraw
     onSelect();
   };
 
+  const toggleMute = (e: React.MouseEvent, id: string, muted: boolean): void => {
+    e.stopPropagation();
+    void window.sidebrowser.setMuted(id, !muted);
+  };
+
   const close = async (e: React.MouseEvent, id: string): Promise<void> => {
     e.stopPropagation();
     await window.sidebrowser.closeTab(id);
@@ -72,7 +61,7 @@ export function TabDrawer({ open, onSelect, onOutsideClose, toggleRef }: TabDraw
     <div
       ref={drawerRef}
       data-testid="tab-drawer"
-      className="absolute inset-x-0 top-0 z-30 flex max-h-[60%] flex-col overflow-y-auto border-b border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-elevated)]"
+      className="flex max-h-[60vh] flex-col overflow-y-auto border-b border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-elevated)]"
     >
       <DrawerButton
         icon={Plus}
@@ -102,8 +91,27 @@ export function TabDrawer({ open, onSelect, onOutsideClose, toggleRef }: TabDraw
                 : 'text-[var(--fg)] ')
             }
           >
-            <Favicon src={tab.favicon} size={14} />
-            <span className="flex-1 truncate">{label}</span>
+            {/* M16: unloaded tabs (lazy restore / auto-unload) are dimmed. */}
+            <span className={`contents ${tab.loaded ? '' : '[&>*]:opacity-55'}`}>
+              <Favicon src={tab.favicon} size={14} />
+              <span className="flex-1 truncate" data-loaded={tab.loaded ? 'true' : 'false'}>
+                {label}
+              </span>
+            </span>
+            {tab.crashed !== null && (
+              <TriangleAlert size={14} className="shrink-0 text-[var(--danger)]" aria-label="Page crashed" />
+            )}
+            {(tab.audible || tab.muted) && (
+              <span
+                role="button"
+                aria-label={tab.muted ? 'Unmute tab' : 'Mute tab'}
+                data-testid="tab-drawer-audio"
+                onClick={(e) => toggleMute(e, id, tab.muted)}
+                className="rounded-[var(--radius-sm)] p-1 text-[var(--fg-muted)] hover:bg-[var(--accent-tint)] hover:text-[var(--fg)]"
+              >
+                {tab.muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+              </span>
+            )}
             <span
               role="button"
               aria-label="Close tab"

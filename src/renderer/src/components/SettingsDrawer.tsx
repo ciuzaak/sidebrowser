@@ -5,6 +5,7 @@ import type { Settings, ThemeChoice, SearchEngine } from '@shared/types';
 import { DEFAULTS, BUILTIN_SEARCH_ENGINES } from '@shared/settings-defaults';
 import { nanoid } from 'nanoid';
 import { useSettingsStore } from '../store/settings-store';
+import { StorageSection } from './StorageSection';
 
 /**
  * Right-side overlay drawer exposing all 6 Settings sections (spec §7).
@@ -370,6 +371,29 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
               />
             </label>
           </Row>
+          <Row
+            label="Unload inactive tabs"
+            rightSlot={
+              <ResetIcon
+                show={settings.lifecycle.discardAfterMin !== DEFAULTS.lifecycle.discardAfterMin}
+                onClick={() =>
+                  void update({ lifecycle: { discardAfterMin: DEFAULTS.lifecycle.discardAfterMin } })
+                }
+                testId="reset-lifecycle-discard"
+              />
+            }
+          >
+            <SelectField
+              testId="settings-lifecycle-discard"
+              value={String(settings.lifecycle.discardAfterMin)}
+              onChange={(v) => void update({ lifecycle: { discardAfterMin: Number(v) } })}
+            >
+              <option value="0">Never</option>
+              <option value="15">After 15 min</option>
+              <option value="30">After 30 min</option>
+              <option value="60">After 1 hour</option>
+            </SelectField>
+          </Row>
         </Section>
 
         {/* ── 6. Browsing ─────────────────────────────────────── */}
@@ -394,6 +418,27 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
                 onChange={(e) =>
                   void update({ browsing: { defaultIsMobile: e.target.checked } })
                 }
+              />
+            </label>
+          </Row>
+          <Row
+            label="Mute when hidden at edge"
+            rightSlot={
+              <ResetIcon
+                show={settings.browsing.muteWhenHidden !== DEFAULTS.browsing.muteWhenHidden}
+                onClick={() =>
+                  void update({ browsing: { muteWhenHidden: DEFAULTS.browsing.muteWhenHidden } })
+                }
+                testId="reset-browsing-mute-hidden"
+              />
+            }
+          >
+            <label className="mac-toggle">
+              <input
+                type="checkbox"
+                data-testid="settings-browsing-mute-hidden"
+                checked={settings.browsing.muteWhenHidden}
+                onChange={(e) => void update({ browsing: { muteWhenHidden: e.target.checked } })}
               />
             </label>
           </Row>
@@ -472,6 +517,9 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
             }
           />
         </Section>
+
+        {/* ── 8. Storage (M16) ─────────────────────────────────── */}
+        <StorageSection Section={Section} />
       </div>
     </div>
   );
