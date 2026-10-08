@@ -1,4 +1,6 @@
 import Store from 'electron-store';
+import { buildHistorySnapshot, type HistorySnapshot } from './tab-history';
+import { storableFavicon } from './history-filter';
 
 // M8: dropped `data:` from the whitelist to align with the new ViewManager-level
 // `sanitizeUrl` guard (src/main/url-validator.ts). A persisted `data:` URL
@@ -9,11 +11,19 @@ import Store from 'electron-store';
 const SAFE_SCHEME = /^(https?|about|file):/i;
 const DEBOUNCE_MS = 1000;
 
-/** The persisted shape. Keep it minimal — transient state (title, loading, history flags) is not saved. */
+/**
+ * The persisted shape. Transient state (loading, audio, crash) is not saved.
+ * M16 adds `title` + `favicon` (unloaded tabs show them in the drawer before
+ * their page exists) and `history` (back/forward survives restarts). Older
+ * files without these fields still load.
+ */
 export interface PersistedTab {
   id: string;
   url: string;
   isMobile: boolean;
+  title: string;
+  favicon: string | null;
+  history: HistorySnapshot | null;
 }
 export interface PersistedTabs {
   tabs: PersistedTab[];
@@ -38,11 +48,15 @@ export function sanitizePersisted(raw: unknown): PersistedTabs | null {
   const cleaned: PersistedTab[] = [];
   for (const entry of obj.tabs) {
     if (!entry || typeof entry !== 'object') continue;
-    const e = entry as { id?: unknown; url?: unknown; isMobile?: unknown };
+    const e = entry as {
+      id?: unknown; url?: unknown; isMobile?: unknown; title?: unknown; favicon?: unknown; history?: unknown;
+    };
     if (typeof e.id !== 'string' || e.id === '' || typeof e.url !== 'string') continue;
     if (!SAFE_SCHEME.test(e.url)) continue;
     const isMobile = typeof e.isMobile === 'boolean' ? e.isMobile : true;
-    cleaned.push({ id: e.id, url: e.url, isMobile });
+    const title = typeof e.title === 'string' ? e.title : '';
+    const favicon = typeof e.favicon === 'string' ? storableFavicon(e.favicon) : null;
+    cleaned.push({ id: e.id, url: e.url, isMobile, title, favicon, history: sanitizeHistory(e.history) });
   }
   if (cleaned.length === 0) return null;
 
@@ -54,6 +68,25 @@ export function sanitizePersisted(raw: unknown): PersistedTabs | null {
       : cleaned[0]!.id;
 
   return { tabs: cleaned, activeId };
+}
+
+/** Validate a persisted history blob (M16); null when absent or unusable. */
+function sanitizeHistory(raw: unknown): HistorySnapshot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const h = raw as { entries?: unknown; index?: unknown };
+  if (!Array.isArray(h.entries) || typeof h.index !== 'number' || !Number.isInteger(h.index)) return null;
+  const entries: { url: string; title?: string; pageState?: string }[] = [];
+  for (const item of h.entries) {
+    if (!item || typeof item !== 'object') return null;
+    const x = item as { url?: unknown; title?: unknown; pageState?: unknown };
+    if (typeof x.url !== 'string') return null;
+    entries.push({
+      url: x.url,
+      title: typeof x.title === 'string' ? x.title : '',
+      ...(typeof x.pageState === 'string' ? { pageState: x.pageState } : {}),
+    });
+  }
+  return buildHistorySnapshot(entries, h.index);
 }
 
 /** Load persisted tabs from the store; null if none or malformed. */

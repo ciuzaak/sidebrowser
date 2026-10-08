@@ -21,8 +21,8 @@ describe('sanitizePersisted', () => {
     });
     expect(result).toEqual({
       tabs: [
-        { id: 'a', url: 'https://example.com', isMobile: true },
-        { id: 'c', url: 'about:blank', isMobile: true },
+        { id: 'a', url: 'https://example.com', isMobile: true, title: '', favicon: null, history: null },
+        { id: 'c', url: 'about:blank', isMobile: true, title: '', favicon: null, history: null },
       ],
       activeId: 'c',
     });
@@ -56,7 +56,7 @@ describe('sanitizePersisted', () => {
       activeId: 'a',
     });
     expect(result?.tabs).toEqual([
-      { id: 'a', url: 'file:///C:/x.html', isMobile: true },
+      { id: 'a', url: 'file:///C:/x.html', isMobile: true, title: '', favicon: null, history: null },
     ]);
   });
 
@@ -69,18 +69,18 @@ describe('sanitizePersisted', () => {
       activeId: '',
     });
     expect(result).toEqual({
-      tabs: [{ id: 'a', url: 'https://example.com', isMobile: true }],
+      tabs: [{ id: 'a', url: 'https://example.com', isMobile: true, title: '', favicon: null, history: null }],
       activeId: 'a',
     });
   });
 
   it('preserves isMobile when present', () => {
     const result = sanitizePersisted({
-      tabs: [{ id: 'a', url: 'https://a.com', isMobile: false }],
+      tabs: [{ id: 'a', url: 'https://a.com', isMobile: false, title: '', favicon: null, history: null }],
       activeId: 'a',
     });
     expect(result).toEqual({
-      tabs: [{ id: 'a', url: 'https://a.com', isMobile: false }],
+      tabs: [{ id: 'a', url: 'https://a.com', isMobile: false, title: '', favicon: null, history: null }],
       activeId: 'a',
     });
   });
@@ -95,10 +95,47 @@ describe('sanitizePersisted', () => {
     });
     expect(result).toEqual({
       tabs: [
-        { id: 'a', url: 'https://a.com', isMobile: true },
-        { id: 'b', url: 'https://b.com', isMobile: true },
+        { id: 'a', url: 'https://a.com', isMobile: true, title: '', favicon: null, history: null },
+        { id: 'b', url: 'https://b.com', isMobile: true, title: '', favicon: null, history: null },
       ],
       activeId: 'a',
     });
   });
 });
+
+describe('sanitizePersisted — M16 fields', () => {
+  it('keeps title, favicon and a valid history snapshot', () => {
+    const out = sanitizePersisted({
+      tabs: [{
+        id: 'a',
+        url: 'https://a.com/2',
+        isMobile: false,
+        title: 'Two',
+        favicon: 'https://a.com/f.ico',
+        history: { entries: [{ url: 'https://a.com/1', title: 'One', pageState: 'ps' }, { url: 'https://a.com/2', title: 'Two' }], index: 1 },
+      }],
+      activeId: 'a',
+    });
+    expect(out?.tabs[0]).toEqual({
+      id: 'a',
+      url: 'https://a.com/2',
+      isMobile: false,
+      title: 'Two',
+      favicon: 'https://a.com/f.ico',
+      history: { entries: [{ url: 'https://a.com/1', title: 'One', pageState: 'ps' }, { url: 'https://a.com/2', title: 'Two' }], index: 1 },
+    });
+  });
+
+  it('drops malformed history but keeps the tab', () => {
+    for (const history of [{ entries: 'x', index: 0 }, { entries: [{ url: 1 }], index: 0 }, { entries: [], index: 0 }, { entries: [{ url: 'https://a.com' }], index: 0.5 }]) {
+      const out = sanitizePersisted({ tabs: [{ id: 'a', url: 'https://a.com', isMobile: true, history }], activeId: 'a' });
+      expect(out?.tabs[0]?.history).toBeNull();
+    }
+  });
+
+  it('loads pre-M16 files (no title/favicon/history)', () => {
+    const out = sanitizePersisted({ tabs: [{ id: 'a', url: 'https://a.com', isMobile: true }], activeId: 'a' });
+    expect(out?.tabs[0]).toEqual({ id: 'a', url: 'https://a.com', isMobile: true, title: '', favicon: null, history: null });
+  });
+});
+
