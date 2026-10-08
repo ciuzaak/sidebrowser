@@ -36,9 +36,28 @@ describe('bindHistoryRecorderEvents', () => {
     expect(recorder.recordNavigation).toHaveBeenCalledWith('tab1', 'https://a.com');
   });
 
-  it('did-navigate-in-page is NOT recorded (SPA hash navigations skipped)', () => {
-    wc.emit('did-navigate-in-page', null, 'https://a.com#section');
+  it('did-navigate-in-page: fragment-only jumps are NOT recorded', () => {
+    wc.emit('did-navigate', null, 'https://a.com/p');
+    recorder.recordNavigation.mockClear();
+    wc.emit('did-navigate-in-page', null, 'https://a.com/p#section', true);
     expect(recorder.recordNavigation).not.toHaveBeenCalled();
+  });
+
+  it('did-navigate-in-page: main-frame SPA route changes ARE recorded (M16)', () => {
+    wc.emit('did-navigate', null, 'https://a.com/home');
+    wc.emit('did-navigate-in-page', null, 'https://a.com/post/1', true);
+    expect(recorder.recordNavigation).toHaveBeenLastCalledWith('tab1', 'https://a.com/post/1');
+  });
+
+  it('did-navigate-in-page: subframes are ignored', () => {
+    wc.emit('did-navigate-in-page', null, 'https://a.com/frame', false);
+    expect(recorder.recordNavigation).not.toHaveBeenCalled();
+  });
+
+  it('oversized data: favicons are stored as null', () => {
+    currentUrl = 'https://a.com';
+    wc.emit('page-favicon-updated', null, ['data:image/png;base64,' + 'A'.repeat(20_000)]);
+    expect(recorder.patchFavicon).toHaveBeenCalledWith('https://a.com', null);
   });
 
   it('page-title-updated patches via current URL from getter', () => {
@@ -74,9 +93,10 @@ describe('bindHistoryRecorderEvents', () => {
     expect(recorder.revokeFailed).not.toHaveBeenCalled();
   });
 
-  it('detach() removes all four listeners', () => {
+  it('detach() removes all listeners', () => {
     detach();
     wc.emit('did-navigate', null, 'https://a.com');
+    wc.emit('did-navigate-in-page', null, 'https://a.com/x', true);
     wc.emit('page-title-updated', null, 'Hi');
     wc.emit('page-favicon-updated', null, ['x']);
     wc.emit('did-fail-load', null, -105, 'X', 'https://a.com', true);

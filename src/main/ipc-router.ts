@@ -4,6 +4,9 @@ import type { ViewManager } from './view-manager';
 import type { SettingsStore } from './settings-store';
 import type { HistoryStore } from './history-store';
 import { rankSuggestions, recentEntries, SUGGEST_LIMIT, topSites } from './suggestion-ranker';
+import type { DownloadsManager } from './downloads';
+import { getPersistentSession } from './session-manager';
+import { clearAllSiteData, clearCaches, measureStorage } from './storage';
 
 /**
  * Wires up all ipcMain handlers in one place.
@@ -22,6 +25,7 @@ export function registerIpcRouter(
   viewManager: ViewManager,
   settingsStore: SettingsStore,
   historyStore: HistoryStore,
+  downloads: DownloadsManager,
 ): void {
   // M0 smoke-test ping.
   ipcMain.removeHandler(IpcChannels.appPing);
@@ -139,6 +143,61 @@ export function registerIpcRouter(
     ipcMain.removeListener(IpcChannels.viewSetTopInset, onSetTopInset);
     ipcMain.removeListener(IpcChannels.windowMinimize, onMinimize);
     ipcMain.removeListener(IpcChannels.windowClose, onClose);
+  });
+
+  // M16: per-tab mute.
+  ipcMain.removeHandler(IpcChannels.tabSetMuted);
+  ipcMain.handle(
+    IpcChannels.tabSetMuted,
+    (_event, payload: IpcContract[typeof IpcChannels.tabSetMuted]['request']) => {
+      viewManager.setMuted(payload.id, payload.muted);
+    },
+  );
+
+  // M16: find in page (active tab). Results come back via found-in-page →
+  // find:result (wired in index.ts per tab webContents).
+  ipcMain.removeHandler(IpcChannels.findStart);
+  ipcMain.handle(
+    IpcChannels.findStart,
+    (_event, payload: IpcContract[typeof IpcChannels.findStart]['request']) => {
+      const wc = viewManager.getActiveWebContents();
+      if (!wc || payload.text === '') return;
+      wc.findInPage(payload.text, { forward: payload.forward, findNext: payload.newSession });
+    },
+  );
+  const onFindStop = (): void => {
+    viewManager.getActiveWebContents()?.stopFindInPage('clearSelection');
+  };
+
+  // M16: downloads.
+  ipcMain.removeHandler(IpcChannels.downloadsList);
+  ipcMain.handle(IpcChannels.downloadsList, () => downloads.list());
+  const onDownloadsOpen = (_e: IpcMainEvent, p: { id: string }): void => downloads.open(p.id);
+  const onDownloadsShow = (_e: IpcMainEvent, p: { id: string }): void => downloads.showInFolder(p.id);
+  const onDownloadsCancel = (_e: IpcMainEvent, p: { id: string }): void => downloads.cancel(p.id);
+  const onDownloadsClear = (): void => downloads.clear();
+
+  // M16: Settings → Storage.
+  ipcMain.removeHandler(IpcChannels.storageUsage);
+  ipcMain.handle(IpcChannels.storageUsage, () =>
+    measureStorage(getPersistentSession().getStoragePath() ?? ''),
+  );
+  ipcMain.removeHandler(IpcChannels.storageClearCache);
+  ipcMain.handle(IpcChannels.storageClearCache, () => clearCaches(getPersistentSession()));
+  ipcMain.removeHandler(IpcChannels.storageClearSiteData);
+  ipcMain.handle(IpcChannels.storageClearSiteData, () => clearAllSiteData(getPersistentSession()));
+
+  ipcMain.on(IpcChannels.findStop, onFindStop);
+  ipcMain.on(IpcChannels.downloadsOpen, onDownloadsOpen);
+  ipcMain.on(IpcChannels.downloadsShowInFolder, onDownloadsShow);
+  ipcMain.on(IpcChannels.downloadsCancel, onDownloadsCancel);
+  ipcMain.on(IpcChannels.downloadsClear, onDownloadsClear);
+  window.once('closed', () => {
+    ipcMain.removeListener(IpcChannels.findStop, onFindStop);
+    ipcMain.removeListener(IpcChannels.downloadsOpen, onDownloadsOpen);
+    ipcMain.removeListener(IpcChannels.downloadsShowInFolder, onDownloadsShow);
+    ipcMain.removeListener(IpcChannels.downloadsCancel, onDownloadsCancel);
+    ipcMain.removeListener(IpcChannels.downloadsClear, onDownloadsClear);
   });
 
   // Chrome layout — fire-and-forget. Scope listener to this window's lifetime.

@@ -17,6 +17,9 @@ function makeDeps(): ShortcutDeps & {
     onGoForward: ReturnType<typeof vi.fn>;
     onToggleDevTools: ReturnType<typeof vi.fn>;
     onResetZoom: ReturnType<typeof vi.fn>;
+    onZoomIn: ReturnType<typeof vi.fn>;
+    onZoomOut: ReturnType<typeof vi.fn>;
+    onReopenClosedTab: ReturnType<typeof vi.fn>;
     emitToRenderer: ReturnType<typeof vi.fn>;
   };
 } {
@@ -27,6 +30,9 @@ function makeDeps(): ShortcutDeps & {
   const onGoForward = vi.fn();
   const onToggleDevTools = vi.fn();
   const onResetZoom = vi.fn();
+  const onZoomIn = vi.fn();
+  const onZoomOut = vi.fn();
+  const onReopenClosedTab = vi.fn();
   const emitToRenderer = vi.fn();
   return {
     onNewTab,
@@ -36,6 +42,9 @@ function makeDeps(): ShortcutDeps & {
     onGoForward,
     onToggleDevTools,
     onResetZoom,
+    onZoomIn,
+    onZoomOut,
+    onReopenClosedTab,
     emitToRenderer,
     spies: {
       onNewTab,
@@ -45,6 +54,9 @@ function makeDeps(): ShortcutDeps & {
       onGoForward,
       onToggleDevTools,
       onResetZoom,
+      onZoomIn,
+      onZoomOut,
+      onReopenClosedTab,
       emitToRenderer,
     },
   };
@@ -78,7 +90,8 @@ describe('buildShortcutMenuTemplate', () => {
   it('returns exactly one hidden top-level item with 10 submenu entries', () => {
     // Spec §15 defined 9 logical shortcuts. M13 removed "Toggle Tab Drawer"
     // (CmdOrCtrl+Tab) — TabCycler now owns Ctrl+Tab via before-input-event.
-    // The menu template has 10 physical entries:
+    // The menu template has 15 physical entries (M16 added zoom in ×2, zoom
+    // out, find, reopen closed tab):
     //  - Ctrl+R and F5 are two separate items that share onReloadActive.
     //  - F12 DevTools.
     const deps = makeDeps();
@@ -89,7 +102,7 @@ describe('buildShortcutMenuTemplate', () => {
     expect(top.visible).toBe(false);
 
     const submenu = getSubmenu(template);
-    expect(submenu).toHaveLength(10);
+    expect(submenu).toHaveLength(15);
   });
 
   // ── Test 2: Accelerators ──────────────────────────────────────────────────
@@ -109,6 +122,11 @@ describe('buildShortcutMenuTemplate', () => {
       ['Forward', 'Alt+Right'],
       ['Toggle Settings', 'CmdOrCtrl+,'],
       ['Reset Zoom', 'CmdOrCtrl+0'],
+      ['Zoom In', 'CmdOrCtrl+='],
+      ['Zoom In (+)', 'CmdOrCtrl+Plus'],
+      ['Zoom Out', 'CmdOrCtrl+-'],
+      ['Find in Page', 'CmdOrCtrl+F'],
+      ['Reopen Closed Tab', 'CmdOrCtrl+Shift+T'],
       ['Toggle DevTools', 'F12'],
     ];
     expect(submenu).toHaveLength(expected.length);
@@ -134,7 +152,11 @@ describe('buildShortcutMenuTemplate', () => {
       [5, 'onGoBack'],
       [6, 'onGoForward'],
       [8, 'onResetZoom'],
-      [9, 'onToggleDevTools'],
+      [9, 'onZoomIn'],
+      [10, 'onZoomIn'],
+      [11, 'onZoomOut'],
+      [13, 'onReopenClosedTab'],
+      [14, 'onToggleDevTools'],
     ];
     for (const [idx] of directCases) {
       const item = submenu[idx];
@@ -148,18 +170,22 @@ describe('buildShortcutMenuTemplate', () => {
     expect(deps.spies.onGoBack).toHaveBeenCalledTimes(1);
     expect(deps.spies.onGoForward).toHaveBeenCalledTimes(1);
     expect(deps.spies.onResetZoom).toHaveBeenCalledTimes(1);
+    expect(deps.spies.onZoomIn).toHaveBeenCalledTimes(2); // Ctrl+= + Ctrl+Plus
+    expect(deps.spies.onZoomOut).toHaveBeenCalledTimes(1);
+    expect(deps.spies.onReopenClosedTab).toHaveBeenCalledTimes(1);
     expect(deps.spies.onToggleDevTools).toHaveBeenCalledTimes(1);
   });
 
   // ── Test 4: emitToRenderer routing ────────────────────────────────────────
-  it('forwards the three renderer-bound actions through emitToRenderer', () => {
+  it('forwards the renderer-bound actions through emitToRenderer', () => {
     const deps = makeDeps();
     const submenu = getSubmenu(buildShortcutMenuTemplate(deps));
 
     // [index, expectedAction]
-    const emitCases: Array<[number, 'focus-address-bar' | 'toggle-settings-drawer']> = [
+    const emitCases: Array<[number, 'focus-address-bar' | 'toggle-settings-drawer' | 'open-find']> = [
       [2, 'focus-address-bar'],
       [7, 'toggle-settings-drawer'],
+      [12, 'open-find'],
     ];
     for (const [idx, action] of emitCases) {
       const item = submenu[idx];
@@ -167,7 +193,7 @@ describe('buildShortcutMenuTemplate', () => {
       item.click!();
       expect(deps.spies.emitToRenderer).toHaveBeenCalledWith(action);
     }
-    expect(deps.spies.emitToRenderer).toHaveBeenCalledTimes(2);
+    expect(deps.spies.emitToRenderer).toHaveBeenCalledTimes(3);
 
     // None of the direct-handler spies should fire for the emit-to-renderer
     // entries.

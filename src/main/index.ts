@@ -31,6 +31,8 @@ import { buildContextMenuTemplate as buildContextMenuTemplateForTest } from './c
 import { handleSecondInstance } from './single-instance';
 import { installMobileHeaderRewriter } from './mobile-emulation';
 import { getPersistentSession } from './session-manager';
+import { installPermissionPolicy } from './permissions';
+import { DownloadsManager } from './downloads';
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -135,11 +137,20 @@ function applyEffectiveAlwaysOnTop(
 
 function seedTabs(viewManager: ViewManager, persisted: PersistedTabs | null): void {
   if (persisted) {
-    // Create tabs in stored order; last-created becomes active by default,
-    // but we then explicitly activate the stored activeId.
+    // M16 lazy restore: create every tab as an unloaded placeholder in stored
+    // order (title / favicon / back-forward history from the file), then
+    // activate the stored active tab — only its page is created now; the
+    // others restore on first activation.
     for (const pt of persisted.tabs) {
-      viewManager.createTab(pt.url, pt.id, pt.isMobile);
-      // createTab auto-activates — we override the active tab below.
+      viewManager.createTab(pt.url, {
+        id: pt.id,
+        isMobile: pt.isMobile,
+        title: pt.title,
+        favicon: pt.favicon,
+        history: pt.history,
+        activate: false,
+        load: false,
+      });
     }
     viewManager.activateTab(persisted.activeId);
   } else {
@@ -217,15 +228,30 @@ app.whenReady().then(() => {
     return {
       defaultIsMobile: s.browsing.defaultIsMobile,
       mobileUserAgent: s.browsing.mobileUserAgent,
+      muteWhenHidden: s.browsing.muteWhenHidden,
     };
   }, historyRecorder);
+  // M16: deny site permission requests except a harmless allowlist (no
+  // notification toasts, no silent geolocation / camera / mic). Before the
+  // first tab exists.
+  installPermissionPolicy(getPersistentSession());
   // M10: Sec-CH-UA-* 头改写。挂在 persistent session 上，按 viewManager 的 per-tab
   // isMobile 状态决定改不改。必须在 ViewManager 之后、第一个 createTab 之前——
   // seedTabs 在 did-finish-load 才跑，这里安全。
   installMobileHeaderRewriter(getPersistentSession(), (wcId) =>
     viewManager.getMobileEmulationState(wcId),
   );
-  registerIpcRouter(win, viewManager, settingsStore, historyStore);
+  // M16: downloads go straight to the Downloads folder (overridable in E2E).
+  const downloads: DownloadsManager = new DownloadsManager({
+    getDirectory: () => process.env['SIDEBROWSER_E2E_DOWNLOADS_DIR'] ?? app.getPath('downloads'),
+    onChanged: () => {
+      if (!win.isDestroyed()) win.webContents.send(IpcChannels.downloadsChanged, downloads.list());
+    },
+    openPath: (p) => shell.openPath(p),
+    showItemInFolder: (p) => { shell.showItemInFolder(p); },
+  });
+  downloads.install(getPersistentSession());
+  registerIpcRouter(win, viewManager, settingsStore, historyStore, downloads);
 
   // 2b. Hidden Application Menu — spec §15 keyboard shortcuts. Installed once
   // globally per-process (Menu.setApplicationMenu is app-wide, not per-window),
@@ -241,6 +267,9 @@ app.whenReady().then(() => {
     onGoForward: () => { viewManager.goForwardActive(); },
     onToggleDevTools: () => { viewManager.toggleDevToolsActive(); },
     onResetZoom: () => { viewManager.resetActiveZoom(); },
+    onZoomIn: () => { viewManager.zoomActive('in'); },
+    onZoomOut: () => { viewManager.zoomActive('out'); },
+    onReopenClosedTab: () => { viewManager.reopenClosedTab(); },
     emitToRenderer: (action) => {
       if (!win.isDestroyed()) win.webContents.send(IpcChannels.chromeShortcut, { action });
     },
@@ -248,8 +277,8 @@ app.whenReady().then(() => {
 
   // 2c. M13 web context-menu deps. The deps reference viewManager + settingsStore
   // via closures so search-engine selection / tab creation always sees current
-  // state. canGoBack/canGoForward are placeholders here — view-manager refreshes
-  // them per-event from the right tab's nav history.
+  // state. ViewManager adds the per-event fields (nav state, edit / image /
+  // zoom actions) for the clicked tab.
   const buildSearchUrlForSelection = (text: string): string => {
     const s = settingsStore.get().search;
     const tpl =
@@ -275,8 +304,6 @@ app.whenReady().then(() => {
       else if (a === 'forward') viewManager.goForwardActive();
       else viewManager.reloadActive();
     },
-    canGoBack: false,
-    canGoForward: false,
     get activeSearchEngineName(): string {
       const s = settingsStore.get().search;
       return s.engines.find((e) => e.id === s.activeId)?.name ?? 'Google';
@@ -318,6 +345,14 @@ app.whenReady().then(() => {
     wc.on('focus', () => {
       if (!win.isDestroyed()) win.webContents.send(IpcChannels.tabFocused, {});
     });
+    // M16: find-in-page results for the renderer's FindBar (active tab only).
+    wc.on('found-in-page', (_e, result) => {
+      if (win.isDestroyed() || wc !== viewManager.getActiveWebContents()) return;
+      win.webContents.send(IpcChannels.findResult, {
+        activeMatchOrdinal: result.activeMatchOrdinal,
+        matches: result.matches,
+      });
+    });
   });
   win.on('blur', () => cycler.end());
   // M13: renderer-driven cycle end. The renderer's closeDrawer (outside-
@@ -353,6 +388,17 @@ app.whenReady().then(() => {
     const snap = viewManager.serializeForPersistence();
     if (snap) saver.save(snap);
   });
+
+  // M16: unload background tabs idle longer than lifecycle.discardAfterMin.
+  const DISCARD_CHECK_MS = 60_000;
+  const discardTimer = setInterval(() => {
+    viewManager.discardInactive(
+      Date.now(),
+      settingsStore.get().lifecycle.discardAfterMin,
+      downloads.busyWebContentsIds(),
+    );
+  }, DISCARD_CHECK_MS);
+  win.once('closed', () => { clearInterval(discardTimer); });
 
   // Defer seeding until the renderer bundle has loaded so the tabs:snapshot
   // broadcast lands on a renderer that has registered its IPC listeners.
@@ -405,6 +451,8 @@ app.whenReady().then(() => {
         edgeDockActive = nextActive;
         applyEffectiveAlwaysOnTop(win, settingsStore.get().window.alwaysOnTop, edgeDockActive);
       }
+      // M16: fully hidden at the edge → stop rendering the page + auto-mute.
+      viewManager.setWindowHidden(s.hidden);
       if (!win.isDestroyed()) win.webContents.send(IpcChannels.windowState, s);
     },
     now: () => Date.now(),
@@ -477,6 +525,8 @@ app.whenReady().then(() => {
   let lastAlwaysOnTop = settingsStore.get().window.alwaysOnTop;
   let lastEdgeDockEnabled = settingsStore.get().edgeDock.enabled;
   settingsStore.onChanged((settings) => {
+    // M16: browsing.muteWhenHidden may have changed.
+    viewManager.refreshAudio();
     if (dim.isActive) void dim.restyle(settings.dim);
     watcher.setDelayMs(settings.mouseLeave.delayMs);
     if (settings.window.preset !== lastPreset) {
@@ -561,7 +611,12 @@ app.whenReady().then(() => {
       requestWindowClose: () => win.close(),
       getIsWindowVisible: () => !win.isDestroyed() && win.isVisible(),
       // M11 zoom hooks.
-      getActiveZoomFactor: (): number => viewManager.getActiveWebContents()?.getZoomFactor() ?? 1.0,
+      // M16: the tab's logical zoom (mobile tabs zoom via CDP metrics, so
+      // webContents.getZoomFactor() stays 1 for them).
+      getActiveZoomFactor: (): number => {
+        const id = viewManager.getActiveId();
+        return id === null ? 1.0 : viewManager.getZoom(id);
+      },
       emitZoomChange: (dir: 'in' | 'out'): void => {
         const wc = viewManager.getActiveWebContents();
         if (wc) wc.emit('zoom-changed', null, dir);
@@ -596,6 +651,13 @@ app.whenReady().then(() => {
             navigateActive: () => {},
             canGoBack: true,
             canGoForward: true,
+            edit: () => {},
+            replaceMisspelling: () => {},
+            addToDictionary: () => {},
+            copyImageAt: () => {},
+            saveUrl: () => {},
+            zoom: () => {},
+            zoomPercent: 100,
             activeSearchEngineName: settingsStore.get().search.engines.find((e) =>
               e.id === settingsStore.get().search.activeId,
             )?.name ?? 'Google',
@@ -633,9 +695,10 @@ app.whenReady().then(() => {
         return {
           defaultIsMobile: s.browsing.defaultIsMobile,
           mobileUserAgent: s.browsing.mobileUserAgent,
+          muteWhenHidden: s.browsing.muteWhenHidden,
         };
       }, historyRecorder);
-      registerIpcRouter(newWin, newViewManager, settingsStore, historyStore);
+      registerIpcRouter(newWin, newViewManager, settingsStore, historyStore, downloads);
       newWin.webContents.once('did-finish-load', () => {
         newViewManager.createTab('about:blank');
       });

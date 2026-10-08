@@ -12,6 +12,7 @@
  * 设计文档：docs/superpowers/specs/2026-04-27-mobile-emulation-clienthints-design.md
  */
 import type { Session, WebContents } from 'electron';
+import { mobileZoomMetrics } from './mobile-zoom';
 
 export interface UaMetadata {
   /** Client Hints platform value, e.g. "iOS"、"Android"、"Windows"、"macOS"、"Linux"。出 sf-string 时用 `"${platform}"` 包引号。 */
@@ -201,6 +202,8 @@ export async function attachCdpEmulation(
   metadata: UaMetadata,
   ua: string,
   screenSize: { width: number; height: number },
+  /** M16: tab zoom factor (1 = 100%); see mobile-zoom.ts for how it maps to CDP. */
+  zoom = 1,
 ): Promise<void> {
   // 幂等：已 attach 则跳过 attach 但仍重发命令（caller 在 did-navigate 上重调本函数
   // 保证每次 fresh JS context 都看到 touch 状态——'ontouchstart' in window 在 window
@@ -235,11 +238,17 @@ export async function attachCdpEmulation(
         bitness: '',
       },
     });
+    // M16: zoom ≠ 1 narrows the layout viewport and scales the output back up
+    // to the real view size (`dontSetVisibleSize` keeps the visible size real,
+    // otherwise the scaled output is clipped). zoom = 1 sends exactly the
+    // pre-M16 parameters.
+    const m = mobileZoomMetrics(screenSize.width, screenSize.height, zoom);
     await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
-      width: screenSize.width,
-      height: screenSize.height,
+      width: m.width,
+      height: m.height,
       deviceScaleFactor: 0,
       mobile: true,
+      ...(m.scale !== 1 ? { scale: m.scale, dontSetVisibleSize: true } : {}),
     });
     await wc.debugger.sendCommand('Emulation.setTouchEmulationEnabled', {
       enabled: true,
@@ -333,6 +342,17 @@ export function installMobileHeaderRewriter(
   session: Session,
   getMobileIdentity: (wcId: number) => MobileRequestIdentity | null,
 ): void {
+  // M16: every request of every tab passes through here on the main thread —
+  // memoise the UA-derived brand strings (they only change when the user edits
+  // the mobile UA) instead of rebuilding them per request.
+  let brandCache: { ua: string; brands: string; fullVersionList: string } | null = null;
+  const brandsFor = (ua: string): { brands: string; fullVersionList: string } => {
+    if (brandCache?.ua !== ua) {
+      const b = buildChromiumBrands(ua);
+      brandCache = { ua, brands: formatBrandList(b.brands), fullVersionList: formatBrandList(b.fullVersionList) };
+    }
+    return brandCache;
+  };
   session.webRequest.onBeforeSendHeaders((details, callback) => {
     // webContentsId 不存在的请求（例如某些 service worker / preload-阶段请求）
     // 没法关联到 tab，直接放行不动头。
@@ -342,11 +362,11 @@ export function installMobileHeaderRewriter(
       callback({});
       return;
     }
-    // 从该 tab 的 UA 派生品牌——UA 可被用户自定义，且要与 CDP 主框架一致，故每请求算。
-    const { brands, fullVersionList } = buildChromiumBrands(id.userAgent);
+    // 品牌从该 tab 的 UA 派生（与 CDP 主框架一致），按 UA 缓存。
+    const { brands, fullVersionList } = brandsFor(id.userAgent);
     const headers = { ...details.requestHeaders };
     setHeader(headers, 'User-Agent', id.userAgent);
-    setHeader(headers, 'Sec-CH-UA', formatBrandList(brands));
+    setHeader(headers, 'Sec-CH-UA', brands);
     setHeader(headers, 'Sec-CH-UA-Mobile', id.metadata.mobile ? '?1' : '?0');
     setHeader(headers, 'Sec-CH-UA-Platform', `"${id.metadata.platform}"`);
     if (id.metadata.platformVersion) {
@@ -358,7 +378,7 @@ export function installMobileHeaderRewriter(
     }
     // 高熵 Client Hints：仅在已存在（被 Accept-CH 请求过）时改写成移动一致值。
     // mobile 的 arch/bitness/model 在真 Chrome 上为空（sf-string `""`）。
-    rewriteIfPresent(headers, 'Sec-CH-UA-Full-Version-List', formatBrandList(fullVersionList));
+    rewriteIfPresent(headers, 'Sec-CH-UA-Full-Version-List', fullVersionList);
     rewriteIfPresent(headers, 'Sec-CH-UA-Arch', '""');
     rewriteIfPresent(headers, 'Sec-CH-UA-Bitness', '""');
     rewriteIfPresent(headers, 'Sec-CH-UA-Model', '""');

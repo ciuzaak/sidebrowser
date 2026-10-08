@@ -219,3 +219,35 @@ export interface TopSite {
   host: string;
   favicon: string | null;
 }
+
+/** One download in the M16 Downloads drawer (session lifetime). */
+export interface DownloadInfo {
+  id: string;
+  filename: string;
+  /** Absolute path the file is (being) saved to. */
+  path: string;
+  url: string;
+  state: 'progressing' | 'completed' | 'cancelled' | 'interrupted';
+  receivedBytes: number;
+  /** 0 when the server sent no Content-Length. */
+  totalBytes: number;
+  startedAt: number;
+  /** Tab webContents that started it (null for e.g. a popup). */
+  webContentsId: number | null;
+}
+
+/** Find-in-page result for the active tab (M16). */
+export interface FindResult {
+  activeMatchOrdinal: number;
+  matches: number;
+}
+
+/** Settings → Storage usage breakdown in bytes (M16). */
+export interface StorageUsage {
+  httpCache: number;
+  codeCache: number;
+  serviceWorker: number;
+  other: number;
+  total: number;
+}
+

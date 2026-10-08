@@ -15,39 +15,46 @@ import {
 import type { Tab, TabsSnapshot } from '@shared/types';
 import { makeEmptyTab } from '@shared/types';
 import type { HistoryRecorder } from './history-recorder';
-import { buildContextMenuTemplate, type ContextMenuDeps } from './context-menu';
+import {
+  buildContextMenuTemplate,
+  type ContextMenuBaseDeps,
+  type ContextMenuDeps,
+  type EditCommand,
+} from './context-menu';
 import { computeViewLayout } from './view-layout';
+import { effectiveMuted } from './audio';
+import { pickTabsToDiscard } from './tab-discard';
+import { decideWindowOpen, popupSizeFromFeatures } from './window-open';
+import { isFragmentOnlyChange, storableFavicon } from './history-filter';
+import {
+  buildHistorySnapshot,
+  snapshotNavState,
+  type HistorySnapshot,
+} from './tab-history';
 
-// Lazy CommonJS bridge for `Menu` — keeps non-Electron contexts (vitest
-// importing the pure free functions in this module) free of an electron
-// runtime dependency. Same pattern as keyboard-shortcuts.ts.
+// Lazy CommonJS bridge for runtime-only Electron APIs (`Menu`, `screen`) —
+// keeps non-Electron contexts (vitest importing the pure free functions in
+// this module) free of them. Same pattern as keyboard-shortcuts.ts.
 const requireCjs = createRequire(import.meta.url);
 
 // ---------------------------------------------------------------------------
-// History recorder wiring — M12 Task 5
+// History recorder wiring — M12 Task 5, M16 SPA navigations
 // ---------------------------------------------------------------------------
 
 /**
  * Bind history-recording listeners onto a webContents. Returns a detach
- * closure that removes all four listeners. Kept as a free function so it is
- * unit-testable with a fake EventEmitter — no BrowserWindow / WebContentsView
- * required.
+ * closure that removes them. Kept as a free function so it is unit-testable
+ * with a fake EventEmitter — no BrowserWindow / WebContentsView required.
  *
  * `getCurrentUrl` is a closure (not a snapshot) because page-title-updated
  * fires AFTER did-navigate has already updated the tab state — by the time
- * the title arrives, the URL we want is the freshly-set one. Threading a
- * snapshot at bind time would be wrong.
+ * the title arrives, the URL we want is the freshly-set one.
  *
- * Known limitation (TODO post-v1): `did-navigate-in-page` (SPA hash nav)
- * also updates `tab.url` via the existing onNavigate handler upstream, so
- * `getCurrentUrl()` returns the SPA fragment URL. A page-title-updated /
- * page-favicon-updated event arriving after a SPA hash change therefore
- * patches against the fragment URL (which is not in the history store —
- * only top-level navigations are recorded), so the patch silently no-ops.
- * Net effect: a stale title/favicon for the originally-recorded full URL
- * if the page emits its title only after a hash navigation. Not a crash;
- * the entry remains usable for navigation. Fix would require recording
- * the last top-level URL separately for patch routing.
+ * M16: main-frame `did-navigate-in-page` (SPA pushState routes) is recorded
+ * too, except fragment-only changes (`#section` jumps). Because ViewManager
+ * also updates `tab.url` on those navigations, a title arriving after an SPA
+ * route change now patches the right history entry. Oversized `data:`
+ * favicons are not stored.
  *
  * `recorder = null` is a valid no-op binding (used in tests + future
  * "history disabled" config paths).
@@ -60,14 +67,22 @@ export function bindHistoryRecorderEvents(
 ): () => void {
   if (recorder === null) return () => {};
 
+  let lastRecorded = '';
   const onNavigate = (_e: Electron.Event, url: string): void => {
+    lastRecorded = url;
+    recorder.recordNavigation(tabId, url);
+  };
+  const onNavigateInPage = (_e: Electron.Event, url: string, isMainFrame: boolean): void => {
+    if (!isMainFrame) return;
+    if (isFragmentOnlyChange(lastRecorded, url)) return;
+    lastRecorded = url;
     recorder.recordNavigation(tabId, url);
   };
   const onTitle = (_e: Electron.Event, title: string): void => {
     recorder.patchTitle(getCurrentUrl(), title);
   };
   const onFavicon = (_e: Electron.Event, favicons: string[]): void => {
-    recorder.patchFavicon(getCurrentUrl(), favicons[0] ?? null);
+    recorder.patchFavicon(getCurrentUrl(), storableFavicon(favicons[0] ?? null));
   };
   const onFailLoad = (
     _e: Electron.Event,
@@ -82,12 +97,14 @@ export function bindHistoryRecorderEvents(
   };
 
   wc.on('did-navigate', onNavigate);
+  wc.on('did-navigate-in-page', onNavigateInPage);
   wc.on('page-title-updated', onTitle);
   wc.on('page-favicon-updated', onFavicon);
   wc.on('did-fail-load', onFailLoad);
 
   return () => {
     wc.off('did-navigate', onNavigate);
+    wc.off('did-navigate-in-page', onNavigateInPage);
     wc.off('page-title-updated', onTitle);
     wc.off('page-favicon-updated', onFavicon);
     wc.off('did-fail-load', onFailLoad);
@@ -103,12 +120,13 @@ const ZOOM_MAX = 3.0;
 const ZOOM_STEP = 0.1;
 
 /**
- * Pure helper for the zoom-changed handler. Computed step bounded by [0.5, 3.0]
- * so the handler can be unit-tested without a real WebContents.
+ * Pure helper for zoom steps. Computed step bounded by [0.5, 3.0] and rounded
+ * to whole percent so repeated steps don't accumulate float drift.
  */
 export function nextZoomFactor(current: number, dir: 'in' | 'out'): number {
   const delta = dir === 'in' ? +ZOOM_STEP : -ZOOM_STEP;
-  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, current + delta));
+  const next = Math.round((current + delta) * 100) / 100;
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
 }
 
 // ---------------------------------------------------------------------------
@@ -132,52 +150,113 @@ export function nextRelativeIndex(
   return ((idx + delta) % N + N) % N;
 }
 
+/**
+ * Tab to activate after closing `closingId` (M16): the right-hand neighbour,
+ * else the left-hand one, else null.
+ */
+export function neighbourAfterClose(order: readonly string[], closingId: string): string | null {
+  const idx = order.indexOf(closingId);
+  if (idx === -1) return order[order.length - 1] ?? null;
+  return order[idx + 1] ?? order[idx - 1] ?? null;
+}
+
 // ---------------------------------------------------------------------------
 
 /**
  * Getter closure the main bootstrap injects so ViewManager can read live
- * browsing defaults (UA + mobile flag) from SettingsStore at each createTab
- * call without holding a direct SettingsStore reference. M6 Task 8.
+ * browsing defaults from SettingsStore without holding a direct reference.
  */
 export type BrowsingDefaultsGetter = () => {
   defaultIsMobile: boolean;
   mobileUserAgent: string;
+  /** M16: auto-mute while the window is hidden at the screen edge. */
+  muteWhenHidden: boolean;
 };
+
+/** Options for createTab (M16). Everything is optional. */
+export interface CreateTabOptions {
+  /** Persisted id (restore path); fresh nanoid otherwise. */
+  id?: string;
+  /** Defaults to settings.browsing.defaultIsMobile. */
+  isMobile?: boolean;
+  /** Activate the new tab (default true). */
+  activate?: boolean;
+  /** Create the page now (default true). false → unloaded placeholder. */
+  load?: boolean;
+  title?: string;
+  favicon?: string | null;
+  /** Back/forward stack restored via navigationHistory.restore when the page is created. */
+  history?: HistorySnapshot | null;
+}
+
+/** One entry of the Ctrl+Shift+T stack. */
+interface ClosedTab {
+  url: string;
+  isMobile: boolean;
+  title: string;
+  favicon: string | null;
+  history: HistorySnapshot | null;
+}
+
+const CLOSED_STACK_MAX = 10;
 
 type TabUpdatedListener = (tab: Tab) => void;
 type SnapshotListener = (snapshot: TabsSnapshot) => void;
 
 interface ManagedTab {
-  view: WebContentsView;
   tab: Tab;
-  /** Detachable webContents listener cleanup for this tab. Called on close. */
-  detach: () => void;
+  /** null while the tab is unloaded (lazy restore / auto-unload). */
+  view: WebContentsView | null;
+  /** Detachable webContents listener cleanup; null while unloaded. */
+  detach: (() => void) | null;
+  /** Back/forward stack to restore when the page is (re)created. */
+  history: HistorySnapshot | null;
+  /** epoch ms the tab last stopped (or started) being the active tab. */
+  lastActiveAt: number;
+  /** Zoom factor (1 = 100%). Survives unload; not persisted across restarts. */
+  zoom: number;
+}
+
+/** Persistable shape of one tab — see tab-persistence.ts. */
+export interface SerializedTab {
+  id: string;
+  url: string;
+  isMobile: boolean;
+  title: string;
+  favicon: string | null;
+  history: HistorySnapshot | null;
 }
 
 /**
  * Multi-tab web view controller.
  *
- * Each tab owns one WebContentsView attached to the host BrowserWindow, all
- * sharing the persistent session. Only the active tab's view has real bounds;
- * background tabs have `{0,0,0,0}` so they stay resident but invisible.
+ * Each loaded tab owns one WebContentsView attached to the host BrowserWindow,
+ * all sharing the persistent session. Every view gets the page bounds; only
+ * the active one is visible (see computeViewLayout). M16: tabs may be
+ * unloaded (no view) — restored lazily on activation from a history snapshot.
  */
 export class ViewManager {
   private readonly window: BrowserWindow;
   private readonly tabs = new Map<string, ManagedTab>();
+  /** webContents id → tab id, for request-header routing (M16). */
+  private readonly wcToTab = new Map<number, string>();
   private activeId: string | null = null;
   private chromeHeightPx = 0;
-  /** M17: TabDrawer overlay height — offsets (never resizes) the active view. */
+  /** M17: top overlay stack height — offsets (never resizes) the active view. */
   private topInsetPx = 0;
   private suppressed = false;
+  /** M16: edge-dock reports the window fully hidden at the screen edge. */
+  private windowHidden = false;
+  /** M16: tab currently in in-window HTML fullscreen. */
+  private fullscreenTabId: string | null = null;
+  /** M16: Ctrl+Shift+T stack (most recent last). */
+  private readonly closedTabs: ClosedTab[] = [];
+  /** M16: cached mobile request identity per UA string. */
+  private identityCache: MobileRequestIdentity | null = null;
   /** Web context-menu deps (M13). Wired via setContextMenuDeps() after construction. */
-  private contextMenuDeps: ContextMenuDeps | null = null;
+  private contextMenuDeps: ContextMenuBaseDeps | null = null;
   /** Tab attach listeners (M13). Used by TabCycler to install before-input-event on every tab. */
   private readonly tabAttachListeners = new Set<(wc: Electron.WebContents) => void>();
-  /**
-   * Per-tab zoom factor (1.0 = 100%). Default 1.0 is implicit (`get(...) ?? 1.0`).
-   * Map entries are removed on closeTab. Not persisted by design (spec §6.1).
-   */
-  private readonly zoomFactors = new Map<string, number>();
   private readonly tabUpdatedListeners = new Set<TabUpdatedListener>();
   private readonly snapshotListeners = new Set<SnapshotListener>();
   private readonly getBrowsingDefaults: BrowsingDefaultsGetter;
@@ -252,105 +331,118 @@ export class ViewManager {
     this.reapplyMobileEmulationAll();
   }
 
-  /** Create a new tab, auto-activate it, return the full Tab object.
-   *  `id` is optional and only used by the persistence-restore path in `seedTabs`
-   *  to preserve persisted ids; user-initiated `tab:create` IPC always gets a fresh nanoid.
-   *  `isMobile` defaults to `settings.browsing.defaultIsMobile` when omitted; an explicit
-   *  caller value (e.g. the restore path preserving per-tab UA) always wins. */
-  createTab(url: string = 'about:blank', id: string = nanoid(), isMobile?: boolean): Tab {
+  /**
+   * Create a tab and return the full Tab object. By default the page is
+   * created and the tab activated; M16 options allow background tabs
+   * (`activate: false`) and unloaded placeholders (`load: false`, restore
+   * path) that create their page on first activation.
+   */
+  createTab(url: string = 'about:blank', opts: CreateTabOptions = {}): Tab {
     // Whitelist guard (spec §10). Covers user-initiated createTab via IPC, the
-    // setWindowOpenHandler popup path, AND the seedTabs replay path transitively
-    // (seedTabs → createTab), so persisted javascript:/data:/chrome: URLs can't
-    // reach the renderer even if they slipped past tab-persistence SAFE_SCHEME.
+    // window-open path, AND the seedTabs replay path, so persisted
+    // javascript:/data:/chrome: URLs can't reach the renderer.
     url = sanitizeUrl(url);
-    const defaults = this.getBrowsingDefaults();
-    const resolvedIsMobile = isMobile ?? defaults.defaultIsMobile;
-    const view = new WebContentsView({
-      webPreferences: {
-        session: getPersistentSession(),
-        sandbox: true,
-        contextIsolation: true,
-        nodeIntegration: false,
-      },
-    });
-    this.window.contentView.addChildView(view);
-    // Per spec §5.4: set UA before loadURL so the very first request uses the
-    // correct (mobile-by-default) UA. desktopUa() reads app.userAgentFallback,
-    // which requires app.whenReady() to have fired — all createTab call paths
-    // (seedTabs under did-finish-load, setWindowOpenHandler, tab:create IPC)
-    // originate post-whenReady, so this is safe.
-    view.webContents.setUserAgent(
-      resolvedIsMobile ? defaults.mobileUserAgent : desktopUa(),
-    );
-    // M10 / M10.5: 三层 mobile 模拟。
-    //   1. enableDeviceEmulation：翻 Chromium 内部 mobile flag（viewport meta 解析等）
-    //   2. CDP setUserAgentOverride/setTouchEmulation/setEmitTouchEventsForMouse：
-    //      翻 navigator.userAgentData.mobile / (pointer:coarse) / (hover:none) /
-    //      'ontouchstart' in window / 触摸事件——这些 enableDeviceEmulation 不动
-    //   3. webRequest（在 index.ts 挂）：改 Sec-CH-UA-* HTTP 头
-    //
-    // 必须 defer 到 'did-start-loading'：在 fresh webContents 上同步调
-    // enableDeviceEmulation 会死锁主进程（M10 Task 4 spike findings）。CDP attach
-    // 也需要 wc 渲染端在线，同样 defer。
-    if (resolvedIsMobile) {
-      view.webContents.once('did-start-loading', () => {
-        const size = this.webviewSize();
-        applyMobileEmulation(view.webContents, size);
-        const ua = this.getBrowsingDefaults().mobileUserAgent;
-        void attachCdpEmulation(view.webContents, parseUaForMetadata(ua), ua, size);
-      });
-    }
-
+    const id = opts.id ?? nanoid();
+    const isMobile = opts.isMobile ?? this.getBrowsingDefaults().defaultIsMobile;
+    const history = opts.history ?? null;
+    const tab: Tab = {
+      ...makeEmptyTab(id, url, isMobile),
+      title: opts.title ?? '',
+      favicon: opts.favicon ?? null,
+      loaded: false,
+      ...snapshotNavState(history),
+    };
     const managed: ManagedTab = {
-      view,
-      tab: makeEmptyTab(id, url, resolvedIsMobile),
-      detach: this.attachWebContentsEvents(id, view),
+      tab,
+      view: null,
+      detach: null,
+      history,
+      lastActiveAt: Date.now(),
+      zoom: 1,
     };
     this.tabs.set(id, managed);
-    // M13: emit AFTER the tab is registered so listeners (e.g. TabCycler)
-    // that may call back into ViewManager observe a consistent state.
-    this.emitTabAttach(view.webContents);
 
-    this.activateTab(id);
-    // Fire initial navigation. Intentionally not awaited: the load happens in the
-    // background; events will fire tab:updated as state changes.
-    void view.webContents.loadURL(url).catch((err: unknown) => {
-      console.error('[sidebrowser] createTab loadURL failed:', err);
-    });
+    const activate = opts.activate ?? true;
+    if (activate) {
+      this.activateTab(id); // creates the page
+    } else {
+      if (opts.load ?? true) this.ensureView(id);
+      this.emitSnapshot();
+    }
     return { ...managed.tab };
   }
 
   closeTab(id: string): void {
     const managed = this.tabs.get(id);
     if (!managed) return;
-    this.zoomFactors.delete(id);
     this.recorder?.forgetTab(id);
 
-    managed.detach();
-    this.window.contentView.removeChildView(managed.view);
-    managed.view.webContents.close();
-    this.tabs.delete(id);
-
-    if (this.activeId === id) {
-      // Activate the most-recently-inserted remaining tab (last insertion wins).
-      const remaining = Array.from(this.tabs.keys());
-      this.activeId = remaining[remaining.length - 1] ?? null;
-      this.applyBounds();
+    // M16: remember it for Ctrl+Shift+T (skip blank tabs with no history).
+    const history = managed.view
+      ? this.captureHistory(managed.view.webContents)
+      : managed.history;
+    if (managed.tab.url !== 'about:blank' || (history !== null && history.entries.length > 1)) {
+      this.closedTabs.push({
+        url: managed.tab.url,
+        isMobile: managed.tab.isMobile,
+        title: managed.tab.title,
+        favicon: managed.tab.favicon,
+        history,
+      });
+      if (this.closedTabs.length > CLOSED_STACK_MAX) this.closedTabs.shift();
     }
+
+    const neighbour = neighbourAfterClose(Array.from(this.tabs.keys()), id);
+    if (this.fullscreenTabId === id) this.fullscreenTabId = null;
+    this.destroyView(id, managed);
+    this.tabs.delete(id);
 
     if (this.tabs.size === 0) {
       // Spec §10: never leave the user with zero tabs — auto-seed a blank.
       // createTab activates the new tab and emits the snapshot itself.
+      this.activeId = null;
       this.createTab('about:blank');
       return;
+    }
+    if (this.activeId === id) {
+      this.activeId = null;
+      if (neighbour !== null) {
+        this.activateTab(neighbour); // emits the snapshot
+        return;
+      }
     }
     this.emitSnapshot();
   }
 
+  /** M16 Ctrl+Shift+T: reopen the most recently closed tab (with its history). */
+  reopenClosedTab(): boolean {
+    const closed = this.closedTabs.pop();
+    if (!closed) return false;
+    this.createTab(closed.url, {
+      isMobile: closed.isMobile,
+      title: closed.title,
+      favicon: closed.favicon,
+      history: closed.history,
+    });
+    return true;
+  }
+
   activateTab(id: string): void {
-    if (!this.tabs.has(id)) return;
+    const managed = this.tabs.get(id);
+    if (!managed) return;
     if (this.activeId === id) return;
+    const now = Date.now();
+    const prevId = this.activeId;
+    if (prevId !== null) {
+      const prev = this.tabs.get(prevId);
+      if (prev) {
+        prev.lastActiveAt = now;
+        if (this.fullscreenTabId === prevId) this.exitFullscreen(prev);
+      }
+    }
     this.activeId = id;
+    managed.lastActiveAt = now;
+    if (!managed.view) this.ensureView(id);
     this.applyBounds();
     this.emitSnapshot();
   }
@@ -371,16 +463,15 @@ export class ViewManager {
   }
 
   /** Wire the M13 web context-menu deps. Called once during bootstrap. */
-  setContextMenuDeps(deps: ContextMenuDeps): void {
+  setContextMenuDeps(deps: ContextMenuBaseDeps): void {
     this.contextMenuDeps = deps;
   }
 
   /**
-   * Subscribe to per-tab WebContents attachment (M13). Fires once at createTab
-   * time for each new tab. Used by TabCycler to install before-input-event on
-   * every tab as it appears. Returns an unsubscribe function. Does NOT fire
-   * retroactively for already-existing tabs — register before the first
-   * createTab call (matches usage in index.ts bootstrap).
+   * Subscribe to per-tab WebContents attachment (M13). Fires whenever a tab's
+   * page is created (createTab, lazy restore, reload after unload). Used by
+   * TabCycler to install before-input-event on every tab. Returns an
+   * unsubscribe function. Does NOT fire retroactively.
    */
   onTabAttach(listener: (wc: Electron.WebContents) => void): () => void {
     this.tabAttachListeners.add(listener);
@@ -403,21 +494,38 @@ export class ViewManager {
     // out of the renderer regardless of entry point.
     url = sanitizeUrl(url);
     this.updateTab(id, { url, isLoading: true });
+    if (!managed.view) {
+      // Unloaded tab: drop the stale history and create the page at `url`.
+      managed.history = null;
+      this.ensureView(id);
+      return;
+    }
     void managed.view.webContents.loadURL(url).catch((err: unknown) => {
       console.error('[sidebrowser] navigate loadURL failed:', err);
     });
   }
 
   goBack(id: string): void {
-    const wc = this.tabs.get(id)?.view.webContents;
+    const wc = this.tabs.get(id)?.view?.webContents;
     if (wc?.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
   }
   goForward(id: string): void {
-    const wc = this.tabs.get(id)?.view.webContents;
+    const wc = this.tabs.get(id)?.view?.webContents;
     if (wc?.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
   }
   reload(id: string): void {
-    this.tabs.get(id)?.view.webContents.reload();
+    const managed = this.tabs.get(id);
+    if (!managed) return;
+    if (!managed.view) {
+      this.ensureView(id);
+      return;
+    }
+    if (managed.tab.crashed !== null) this.updateTab(id, { crashed: null });
+    managed.view.webContents.reload();
+  }
+  /** M17: Stop button in the address pill. */
+  stop(id: string): void {
+    this.tabs.get(id)?.view?.webContents.stop();
   }
 
   /**
@@ -434,12 +542,18 @@ export class ViewManager {
   setMobile(id: string, isMobile: boolean): void {
     const managed = this.tabs.get(id);
     if (!managed) return;
+    if (!managed.view) {
+      // Unloaded: just flip the flag; the page is created with the right UA.
+      this.updateTab(id, { isMobile, favicon: null });
+      return;
+    }
     const wc = managed.view.webContents;
     const defaults = this.getBrowsingDefaults();
     if (isMobile) {
       const size = this.webviewSize();
+      wc.setZoomFactor(1); // mobile zoom goes through CDP metrics instead
       applyMobileEmulation(wc, size);
-      void attachCdpEmulation(wc, parseUaForMetadata(defaults.mobileUserAgent), defaults.mobileUserAgent, size);
+      void attachCdpEmulation(wc, parseUaForMetadata(defaults.mobileUserAgent), defaults.mobileUserAgent, size, managed.zoom);
     } else {
       detachCdpEmulation(wc);
       removeMobileEmulation(wc);
@@ -449,17 +563,42 @@ export class ViewManager {
     wc.reloadIgnoringCache();
   }
 
-  /** Shape for persistence layer — strips transient fields. */
-  serializeForPersistence(): {
-    tabs: { id: string; url: string; isMobile: boolean }[];
-    activeId: string;
-  } | null {
+  /** M16: user mute toggle (TabDrawer speaker button). */
+  setMuted(id: string, muted: boolean): void {
+    const managed = this.tabs.get(id);
+    if (!managed) return;
+    this.updateTab(id, { muted });
+    this.applyAudio(managed);
+  }
+
+  /** M16: re-evaluate every tab's effective mute (settings changed). */
+  refreshAudio(): void {
+    for (const m of this.tabs.values()) this.applyAudio(m);
+  }
+
+  /**
+   * M16: edge-dock reports the window fully hidden at the screen edge (true
+   * after the hide animation, false as soon as a reveal starts). Hides the
+   * active page (stops rendering) and applies auto-mute.
+   */
+  setWindowHidden(hidden: boolean): void {
+    if (this.windowHidden === hidden) return;
+    this.windowHidden = hidden;
+    this.applyBounds();
+    this.refreshAudio();
+  }
+
+  /** Persistable shape — see tab-persistence.ts. */
+  serializeForPersistence(): { tabs: SerializedTab[]; activeId: string } | null {
     if (this.tabs.size === 0 || !this.activeId) return null;
     return {
       tabs: Array.from(this.tabs.values()).map((m) => ({
         id: m.tab.id,
         url: m.tab.url,
         isMobile: m.tab.isMobile,
+        title: m.tab.title,
+        favicon: m.tab.favicon,
+        history: m.view ? this.captureHistory(m.view.webContents) : m.history,
       })),
       activeId: this.activeId,
     };
@@ -467,7 +606,12 @@ export class ViewManager {
 
   getActiveWebContents(): Electron.WebContents | null {
     if (!this.activeId) return null;
-    return this.tabs.get(this.activeId)?.view.webContents ?? null;
+    return this.tabs.get(this.activeId)?.view?.webContents ?? null;
+  }
+
+  /** Active tab id (null before the first tab exists). */
+  getActiveId(): string | null {
+    return this.activeId;
   }
 
   // ------- Active-tab convenience wrappers (spec §15 keyboard shortcuts) ----
@@ -481,7 +625,7 @@ export class ViewManager {
 
   /** Ctrl+R / F5 handler. No-op when no tab is active. */
   reloadActive(): void {
-    this.getActiveWebContents()?.reload();
+    if (this.activeId) this.reload(this.activeId);
   }
 
   /** Alt+Left handler. Delegates to `goBack(id)` so the can-go-back guard applies. */
@@ -499,20 +643,49 @@ export class ViewManager {
     this.getActiveWebContents()?.toggleDevTools();
   }
 
-  /** Ctrl+0 handler. Resets the active tab's zoom to 100%. No-op when no tab is active. */
+  /** Ctrl+0 handler. Resets the active tab's zoom to 100%. */
   resetActiveZoom(): void {
+    if (this.activeId) this.setZoom(this.activeId, 1);
+  }
+
+  /** M16 Ctrl+= / Ctrl+- / context menu. */
+  zoomActive(action: 'in' | 'out' | 'reset'): void {
     if (!this.activeId) return;
-    const wc = this.getActiveWebContents();
-    if (!wc) return;
-    this.zoomFactors.set(this.activeId, 1.0);
-    wc.setZoomFactor(1.0);
+    const m = this.tabs.get(this.activeId);
+    if (!m) return;
+    this.setZoom(this.activeId, action === 'reset' ? 1 : nextZoomFactor(m.zoom, action));
+  }
+
+  /** Zoom factor of a tab (1 = 100%). */
+  getZoom(id: string): number {
+    return this.tabs.get(id)?.zoom ?? 1;
+  }
+
+  /**
+   * Set a tab's zoom. Desktop tabs use Chromium's zoom factor; mobile tabs
+   * use CDP device metrics (see mobile-zoom.ts) because device emulation
+   * ignores setZoomFactor.
+   */
+  setZoom(id: string, zoom: number): void {
+    const managed = this.tabs.get(id);
+    if (!managed) return;
+    managed.zoom = zoom;
+    const wc = managed.view?.webContents;
+    if (!wc || wc.isDestroyed()) return;
+    if (managed.tab.isMobile) {
+      const ua = this.getBrowsingDefaults().mobileUserAgent;
+      void attachCdpEmulation(wc, parseUaForMetadata(ua), ua, this.webviewSize(), zoom);
+    } else {
+      wc.setZoomFactor(zoom);
+    }
   }
 
   /**
    * Toggle the "suppressed" flag. While suppressed, the active tab's view is
    * hidden via `View.setVisible(false)` so a renderer-layer overlay (settings
-   * drawer, Spotlight, NewTab) can paint over the WebContentsView layer.
-   * Bounds are unchanged, so the page does not reflow (M17). Idempotent.
+   * drawer, Spotlight, NewTab, crash overlay) can paint over the
+   * WebContentsView layer. Bounds are unchanged, so the page does not
+   * reflow (M17). Idempotent.
    */
   setSuppressed(v: boolean): void {
     if (this.suppressed === v) return;
@@ -521,7 +694,7 @@ export class ViewManager {
   }
 
   /**
-   * M17: TabDrawer overlay height. Offsets the active view down without
+   * M17: top overlay stack height. Offsets the active view down without
    * changing its size (see computeViewLayout). Unlike setChromeHeight this
    * does NOT reapply mobile emulation — the emulated viewport is unchanged.
    */
@@ -530,11 +703,6 @@ export class ViewManager {
     if (clamped === this.topInsetPx) return;
     this.topInsetPx = clamped;
     this.applyBounds();
-  }
-
-  /** M17: Stop button in the address pill. */
-  stop(id: string): void {
-    this.tabs.get(id)?.view.webContents.stop();
   }
 
   /**
@@ -557,50 +725,92 @@ export class ViewManager {
     }
   }
 
+  /**
+   * M16 auto-unload: unload background tabs idle for `minutes` (0 = never).
+   * `busyWcIds` are webContents with an in-progress download. Returns the
+   * unloaded tab ids.
+   */
+  discardInactive(now: number, minutes: number, busyWcIds: ReadonlySet<number> = new Set()): string[] {
+    const ids = pickTabsToDiscard(
+      Array.from(this.tabs.values()).map((m) => ({
+        id: m.tab.id,
+        active: m.tab.id === this.activeId,
+        loaded: m.view !== null,
+        audible: m.tab.audible,
+        isLoading: m.tab.isLoading,
+        crashed: m.tab.crashed,
+        lastActiveAt: m.lastActiveAt,
+        busy: m.view !== null && busyWcIds.has(m.view.webContents.id),
+      })),
+      now,
+      minutes,
+    );
+    for (const id of ids) this.unloadTab(id);
+    return ids;
+  }
+
+  /**
+   * Unload a background tab: snapshot its history (with page state) and
+   * close its page. The tab stays in the strip and restores on activation.
+   */
+  unloadTab(id: string): boolean {
+    const managed = this.tabs.get(id);
+    if (!managed?.view || id === this.activeId) return false;
+    managed.history = this.captureHistory(managed.view.webContents);
+    this.destroyView(id, managed);
+    this.updateTab(id, {
+      loaded: false,
+      isLoading: false,
+      audible: false,
+      crashed: null,
+      ...snapshotNavState(managed.history),
+    });
+    return true;
+  }
+
   /** E2E hook: whether the active tab's view is currently drawn. */
   getActiveViewVisibleForTest(): boolean | null {
     if (!this.activeId) return null;
-    return this.tabs.get(this.activeId)?.view.getVisible() ?? null;
+    return this.tabs.get(this.activeId)?.view?.getVisible() ?? null;
   }
 
   /**
    * E2E hook: returns the active tab's view bounds, or null if no active tab.
    * Used by E2E specs to assert that suppression keeps the bounds (M17) and
-   * that the TabDrawer inset offsets y without changing height.
+   * that the top inset offsets y without changing height.
    */
   getActiveBoundsForTest(): { x: number; y: number; width: number; height: number } | null {
     if (!this.activeId) return null;
-    const m = this.tabs.get(this.activeId);
-    return m ? m.view.getBounds() : null;
+    return this.tabs.get(this.activeId)?.view?.getBounds() ?? null;
   }
 
   /**
    * Lookup helper for installMobileHeaderRewriter (M10 Task 7; extended M15).
-   * 返回值语义：
-   *   null                  → 该 wcId 对应 desktop tab / 不是 tab（chrome renderer 自己），头不动
-   *   MobileRequestIdentity → mobile tab，rewriter 据此改 User-Agent + Sec-CH-UA(-Mobile/Platform/…)
+   *   null                  → desktop tab / not a tab (chrome renderer, popup): headers untouched
+   *   MobileRequestIdentity → mobile tab: rewrite User-Agent + Sec-CH-UA(-Mobile/Platform/…)
    *
-   * 返回 UA 字符串本身（不只是派生元数据），是为了让 rewriter 能把跨域 OOPIF
-   * （Cloudflare Turnstile iframe）的 User-Agent 也改成移动身份——见
-   * installMobileHeaderRewriter 的 M15 注释。
-   *
-   * 每次 webRequest 命中都跑一次。parse 是几个 regex，tab 数 ≤ 几个，UA 字符串
-   * 可被用户在 settings 改，实时 parse 比缓存失效逻辑简单（design §8）。
+   * Runs for every network request on the main thread: M16 uses a
+   * wcId → tab map and caches the parsed identity per UA string.
    */
   getMobileEmulationState(wcId: number): MobileRequestIdentity | null {
-    for (const [, m] of this.tabs) {
-      if (m.view.webContents.id === wcId) {
-        if (!m.tab.isMobile) return null;
-        const ua = this.getBrowsingDefaults().mobileUserAgent;
-        return { userAgent: ua, metadata: parseUaForMetadata(ua) };
-      }
+    const tabId = this.wcToTab.get(wcId);
+    if (tabId === undefined) return null;
+    if (!this.tabs.get(tabId)?.tab.isMobile) return null;
+    const ua = this.getBrowsingDefaults().mobileUserAgent;
+    if (this.identityCache?.userAgent !== ua) {
+      this.identityCache = { userAgent: ua, metadata: parseUaForMetadata(ua) };
     }
-    return null;
+    return this.identityCache;
+  }
+
+  /** Tab id owning a webContents (M16 downloads attribution). */
+  getTabIdForWebContents(wcId: number): string | null {
+    return this.wcToTab.get(wcId) ?? null;
   }
 
   getWebContentsByUrlSubstring(substring: string): Electron.WebContents | null {
     for (const managed of this.tabs.values()) {
-      if (managed.tab.url.includes(substring)) return managed.view.webContents;
+      if (managed.view && managed.tab.url.includes(substring)) return managed.view.webContents;
     }
     return null;
   }
@@ -611,11 +821,7 @@ export class ViewManager {
       clearTimeout(this.emulationReapplyTimer);
       this.emulationReapplyTimer = null;
     }
-    for (const managed of this.tabs.values()) {
-      managed.detach();
-      this.window.contentView.removeChildView(managed.view);
-      managed.view.webContents.close();
-    }
+    for (const [id, managed] of this.tabs) this.destroyView(id, managed);
     this.tabs.clear();
     this.activeId = null;
   }
@@ -623,49 +829,154 @@ export class ViewManager {
   // ---------- private ----------
 
   /**
+   * Create the page for a tab (no-op if it already has one): view, UA,
+   * mobile emulation, listeners, audio state, then restore its history or
+   * load its URL.
+   */
+  private ensureView(id: string): void {
+    const managed = this.tabs.get(id);
+    if (!managed || managed.view) return;
+    const defaults = this.getBrowsingDefaults();
+    const view = new WebContentsView({
+      webPreferences: {
+        session: getPersistentSession(),
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        // M16: HTML fullscreen fills the view; we grow the view to cover the
+        // chrome instead of turning the side window OS-fullscreen.
+        disableHtmlFullscreenWindowResize: true,
+      },
+    });
+    this.window.contentView.addChildView(view);
+    const wc = view.webContents;
+    // Per spec §5.4: set UA before loading so the very first request uses the
+    // right UA. desktopUa() reads app.userAgentFallback (post-whenReady).
+    wc.setUserAgent(managed.tab.isMobile ? defaults.mobileUserAgent : desktopUa());
+    // M10 / M10.5: three-layer mobile emulation (Electron device emulation +
+    // CDP overrides here; Sec-CH-UA header rewrite in index.ts). Must defer
+    // to 'did-start-loading': enableDeviceEmulation on a fresh webContents
+    // deadlocks the main process (M10 Task 4 spike); CDP attach also needs
+    // the renderer alive.
+    if (managed.tab.isMobile) {
+      wc.once('did-start-loading', () => {
+        const size = this.webviewSize();
+        applyMobileEmulation(wc, size);
+        const ua = this.getBrowsingDefaults().mobileUserAgent;
+        void attachCdpEmulation(wc, parseUaForMetadata(ua), ua, size, managed.zoom);
+      });
+    }
+
+    managed.view = view;
+    managed.detach = this.attachWebContentsEvents(id, view);
+    this.wcToTab.set(wc.id, id);
+    this.applyAudio(managed);
+    // M13: emit AFTER the tab is registered so listeners (e.g. TabCycler)
+    // that may call back into ViewManager observe a consistent state.
+    this.emitTabAttach(wc);
+    this.updateTab(id, { loaded: true, crashed: null });
+    this.applyBounds();
+
+    // Intentionally not awaited: events update the tab as the load proceeds.
+    const history = managed.history;
+    managed.history = null;
+    if (history !== null && history.entries.length > 0) {
+      wc.navigationHistory
+        .restore({ entries: history.entries, index: history.index })
+        .catch((err: unknown) => {
+          console.error('[sidebrowser] history restore failed:', err);
+        });
+    } else {
+      void wc.loadURL(managed.tab.url).catch((err: unknown) => {
+        console.error('[sidebrowser] loadURL failed:', err);
+      });
+    }
+  }
+
+  /** Close a tab's page (if any) and forget its webContents. */
+  private destroyView(id: string, managed: ManagedTab): void {
+    const view = managed.view;
+    if (!view) return;
+    managed.detach?.();
+    managed.detach = null;
+    managed.view = null;
+    this.wcToTab.delete(view.webContents.id);
+    this.recorder?.forgetTab(id);
+    if (!this.window.isDestroyed()) this.window.contentView.removeChildView(view);
+    if (!view.webContents.isDestroyed()) view.webContents.close();
+  }
+
+  private captureHistory(wc: Electron.WebContents): HistorySnapshot | null {
+    if (wc.isDestroyed()) return null;
+    try {
+      return buildHistorySnapshot(
+        wc.navigationHistory.getAllEntries(),
+        wc.navigationHistory.getActiveIndex(),
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  private applyAudio(managed: ManagedTab): void {
+    const wc = managed.view?.webContents;
+    if (!wc || wc.isDestroyed()) return;
+    wc.setAudioMuted(
+      effectiveMuted(managed.tab.muted, this.windowHidden, this.getBrowsingDefaults().muteWhenHidden),
+    );
+  }
+
+  private exitFullscreen(managed: ManagedTab): void {
+    this.fullscreenTabId = null;
+    const wc = managed.view?.webContents;
+    if (wc && !wc.isDestroyed()) {
+      void wc
+        .executeJavaScript('document.fullscreenElement && document.exitFullscreen()', true)
+        .catch(() => {});
+    }
+    this.applyBounds();
+    this.reapplyMobileEmulationAll();
+  }
+
+  /**
    * Effective webview pixel area = host window content bounds minus the
-   * chrome (TopBar + TabBar) height. This is what gets passed as `screenSize`
-   * / `viewSize` to enableDeviceEmulation and as `width`/`height` to the CDP
-   * `setDeviceMetricsOverride` — the emulated viewport must match the
-   * actually-rendered region, otherwise `position: fixed; bottom: 0`
-   * elements fall outside the visible area (M10 regression: x.com bottom nav
-   * permanently hidden in default-size windows).
+   * chrome (TopBar) height — or the whole content area while the active tab
+   * is in in-window fullscreen (M16). This is what gets passed as
+   * `screenSize` / `viewSize` to enableDeviceEmulation and as `width`/`height`
+   * to the CDP `setDeviceMetricsOverride` — the emulated viewport must match
+   * the actually-rendered region, otherwise `position: fixed; bottom: 0`
+   * elements fall outside the visible area (M10 regression).
    *
    * Height clamped to ≥1 because 0 deadlocks enableDeviceEmulation on
-   * Electron 41 (mobile-emulation spec §6.2). 1 is degenerate but safe; in
-   * practice chromeHeightPx is always well below contentBounds.height.
+   * Electron 41 (mobile-emulation spec §6.2).
    */
   private webviewSize(): { width: number; height: number } {
-    // Race guard: WebContents events (did-navigate) can arrive after the host
-    // window starts destroying — typical during app shutdown / E2E teardown.
-    // Returning a safe degenerate value keeps callers (CDP reapply, mobile
-    // emulation) from throwing "Object has been destroyed". Height ≥1 still
-    // avoids the enableDeviceEmulation deadlock noted above.
+    // Race guard: WebContents events can arrive after the host window starts
+    // destroying (shutdown / E2E teardown).
     if (this.window.isDestroyed()) return { width: 0, height: 1 };
     const { width, height } = this.window.getContentBounds();
-    return { width, height: Math.max(1, height - this.chromeHeightPx) };
+    const fullscreen = this.fullscreenTabId !== null && this.fullscreenTabId === this.activeId;
+    return { width, height: Math.max(1, height - (fullscreen ? 0 : this.chromeHeightPx)) };
   }
 
   /**
    * Re-issue mobile emulation (Electron `enableDeviceEmulation` + CDP
-   * `setDeviceMetricsOverride`) for every mobile tab against the current
-   * `webviewSize()`. Called when the size that emulation depends on
-   * changes — window resize (debounced via `scheduleEmulationReapply`) and
-   * chrome height change. Idempotent on tabs that have no debugger attached
-   * (CDP path is skipped in that case to avoid racing F12 DevTools, which
-   * holds the same channel exclusively).
+   * `setDeviceMetricsOverride`) for every loaded mobile tab against the
+   * current `webviewSize()`. Called when the size that emulation depends on
+   * changes. The CDP path is skipped on tabs without the debugger attached
+   * (F12 DevTools holds the same channel exclusively).
    */
   private reapplyMobileEmulationAll(): void {
     const size = this.webviewSize();
     const ua = this.getBrowsingDefaults().mobileUserAgent;
     const meta = parseUaForMetadata(ua);
-    for (const [, managed] of this.tabs) {
-      if (!managed.tab.isMobile) continue;
+    for (const managed of this.tabs.values()) {
+      if (!managed.tab.isMobile || !managed.view) continue;
       const wc = managed.view.webContents;
       if (wc.isDestroyed()) continue;
       applyMobileEmulation(wc, size);
       if (wc.debugger.isAttached()) {
-        void attachCdpEmulation(wc, meta, ua, size);
+        void attachCdpEmulation(wc, meta, ua, size, managed.zoom);
       }
     }
   }
@@ -673,8 +984,7 @@ export class ViewManager {
   /**
    * Trailing-edge debounce: drag-resize fires 'resize' continuously, but
    * `setDeviceMetricsOverride` is a CDP round-trip; coalesce to one reapply
-   * 150 ms after the last event. Long enough to outlast a normal drag,
-   * short enough that the user doesn't see a stale viewport after release.
+   * 150 ms after the last event.
    */
   private scheduleEmulationReapply(): void {
     if (this.emulationReapplyTimer) clearTimeout(this.emulationReapplyTimer);
@@ -685,20 +995,21 @@ export class ViewManager {
   }
 
   private applyBounds(): void {
-    // Race guard — see webviewSize() comment. resize/closed event handlers can
-    // fire after window destruction during teardown.
+    // Race guard — see webviewSize() comment.
     if (this.window.isDestroyed()) return;
     const { width, height } = this.window.getContentBounds();
     for (const [id, managed] of this.tabs) {
+      if (!managed.view) continue;
+      const isActive = id === this.activeId;
       const { bounds, visible } = computeViewLayout({
         contentWidth: width,
         contentHeight: height,
         chromeHeightPx: this.chromeHeightPx,
         topInsetPx: this.topInsetPx,
         suppressed: this.suppressed,
-        isActive: id === this.activeId,
-        windowHidden: false,
-        fullscreen: false,
+        isActive,
+        windowHidden: this.windowHidden,
+        fullscreen: isActive && this.fullscreenTabId === id,
       });
       managed.view.setBounds(bounds);
       managed.view.setVisible(visible);
@@ -730,37 +1041,79 @@ export class ViewManager {
     }
   }
 
+  /** Popup windows for window.open-with-features (OAuth etc.) — M16. */
+  private popupWindowOptions(features: string): Electron.BrowserWindowConstructorOptions {
+    const { width, height } = popupSizeFromFeatures(features);
+    const opts: Electron.BrowserWindowConstructorOptions = {
+      width,
+      height,
+      alwaysOnTop: true,
+      autoHideMenuBar: true,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+    };
+    if (!this.window.isDestroyed()) {
+      try {
+        const { screen } = requireCjs('electron') as { screen: Electron.Screen };
+        const wa = screen.getDisplayMatching(this.window.getBounds()).workArea;
+        opts.x = Math.round(wa.x + (wa.width - width) / 2);
+        opts.y = Math.round(wa.y + (wa.height - height) / 2);
+      } catch {
+        // Let Electron place it.
+      }
+    }
+    if (process.env['SIDEBROWSER_E2E'] === '1' && process.env['SIDEBROWSER_E2E_VISIBLE'] !== '1') {
+      opts.show = false; // shown inactive + transparent in setupPopup (E2E quiet mode)
+    }
+    return opts;
+  }
+
+  private setupPopup(child: BrowserWindow): void {
+    child.setAlwaysOnTop(true, 'screen-saver', 1);
+    if (process.env['SIDEBROWSER_E2E'] === '1' && process.env['SIDEBROWSER_E2E_VISIBLE'] !== '1') {
+      child.setOpacity(0);
+      child.setIgnoreMouseEvents(true);
+      child.setSkipTaskbar(true);
+      child.showInactive();
+    }
+    // A popup's own window.open goes to a tab in the main window.
+    child.webContents.setWindowOpenHandler(({ url }) => {
+      this.createTab(url);
+      return { action: 'deny' };
+    });
+  }
+
   private attachWebContentsEvents(id: string, view: WebContentsView): () => void {
     const wc = view.webContents;
 
-    const onStart = (): void => this.updateTab(id, { isLoading: true });
-    const onStop = (): void =>
-      this.updateTab(id, {
-        isLoading: false,
-        canGoBack: wc.navigationHistory.canGoBack(),
-        canGoForward: wc.navigationHistory.canGoForward(),
-      });
+    const navState = (): Pick<Tab, 'canGoBack' | 'canGoForward'> => ({
+      canGoBack: wc.navigationHistory.canGoBack(),
+      canGoForward: wc.navigationHistory.canGoForward(),
+    });
+    const onStart = (): void => this.updateTab(id, { isLoading: true, crashed: null });
+    const onStop = (): void => this.updateTab(id, { isLoading: false, ...navState() });
     const onNavigate = (_e: Electron.Event, url: string): void => {
-      this.updateTab(id, {
-        url,
-        canGoBack: wc.navigationHistory.canGoBack(),
-        canGoForward: wc.navigationHistory.canGoForward(),
-      });
-      // M10.5: 每次 fresh navigation 重发 CDP 命令——'ontouchstart' in window 是
-      // window 对象创建时一次性确定的，CDP override 必须在新 frame 渲染前到位。
-      // 跨进程导航 / cross-origin 时 renderer 会 swap，CDP browser-side state 不一定
-      // 自动传递到新 frame，重发是兜底。attachCdpEmulation 幂等。
-      const tab = this.tabs.get(id)?.tab;
-      if (tab?.isMobile && wc.debugger.isAttached()) {
-        const ua = this.getBrowsingDefaults().mobileUserAgent;
-        void attachCdpEmulation(wc, parseUaForMetadata(ua), ua, this.webviewSize());
+      this.updateTab(id, { url, ...navState() });
+      const managed = this.tabs.get(id);
+      if (!managed) return;
+      // M10.5: re-send the CDP overrides on every fresh navigation —
+      // 'ontouchstart' in window is fixed when the window object is created,
+      // and cross-process navigations may not carry browser-side CDP state.
+      // attachCdpEmulation is idempotent. M16: carries the tab's zoom.
+      if (managed.tab.isMobile) {
+        if (wc.debugger.isAttached()) {
+          const ua = this.getBrowsingDefaults().mobileUserAgent;
+          void attachCdpEmulation(wc, parseUaForMetadata(ua), ua, this.webviewSize(), managed.zoom);
+        }
+      } else if (managed.zoom !== 1) {
+        // M11: Chromium resets zoomFactor on navigation; reapply ours.
+        wc.setZoomFactor(managed.zoom);
       }
-      // M11 zoom reapply: Chromium resets zoomFactor to 1.0 on did-navigate;
-      // reapply our stored value so per-tab zoom survives navigation.
-      const z = this.zoomFactors.get(id);
-      if (z !== undefined && z !== 1.0) {
-        wc.setZoomFactor(z);
-      }
+    };
+    const onNavigateInPage = (_e: Electron.Event, url: string, isMainFrame: boolean): void => {
+      // Subframe in-page navigations must not change the tab URL.
+      if (isMainFrame) this.updateTab(id, { url, ...navState() });
     };
     const onTitle = (_e: Electron.Event, title: string): void => this.updateTab(id, { title });
     // Electron's page-favicon-updated supplies all discovered <link rel=icon>
@@ -768,33 +1121,86 @@ export class ViewManager {
     const onFavicon = (_e: Electron.Event, favicons: string[]): void =>
       this.updateTab(id, { favicon: favicons[0] ?? null });
 
-    // M10.5: F12 DevTools 与 wc.debugger CDP attach 互斥（同一通道单客户端）。
-    // 用户开 F12 → 主动 detach 我们的 CDP 让 DevTools 接管；关 F12 → 如果 tab
-    // 仍是 mobile，重新 attach 恢复 emulation。重 attach 后页面已经渲染过，CDP
-    // override 对当前 DOM 不会重新触发——用户需要手动 reload 才能让页面重新评估
-    // userAgentData / 媒体查询。这是 design §16 接受的代价。
+    // M16: audio indicator.
+    const onAudio = (e: Electron.Event<Electron.WebContentsAudioStateChangedEventParams>): void =>
+      this.updateTab(id, { audible: e.audible });
+
+    // M16: crash / hang recovery (overlay in the renderer).
+    const onGone = (): void => {
+      if (this.fullscreenTabId === id) {
+        this.fullscreenTabId = null;
+        this.applyBounds();
+      }
+      this.updateTab(id, { crashed: 'crashed', isLoading: false, audible: false });
+    };
+    const onUnresponsive = (): void => this.updateTab(id, { crashed: 'unresponsive' });
+    const onResponsive = (): void => {
+      if (this.tabs.get(id)?.tab.crashed === 'unresponsive') this.updateTab(id, { crashed: null });
+    };
+
+    // M16: in-window HTML fullscreen.
+    const onEnterFullscreen = (): void => {
+      if (id !== this.activeId) {
+        void wc.executeJavaScript('document.exitFullscreen()', true).catch(() => {});
+        return;
+      }
+      this.fullscreenTabId = id;
+      this.applyBounds();
+      this.reapplyMobileEmulationAll();
+    };
+    const onLeaveFullscreen = (): void => {
+      if (this.fullscreenTabId !== id) return;
+      this.fullscreenTabId = null;
+      this.applyBounds();
+      this.reapplyMobileEmulationAll();
+    };
+
+    // M10.5: F12 DevTools and our wc.debugger CDP attach are mutually
+    // exclusive. Opening F12 detaches ours; closing it re-attaches for mobile
+    // tabs (a reload is needed for the page to re-evaluate userAgentData /
+    // media queries — accepted in design §16).
     const onDevtoolsOpened = (): void => {
       detachCdpEmulation(wc);
     };
     const onDevtoolsClosed = (): void => {
-      const tab = this.tabs.get(id)?.tab;
-      if (tab?.isMobile) {
+      const managed = this.tabs.get(id);
+      if (managed?.tab.isMobile) {
         const ua = this.getBrowsingDefaults().mobileUserAgent;
-        void attachCdpEmulation(wc, parseUaForMetadata(ua), ua, this.webviewSize());
+        void attachCdpEmulation(wc, parseUaForMetadata(ua), ua, this.webviewSize(), managed.zoom);
       }
     };
 
-    // M13: web context menu. Per-event deps refresh so canGoBack/canGoForward
-    // reflect this tab's nav history (constructor-time deps carry stub values).
+    // M13 + M16: web context menu. Per-event deps carry this tab's nav
+    // history, zoom and webContents actions.
     const onContextMenu = (e: Electron.Event, params: Electron.ContextMenuParams): void => {
       if (!this.contextMenuDeps) return;
       e.preventDefault();
-      const tab = this.tabs.get(id)?.tab;
-      const currentUrl = tab?.url ?? '';
+      const managed = this.tabs.get(id);
+      const currentUrl = managed?.tab.url ?? '';
+      const edit = (command: EditCommand): void => {
+        switch (command) {
+          case 'undo': wc.undo(); return;
+          case 'redo': wc.redo(); return;
+          case 'cut': wc.cut(); return;
+          case 'copy': wc.copy(); return;
+          case 'paste': wc.paste(); return;
+          case 'pasteAndMatchStyle': wc.pasteAndMatchStyle(); return;
+          case 'selectAll': wc.selectAll(); return;
+        }
+      };
       const deps: ContextMenuDeps = {
         ...this.contextMenuDeps,
-        canGoBack: wc.navigationHistory.canGoBack(),
-        canGoForward: wc.navigationHistory.canGoForward(),
+        ...navState(),
+        edit,
+        replaceMisspelling: (word) => wc.replaceMisspelling(word),
+        addToDictionary: (word) => { wc.session.addWordToSpellCheckerDictionary(word); },
+        copyImageAt: (x, y) => wc.copyImageAt(x, y),
+        saveUrl: (url) => wc.downloadURL(url),
+        zoom: (action) => {
+          const z = managed?.zoom ?? 1;
+          this.setZoom(id, action === 'reset' ? 1 : nextZoomFactor(z, action));
+        },
+        zoomPercent: Math.round((managed?.zoom ?? 1) * 100),
       };
       const template = buildContextMenuTemplate(params, deps, currentUrl);
       const { Menu } = requireCjs('electron') as {
@@ -803,24 +1209,43 @@ export class ViewManager {
       Menu.buildFromTemplate(template).popup({ window: this.window });
     };
 
+    // M11: Ctrl+wheel zoom via Chromium's native zoom-changed event (desktop
+    // tabs; device emulation swallows Ctrl+wheel on mobile tabs).
+    const onZoomChanged = (_e: Electron.Event, dir: 'in' | 'out'): void => {
+      const managed = this.tabs.get(id);
+      if (managed) this.setZoom(id, nextZoomFactor(managed.zoom, dir));
+    };
+
+    // M16: route window.open / target=_blank by disposition.
+    const onDidCreateWindow = (child: BrowserWindow): void => this.setupPopup(child);
+    wc.setWindowOpenHandler((details) => {
+      const decision = decideWindowOpen(details);
+      if (decision.kind === 'popup') {
+        return { action: 'allow', overrideBrowserWindowOptions: this.popupWindowOptions(details.features) };
+      }
+      // Note: Electron has no API to unregister setWindowOpenHandler — it's
+      // cleaned up when the webContents closes.
+      this.createTab(details.url, { activate: decision.activate });
+      return { action: 'deny' };
+    });
+
     wc.on('did-start-loading', onStart);
     wc.on('did-stop-loading', onStop);
     wc.on('did-navigate', onNavigate);
-    wc.on('did-navigate-in-page', onNavigate);
+    wc.on('did-navigate-in-page', onNavigateInPage);
     wc.on('page-title-updated', onTitle);
     wc.on('page-favicon-updated', onFavicon);
+    wc.on('audio-state-changed', onAudio);
+    wc.on('render-process-gone', onGone);
+    wc.on('unresponsive', onUnresponsive);
+    wc.on('responsive', onResponsive);
+    wc.on('enter-html-full-screen', onEnterFullscreen);
+    wc.on('leave-html-full-screen', onLeaveFullscreen);
     wc.on('devtools-opened', onDevtoolsOpened);
     wc.on('devtools-closed', onDevtoolsClosed);
     wc.on('context-menu', onContextMenu);
-
-    // M11: Ctrl+wheel zoom via Chromium's native zoom-changed event.
-    const onZoomChanged = (_e: Electron.Event, dir: 'in' | 'out'): void => {
-      const cur = this.zoomFactors.get(id) ?? 1.0;
-      const next = nextZoomFactor(cur, dir);
-      this.zoomFactors.set(id, next);
-      wc.setZoomFactor(next);
-    };
     wc.on('zoom-changed', onZoomChanged);
+    wc.on('did-create-window', onDidCreateWindow);
 
     const detachHistory = bindHistoryRecorderEvents(
       id,
@@ -829,26 +1254,24 @@ export class ViewManager {
       () => this.tabs.get(id)?.tab.url ?? '',
     );
 
-    wc.setWindowOpenHandler(({ url }) => {
-      // M2: open popups as new tabs rather than redirecting current (fixes M1 OAuth breakage).
-      // Note: Electron has no API to unregister setWindowOpenHandler — it's implicitly cleaned
-      // up when webContents.close() runs in closeTab/destroy. Late-fire between detach and close
-      // would still call createTab on this ViewManager (low-likelihood synchronous race).
-      this.createTab(url);
-      return { action: 'deny' };
-    });
-
     return (): void => {
       wc.off('did-start-loading', onStart);
       wc.off('did-stop-loading', onStop);
       wc.off('did-navigate', onNavigate);
-      wc.off('did-navigate-in-page', onNavigate);
+      wc.off('did-navigate-in-page', onNavigateInPage);
       wc.off('page-title-updated', onTitle);
       wc.off('page-favicon-updated', onFavicon);
+      wc.off('audio-state-changed', onAudio);
+      wc.off('render-process-gone', onGone);
+      wc.off('unresponsive', onUnresponsive);
+      wc.off('responsive', onResponsive);
+      wc.off('enter-html-full-screen', onEnterFullscreen);
+      wc.off('leave-html-full-screen', onLeaveFullscreen);
       wc.off('devtools-opened', onDevtoolsOpened);
       wc.off('devtools-closed', onDevtoolsClosed);
       wc.off('zoom-changed', onZoomChanged);
       wc.off('context-menu', onContextMenu);
+      wc.off('did-create-window', onDidCreateWindow);
       detachHistory();    // M12: detach history listeners
     };
   }
