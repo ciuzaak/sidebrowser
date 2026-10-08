@@ -1,15 +1,27 @@
-import { forwardRef, type ReactElement, type RefObject } from 'react';
-import { ArrowLeft, ArrowRight, RotateCw, Loader2, Layers, Smartphone, Monitor, Settings, Search } from 'lucide-react';
-import { useActiveTab } from '../store/tab-store';
+import { forwardRef, type ReactElement, type ReactNode, type RefObject } from 'react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Globe,
+  Layers,
+  Lock,
+  Monitor,
+  RotateCw,
+  Search,
+  Settings,
+  Smartphone,
+  X,
+} from 'lucide-react';
+import { useActiveTab, useTabsStore } from '../store/tab-store';
 import { useWindowStateStore } from '../store/window-state-store';
-
-/**
- * M14: reserve width on the right of the chrome row so the SearchPill
- * doesn't slide under the Windows-native titleBarOverlay (the min/max/close
- * buttons). The overlay is ~135 px wide on Win10/11; 138 px gives a small
- * margin.
- */
-const TITLEBAR_OVERLAY_PX = 138;
+import {
+  PILL_PLACEHOLDER,
+  formatTabCount,
+  pillLabelFor,
+  schemeIconFor,
+  type SchemeIcon,
+} from '../lib/chrome-labels';
+import { WindowControls } from './WindowControls';
 
 interface TopBarProps {
   drawerOpen: boolean;
@@ -27,6 +39,12 @@ interface TopBarProps {
   searchPillRef: RefObject<HTMLButtonElement | null>;
 }
 
+/**
+ * M17 layout: [Tabs+badge] [Settings] [Back] [Forward?] [AddressPill] [Min][Close].
+ * Forward renders only when the tab can go forward; Reload/Stop and the
+ * mobile/desktop toggle live inside the pill. `data-loading` on the root is
+ * the E2E load-completion fence and drives the CSS load bar.
+ */
 export function TopBar({
   drawerOpen,
   onToggleDrawer,
@@ -39,37 +57,29 @@ export function TopBar({
   searchPillRef,
 }: TopBarProps): ReactElement {
   const tab = useActiveTab();
+  const tabCount = useTabsStore((s) => s.tabOrder.length);
   const hidden = useWindowStateStore((s) => s.hidden);
 
   const id = tab?.id ?? '';
   const disabled = !tab;
-
-  // Compact label inside the pill. Empty / about:blank shows a placeholder.
-  // For real URLs, show host only (e.g. "apple.com" instead of the full URL)
-  // so narrow windows still display something meaningful.
-  const pillLabel = ((): string => {
-    const url = tab?.url ?? '';
-    if (url === '' || url === 'about:blank') return 'Search or enter URL';
-    try {
-      const u = new URL(url);
-      return u.host || url;
-    } catch {
-      return url;
-    }
-  })();
-  const pillIsPlaceholder = pillLabel === 'Search or enter URL';
+  const url = tab?.url ?? '';
+  const label = pillLabelFor(url);
+  const isPlaceholder = label === PILL_PLACEHOLDER;
+  const loading = tab?.isLoading === true;
+  const badge = formatTabCount(tabCount);
 
   return (
     <div
+      data-testid="topbar"
+      data-loading={loading ? 'true' : 'false'}
       className={
-        'app-drag flex h-9 w-full items-center gap-1 px-2 ' +
+        'app-drag relative flex h-9 w-full items-center gap-1 pl-2 ' +
         'border-b border-[var(--border)] ' +
         `transition-opacity duration-200 ${hidden ? 'opacity-30' : 'opacity-100'}`
       }
       style={{
         background:
           'linear-gradient(180deg, var(--surface-chrome-top) 0%, var(--surface-chrome-bot) 100%)',
-        paddingRight: TITLEBAR_OVERLAY_PX,
       }}
     >
       <IconButton
@@ -80,6 +90,18 @@ export function TopBar({
         onClick={onToggleDrawer}
       >
         <Layers size={16} />
+        {badge !== null && (
+          <span
+            data-testid="topbar-tab-count"
+            className={
+              'absolute -right-0.5 -top-0.5 flex h-[13px] min-w-[13px] items-center justify-center ' +
+              'rounded-full bg-[var(--accent)] px-[3px] text-[9px] font-semibold leading-none ' +
+              'text-[var(--accent-fg)]'
+            }
+          >
+            {badge}
+          </span>
+        )}
       </IconButton>
       <IconButton
         ref={settingsToggleRef}
@@ -97,56 +119,72 @@ export function TopBar({
       >
         <ArrowLeft size={16} />
       </IconButton>
-      <IconButton
-        ariaLabel="Forward"
-        disabled={disabled || !tab?.canGoForward}
-        onClick={() => id && void window.sidebrowser.goForward(id)}
-      >
-        <ArrowRight size={16} />
-      </IconButton>
-      <IconButton
-        ariaLabel="Reload"
-        disabled={disabled}
-        onClick={() => id && void window.sidebrowser.reload(id)}
-      >
-        {tab?.isLoading ? <Loader2 size={16} className="animate-spin" /> : <RotateCw size={16} />}
-      </IconButton>
-      <IconButton
-        ariaLabel={tab?.isMobile ? 'Switch to desktop' : 'Switch to mobile'}
-        testId="topbar-ua-toggle"
-        disabled={disabled}
-        active={tab?.isMobile}
-        onClick={() => id && void window.sidebrowser.setMobile(id, !tab?.isMobile)}
-      >
-        {tab?.isMobile ? <Smartphone size={16} /> : <Monitor size={16} />}
-      </IconButton>
+      {tab?.canGoForward === true && (
+        <IconButton ariaLabel="Forward" onClick={() => id && void window.sidebrowser.goForward(id)}>
+          <ArrowRight size={16} />
+        </IconButton>
+      )}
 
-      <button
-        ref={searchPillRef}
-        type="button"
-        data-testid="search-pill"
-        aria-label="Search or enter URL"
-        aria-expanded={searchOpen}
-        disabled={disabled}
-        onClick={onOpenSearch}
+      <div
         className={
-          'app-no-drag flex h-[26px] min-w-0 flex-1 items-center gap-1.5 ' +
+          'app-no-drag ml-0.5 mr-1 flex h-[26px] min-w-0 flex-1 items-center gap-0.5 px-[3px] ' +
           'rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-sunken)] ' +
-          'px-2 text-xs text-left transition-colors duration-100 ' +
-          'hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 ' +
-          'focus-visible:outline-[var(--accent)] disabled:opacity-50 ' +
-          (pillIsPlaceholder ? 'text-[var(--fg-muted)] ' : 'text-[var(--fg)] ')
+          'transition-colors duration-100 hover:border-[var(--accent)] focus-within:border-[var(--accent)] ' +
+          (disabled ? 'opacity-50' : '')
         }
       >
-        <Search size={12} className="shrink-0 text-[var(--fg-muted)]" aria-hidden />
-        <span className="truncate">{pillLabel}</span>
-      </button>
+        <PillButton
+          ariaLabel={tab?.isMobile ? 'Switch to desktop' : 'Switch to mobile'}
+          testId="topbar-ua-toggle"
+          disabled={disabled}
+          active={tab?.isMobile}
+          onClick={() => id && void window.sidebrowser.setMobile(id, !tab?.isMobile)}
+        >
+          {tab?.isMobile ? <Smartphone size={13} /> : <Monitor size={13} />}
+        </PillButton>
+        <button
+          ref={searchPillRef}
+          type="button"
+          data-testid="search-pill"
+          aria-label="Search or enter URL"
+          aria-expanded={searchOpen}
+          disabled={disabled}
+          onClick={onOpenSearch}
+          className={
+            'flex h-full min-w-0 flex-1 items-center gap-1.5 px-1 text-left text-xs outline-none ' +
+            (isPlaceholder ? 'text-[var(--fg-muted)]' : 'text-[var(--fg)]')
+          }
+        >
+          <SchemeGlyph kind={schemeIconFor(url)} />
+          <span className="truncate">{label}</span>
+        </button>
+        <PillButton
+          ariaLabel={loading ? 'Stop' : 'Reload'}
+          disabled={disabled}
+          onClick={() => {
+            if (!id) return;
+            void (loading ? window.sidebrowser.stop(id) : window.sidebrowser.reload(id));
+          }}
+        >
+          {loading ? <X size={13} /> : <RotateCw size={13} />}
+        </PillButton>
+      </div>
+
+      <WindowControls />
+      <span className="load-bar" data-loading={loading ? 'true' : 'false'} aria-hidden />
     </div>
   );
 }
 
+function SchemeGlyph({ kind }: { kind: SchemeIcon }): ReactElement {
+  const cls = 'shrink-0 text-[var(--fg-muted)]';
+  if (kind === 'lock') return <Lock size={11} className={cls} aria-hidden />;
+  if (kind === 'globe') return <Globe size={11} className={cls} aria-hidden />;
+  return <Search size={12} className={cls} aria-hidden />;
+}
+
 interface IconButtonProps {
-  children: ReactElement;
+  children: ReactNode;
   ariaLabel: string;
   testId?: string;
   disabled?: boolean;
@@ -167,7 +205,7 @@ const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconB
       disabled={disabled}
       onClick={onClick}
       className={
-        'app-no-drag flex h-[26px] w-[26px] items-center justify-center ' +
+        'app-no-drag relative flex h-[26px] w-[26px] shrink-0 items-center justify-center ' +
         'rounded-[var(--radius-sm)] text-[var(--fg)] transition-colors duration-100 ' +
         'hover:bg-[var(--accent-tint)] ' +
         'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent ' +
@@ -179,3 +217,32 @@ const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconB
     </button>
   );
 });
+
+function PillButton({
+  children,
+  ariaLabel,
+  testId,
+  disabled,
+  active,
+  onClick,
+}: IconButtonProps): ReactElement {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      data-testid={testId}
+      disabled={disabled}
+      onClick={onClick}
+      className={
+        'flex h-5 w-5 shrink-0 items-center justify-center rounded-[var(--radius-sm)] ' +
+        'text-[var(--fg-muted)] transition-colors duration-100 ' +
+        'hover:bg-[var(--accent-tint)] hover:text-[var(--fg)] ' +
+        'disabled:cursor-not-allowed disabled:hover:bg-transparent ' +
+        (active ? 'bg-[var(--accent-tint)] text-[var(--accent-text)] ' : '') +
+        'focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]'
+      }
+    >
+      {children}
+    </button>
+  );
+}
