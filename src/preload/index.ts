@@ -31,10 +31,27 @@ const api = {
     ipcRenderer.invoke(IpcChannels.tabReload, { id }),
   setMobile: (id: string, isMobile: boolean): Promise<void> =>
     ipcRenderer.invoke(IpcChannels.tabSetMobile, { id, isMobile }),
+  stop: (id: string): Promise<void> =>
+    ipcRenderer.invoke(IpcChannels.tabStop, { id }),
 
   // Chrome layout
   setChromeHeight: (heightPx: number): void => {
     ipcRenderer.send(IpcChannels.chromeSetHeight, { heightPx });
+  },
+  /** R→M send (M17). TabDrawer reports its overlay height; 0 on close. */
+  setTopInset: (px: number): void => {
+    ipcRenderer.send(IpcChannels.viewSetTopInset, { px });
+  },
+  /** R→M invoke (M17). Spotlight backdrop snapshot (JPEG data URL) or null. */
+  captureActiveView: (): Promise<string | null> =>
+    ipcRenderer.invoke(IpcChannels.viewCaptureActive, {}),
+
+  // Window controls (M17)
+  minimizeWindow: (): void => {
+    ipcRenderer.send(IpcChannels.windowMinimize, {});
+  },
+  closeWindow: (): void => {
+    ipcRenderer.send(IpcChannels.windowClose, {});
   },
 
   /** Subscribe to single-tab updates. Returns an unsubscribe. */
@@ -78,7 +95,7 @@ const api = {
     return () => ipcRenderer.off(IpcChannels.appReady, handler);
   },
 
-  /** R→M send. Tell ViewManager to hide/show the active WebContentsView beneath the chrome layer. Used by SettingsDrawer open/close in Task 10. */
+  /** R→M send. Tell ViewManager to hide/show the active WebContentsView beneath the chrome layer (Settings / Spotlight / NewTab). */
   setViewSuppressed: (suppressed: boolean): void => {
     ipcRenderer.send(IpcChannels.viewSetSuppressed, { suppressed });
   },

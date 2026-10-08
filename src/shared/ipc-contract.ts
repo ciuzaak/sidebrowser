@@ -85,6 +85,16 @@ export const IpcChannels = {
    * was started by Ctrl+Tab. There is no automatic Ctrl-release detection.
    */
   cycleEnd: 'cycle:end',
+
+  /** R→M send (M17). Self-drawn window controls. */
+  windowMinimize: 'window:minimize',
+  windowClose: 'window:close',
+  /** R→M invoke (M17). Stop button in the address pill. */
+  tabStop: 'tab:stop',
+  /** R→M send (M17). TabDrawer overlay height; offsets the active view. */
+  viewSetTopInset: 'view:set-top-inset',
+  /** R→M invoke (M17). Half-res JPEG data URL of the active page, or null. */
+  viewCaptureActive: 'view:capture-active',
 } as const;
 
 /**
@@ -147,6 +157,10 @@ export interface IpcContract {
     request: { id: string };
     response: void;
   };
+  [IpcChannels.tabStop]: {
+    request: { id: string };
+    response: void;
+  };
   [IpcChannels.tabUpdated]: {
     /** Main broadcasts the full new Tab (id included). Renderer stores it keyed by id. */
     request: Tab;
@@ -191,9 +205,9 @@ export interface IpcContract {
   };
   [IpcChannels.viewSetSuppressed]: {
     /**
-     * R→M send. When true, ViewManager shrinks active tab view bounds to
-     * {0,0,0,0} so the settings drawer can render over the native
-     * WebContentsView layer.
+     * R→M send. When true, ViewManager hides the active tab's view
+     * (View.setVisible(false); bounds unchanged — M17) so renderer overlays
+     * can render over the native WebContentsView layer.
      */
     request: { suppressed: boolean };
     response: void;
@@ -248,5 +262,23 @@ export interface IpcContract {
     /** R→M send: end any active Ctrl+Tab cycle. Fired by closeDrawer. */
     request: Record<string, never>;
     response: void;
+  };
+
+  [IpcChannels.windowMinimize]: {
+    request: Record<string, never>;
+    response: void;
+  };
+  [IpcChannels.windowClose]: {
+    request: Record<string, never>;
+    response: void;
+  };
+  [IpcChannels.viewSetTopInset]: {
+    /** TabDrawer height in CSS px; 0 when the drawer closes. */
+    request: { px: number };
+    response: void;
+  };
+  [IpcChannels.viewCaptureActive]: {
+    request: Record<string, never>;
+    response: string | null;
   };
 }

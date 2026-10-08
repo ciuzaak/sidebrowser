@@ -622,6 +622,10 @@ app.whenReady().then(() => {
         );
         return tpl.map((i) => i.label ?? (i.type === 'separator' ? '---' : ''));
       },
+      // M17 hooks.
+      getActiveViewVisible: (): boolean | null => viewManager.getActiveViewVisibleForTest(),
+      getIsMinimized: (): boolean => !win.isDestroyed() && win.isMinimized(),
+      restoreWindow: (): void => { if (!win.isDestroyed()) win.restore(); },
     };
   } else {
     watcher.start();

@@ -104,6 +104,40 @@ export function registerIpcRouter(
     },
   );
 
+  ipcMain.removeHandler(IpcChannels.tabStop);
+  ipcMain.handle(
+    IpcChannels.tabStop,
+    (_event, payload: IpcContract[typeof IpcChannels.tabStop]['request']) => {
+      viewManager.stop(payload.id);
+    },
+  );
+
+  // M17: Spotlight backdrop snapshot.
+  ipcMain.removeHandler(IpcChannels.viewCaptureActive);
+  ipcMain.handle(IpcChannels.viewCaptureActive, () => viewManager.captureActiveForBackdrop());
+
+  // M17: TabDrawer top inset + self-drawn window controls — fire-and-forget.
+  const onSetTopInset = (
+    _event: IpcMainEvent,
+    payload: IpcContract[typeof IpcChannels.viewSetTopInset]['request'],
+  ): void => {
+    viewManager.setTopInset(payload.px);
+  };
+  const onMinimize = (): void => {
+    if (!window.isDestroyed()) window.minimize();
+  };
+  const onClose = (): void => {
+    if (!window.isDestroyed()) window.close();
+  };
+  ipcMain.on(IpcChannels.viewSetTopInset, onSetTopInset);
+  ipcMain.on(IpcChannels.windowMinimize, onMinimize);
+  ipcMain.on(IpcChannels.windowClose, onClose);
+  window.once('closed', () => {
+    ipcMain.removeListener(IpcChannels.viewSetTopInset, onSetTopInset);
+    ipcMain.removeListener(IpcChannels.windowMinimize, onMinimize);
+    ipcMain.removeListener(IpcChannels.windowClose, onClose);
+  });
+
   // Chrome layout — fire-and-forget. Scope listener to this window's lifetime.
   const onChromeSetHeight = (
     _event: IpcMainEvent,

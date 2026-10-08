@@ -46,6 +46,14 @@ describe('IpcChannels', () => {
     expect(IpcChannels.historyChanged).toBe('history:changed');
   });
 
+  it('defines M17 chrome channels', () => {
+    expect(IpcChannels.windowMinimize).toBe('window:minimize');
+    expect(IpcChannels.windowClose).toBe('window:close');
+    expect(IpcChannels.tabStop).toBe('tab:stop');
+    expect(IpcChannels.viewSetTopInset).toBe('view:set-top-inset');
+    expect(IpcChannels.viewCaptureActive).toBe('view:capture-active');
+  });
+
   it('all channel values follow <domain>:<action> pattern', () => {
     for (const channel of Object.values(IpcChannels)) {
       expect(channel).toMatch(/^[a-z]+:[a-z-]+$/);
