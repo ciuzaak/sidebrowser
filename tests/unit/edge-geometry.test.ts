@@ -1,5 +1,34 @@
 import { describe, it, expect } from 'vitest';
-import { computeDockedSide, interpolateX } from '../../src/main/edge-geometry';
+import { canHideAtEdge, computeDockedSide, interpolateX } from '../../src/main/edge-geometry';
+
+describe('canHideAtEdge with multiple displays', () => {
+  const primary = { x: 0, y: 0, width: 1920, height: 1080 };
+  const right = { ...primary, x: 1920 };
+  const left = { ...primary, x: -1920 };
+
+  it('blocks both sides of a shared seam, including negative coordinates', () => {
+    expect(canHideAtEdge({ x: 1527, y: 40, width: 393, height: 852 }, primary, 'right', 3, [primary, right])).toBe(false);
+    expect(canHideAtEdge({ x: 1920, y: 40, width: 393, height: 852 }, right, 'left', 3, [primary, right])).toBe(false);
+    expect(canHideAtEdge({ x: 0, y: 40, width: 393, height: 852 }, primary, 'left', 3, [left, primary])).toBe(false);
+  });
+
+  it('allows the outer edges', () => {
+    expect(canHideAtEdge({ x: 0, y: 40, width: 393, height: 852 }, primary, 'left', 3, [primary, right])).toBe(true);
+    expect(canHideAtEdge({ x: 3447, y: 40, width: 393, height: 852 }, right, 'right', 3, [primary, right])).toBe(true);
+  });
+
+  it('uses physical bounds, including taskbars and a gap smaller than the hidden body', () => {
+    const workArea = { ...right, x: 1960, width: 1880 };
+    expect(canHideAtEdge({ x: 1960, y: 40, width: 393, height: 852 }, workArea, 'left', 3, [primary, right])).toBe(false);
+    expect(canHideAtEdge({ x: 1527, y: 40, width: 393, height: 852 }, primary, 'right', 3, [primary, { ...right, x: 2000 }])).toBe(false);
+  });
+
+  it('checks vertical overlap for staggered monitors, allowing exposed edge segments', () => {
+    const lower = { ...right, y: 600 };
+    expect(canHideAtEdge({ x: 1527, y: 0, width: 393, height: 500 }, primary, 'right', 3, [primary, lower])).toBe(true);
+    expect(canHideAtEdge({ x: 1527, y: 500, width: 393, height: 500 }, primary, 'right', 3, [primary, lower])).toBe(false);
+  });
+});
 
 describe('computeDockedSide', () => {
   it('left edge aligned exactly: bounds.x === workArea.x → left', () => {

@@ -49,6 +49,10 @@ function mk(overrides: Partial<EdgeDockConfig> = {}) {
       currentX = x;
       setBoundsCalls.push(x);
     },
+    setWindowPosition: (x) => {
+      currentX = x;
+      setBoundsCalls.push(x);
+    },
     getWindowBounds: () => ({ x: currentX, y: 0, width: config.windowWidth, height: 852 }),
     applyDim: () => {
       applyDimCalls.push(Date.now());
@@ -75,6 +79,7 @@ function mk(overrides: Partial<EdgeDockConfig> = {}) {
     applyDimCalls,
     clearDimCalls,
     getCurrentX: () => currentX,
+    config,
   };
 }
 
@@ -109,6 +114,92 @@ describe('EdgeDock executor', () => {
     vi.useRealTimers();
   });
 
+  it('keeps the shared monitor edge visible and still dims on mouse leave', () => {
+    const { dock, getCurrentX, broadcastCalls } = mk();
+    dock.dispatch({
+      type: 'WINDOW_MOVED', bounds: { x: 0, y: 0, width: 393, height: 852 }, workArea: WA,
+      displayBounds: [WA, { ...WA, x: -1920 }],
+    });
+    dock.dispatch({ type: 'MOUSE_LEAVE' });
+    vi.advanceTimersByTime(300);
+    expect(dock.getState()).toMatchObject({ kind: 'DOCKED_NONE', dimmed: true });
+    expect(getCurrentX()).toBe(0);
+    expect(broadcastCalls.at(-1)).toEqual({ docked: null, hidden: false, dimmed: true });
+  });
+
+  it('zero-duration hide leaves consumers in the final hidden state', () => {
+    const { dock, broadcastCalls } = mk({ animationMs: 0 });
+    seedDockedLeft(dock);
+    dock.dispatch({ type: 'MOUSE_LEAVE' });
+    expect(dock.getState().kind).toBe('HIDDEN_LEFT');
+    expect(broadcastCalls.at(-1)).toEqual({ docked: 'left', hidden: true, dimmed: true });
+  });
+
+  it.each(['hide', 'reveal'] as const)('display change cancels a running %s animation', (phase) => {
+    const { dock, getCurrentX, broadcastCalls } = mk();
+    seedDockedLeft(dock);
+    dock.dispatch({ type: 'MOUSE_LEAVE' });
+    vi.advanceTimersByTime(64);
+    if (phase === 'reveal') dock.dispatch({ type: 'MOUSE_ENTER' });
+    dock.dispatch({ type: 'DISPLAY_CHANGED', bounds: dock.getVisibleBounds(), workArea: WA, offscreen: true });
+    const recoveredX = getCurrentX();
+    vi.advanceTimersByTime(500);
+    expect(getCurrentX()).toBe(recoveredX);
+    expect(recoveredX).toBe(763.5);
+    expect(dock.getState().kind).toBe('DOCKED_NONE');
+    expect(broadcastCalls.at(-1)).toEqual({ docked: null, hidden: false, dimmed: false });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('recovers both axes when a vertically offset monitor is removed', () => {
+    const { dock, deps } = mk();
+    const move = vi.spyOn(deps, 'setWindowPosition');
+    dock.dispatch({
+      type: 'DISPLAY_CHANGED', bounds: { x: 0, y: -2000, width: 393, height: 852 },
+      workArea: { ...WA, x: -1920, y: 200 }, offscreen: true,
+    });
+    expect(move).toHaveBeenCalledWith(-1156.5, 314);
+  });
+
+  it.each([64, 300])('disabling dock after %i ms reveals the window and cancels timers', (elapsed) => {
+    const { dock, config, getCurrentX, broadcastCalls } = mk();
+    seedDockedLeft(dock);
+    dock.dispatch({ type: 'MOUSE_LEAVE' });
+    vi.advanceTimersByTime(elapsed);
+    config.enabled = false;
+    dock.dispatch({ type: 'CONFIG_CHANGED' });
+    vi.advanceTimersByTime(500);
+    expect(getCurrentX()).toBe(0);
+    expect(dock.getState()).toMatchObject({ kind: 'DOCKED_NONE', dimmed: false });
+    expect(broadcastCalls.at(-1)).toEqual({ docked: null, hidden: false, dimmed: false });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('persists the visible position during hiding, hidden and revealing', () => {
+    const { dock } = mk();
+    seedDockedLeft(dock);
+    dock.dispatch({ type: 'MOUSE_LEAVE' });
+    vi.advanceTimersByTime(64);
+    expect(dock.getVisibleBounds().x).toBe(0);
+    vi.advanceTimersByTime(300);
+    expect(dock.getVisibleBounds().x).toBe(0);
+    dock.dispatch({ type: 'MOUSE_ENTER' });
+    vi.advanceTimersByTime(64);
+    expect(dock.getVisibleBounds().x).toBe(0);
+  });
+
+  it('disposing during animation prevents later window access', () => {
+    const { dock, setBoundsCalls } = mk();
+    seedDockedLeft(dock);
+    dock.dispatch({ type: 'MOUSE_LEAVE' });
+    vi.advanceTimersByTime(64);
+    dock.dispose();
+    const count = setBoundsCalls.length;
+    vi.advanceTimersByTime(500);
+    expect(setBoundsCalls).toHaveLength(count);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   // -------------------------------------------------------------------------
   describe('APPLY_DIM / CLEAR_DIM', () => {
     it('MOUSE_LEAVE on DOCKED_LEFT calls applyDim() exactly once', () => {
@@ -135,8 +226,7 @@ describe('EdgeDock executor', () => {
       seedDockedLeft(dock);
       broadcastCalls.length = 0; // clear seed broadcasts
       dock.dispatch({ type: 'MOUSE_LEAVE' });
-      // Effects: APPLY_DIM, ANIM_HIDE(ms=0)→ANIM_DONE→BROADCAST(hidden:true), BROADCAST(hiding entry)
-      // First broadcast from MOUSE_LEAVE: docked=left, hidden=false, dimmed=true
+      // Publish HIDING before the synchronous ANIM_DONE publishes HIDDEN.
       const hidingBroadcast = broadcastCalls.find(
         (c) => c.docked === 'left' && c.hidden === false && c.dimmed === true,
       );
@@ -300,6 +390,7 @@ describe('EdgeDock executor', () => {
       const setBoundsCalls: number[] = [];
       const deps: EdgeDockDeps = {
         setWindowX: (x) => { currentX = x; setBoundsCalls.push(x); },
+        setWindowPosition: (x) => { currentX = x; setBoundsCalls.push(x); },
         getWindowBounds: () => ({ x: currentX, y: 0, width: cfgRef.windowWidth, height: 852 }),
         applyDim: () => {},
         clearDim: () => {},

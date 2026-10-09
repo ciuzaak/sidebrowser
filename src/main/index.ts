@@ -420,6 +420,12 @@ app.whenReady().then(() => {
     try { return screen.getDisplayMatching(b).workArea; }
     catch { return screen.getPrimaryDisplay().workArea; }
   };
+  const emitWindowMoved = (): void => {
+    edgeDock.dispatch({
+      type: 'WINDOW_MOVED', bounds: win.getBounds(), workArea: getWorkArea(),
+      displayBounds: screen.getAllDisplays().map((d) => d.bounds),
+    });
+  };
 
   // M13: clear OS title text while dimmed (Alt+Tab tooltip / taskbar hover
   // / window title bar all show no string). Restored on dim clear.
@@ -427,6 +433,9 @@ app.whenReady().then(() => {
 
   const edgeDock = new EdgeDock({
     setWindowX: (x) => { const b = win.getBounds(); win.setBounds({ ...b, x: Math.round(x) }); },
+    setWindowPosition: (x, y) => {
+      win.setBounds({ ...win.getBounds(), x: Math.round(x), y: Math.round(y) });
+    },
     getWindowBounds: () => win.getBounds(),
     applyDim: () => {
       const wc = viewManager.getActiveWebContents();
@@ -438,6 +447,9 @@ app.whenReady().then(() => {
       if (!win.isDestroyed()) win.setTitle(APP_TITLE);
     },
     broadcastState: (s) => {
+      // Windows does not reliably emit 'moved' for programmatic setBounds.
+      // Save the logical visible bounds on state transitions as well.
+      if (!win.isDestroyed()) boundsPersister.markDirty(edgeDock.getVisibleBounds());
       // M14: edge-dock force-overrides alwaysOnTop while the window is engaged
       // with an edge (docked/hidden/animating). On DOCKED_NONE we revert to the
       // user's setting. Compute before the IPC so the renderer sees consistent
@@ -504,11 +516,12 @@ app.whenReady().then(() => {
 
   // 5. Window bounds persistence — debounced on every move/resize.
   win.on('moved', () => {
-    boundsPersister.markDirty(win.getBounds());
-    edgeDock.dispatch({ type: 'WINDOW_MOVED', bounds: win.getBounds(), workArea: getWorkArea() });
+    emitWindowMoved();
+    boundsPersister.markDirty(edgeDock.getVisibleBounds());
   });
   win.on('resize', () => {
-    boundsPersister.markDirty(win.getBounds());
+    emitWindowMoved();
+    boundsPersister.markDirty(edgeDock.getVisibleBounds());
   });
 
   // 6. Live-apply fan-out. Fires on every settingsStore.update(). Spec §7 +
@@ -532,19 +545,14 @@ app.whenReady().then(() => {
         win.setBounds({ ...b, width: settings.window.width, height: settings.window.height });
       }
     }
-    // Codex review (M14): edgeDock.enabled flipping false must also flip the
-    // closure-level edgeDockActive flag. Otherwise a window that was DOCKED_*
-    // when the user disables edge-dock leaves `edgeDockActive` stuck at true,
-    // and a subsequent alwaysOnTop=false toggle gets overridden by the stale
-    // value until the next edge-dock reducer dispatch fires (which never
-    // happens once enabled=false, because the reducer is mostly a no-op).
-    const edgeDockJustDisabled =
-      lastEdgeDockEnabled && !settings.edgeDock.enabled && edgeDockActive;
-    if (edgeDockJustDisabled) {
-      edgeDockActive = false;
+    const edgeDockEnabledChanged = lastEdgeDockEnabled !== settings.edgeDock.enabled;
+    if (edgeDockEnabledChanged) {
+      edgeDock.dispatch({ type: 'CONFIG_CHANGED' });
+      emitWindowMoved();
+      boundsPersister.markDirty(edgeDock.getVisibleBounds());
     }
     lastEdgeDockEnabled = settings.edgeDock.enabled;
-    if (settings.window.alwaysOnTop !== lastAlwaysOnTop || edgeDockJustDisabled) {
+    if (settings.window.alwaysOnTop !== lastAlwaysOnTop || edgeDockEnabledChanged) {
       lastAlwaysOnTop = settings.window.alwaysOnTop;
       applyEffectiveAlwaysOnTop(win, settings.window.alwaysOnTop, edgeDockActive);
     }
@@ -562,31 +570,35 @@ app.whenReady().then(() => {
     if (!win.isDestroyed()) {
       win.webContents.send(IpcChannels.appReady, { settings: settingsStore.get() });
     }
-    edgeDock.dispatch({ type: 'WINDOW_MOVED', bounds: win.getBounds(), workArea: getWorkArea() });
+    emitWindowMoved();
   });
 
-  // 8. Display topology changes — unchanged from M5.
+  // 8. Display topology changes cancel animations and recover hidden/offscreen windows.
   const onDisplayChanged = (): void => {
+    if (win.isDestroyed()) return;
     const b = win.getBounds();
     const center = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
     const nearest = screen.getDisplayNearestPoint(center);
-    // Strict containment — a HIDDEN_LEFT/RIGHT window has triggerStripPx (3px) outside
-    // the workArea by design, so insideAny=false there. If a display unplug fires while
-    // HIDDEN, this correctly surfaces as offscreen=true → SNAP_TO_CENTER, matching the
-    // spec §10 recovery requirement. A window docked flush against the edge (before hide)
-    // has its right/left edge exactly on the workArea boundary and still passes `<=`.
+    // A window spanning two displays is valid; requiring full containment in
+    // one display would unexpectedly move it on unrelated metrics changes.
     const insideAny = screen.getAllDisplays().some(d =>
-      b.x >= d.workArea.x && b.x + b.width <= d.workArea.x + d.workArea.width
-      && b.y >= d.workArea.y && b.y + b.height <= d.workArea.y + d.workArea.height);
+      center.x >= d.workArea.x && center.x < d.workArea.x + d.workArea.width
+      && center.y >= d.workArea.y && center.y < d.workArea.y + d.workArea.height);
+    const kind = edgeDock.getState().kind;
+    const needsReveal = kind === 'HIDING' || kind === 'REVEALING' ||
+      kind === 'HIDDEN_LEFT' || kind === 'HIDDEN_RIGHT';
     edgeDock.dispatch({
       type: 'DISPLAY_CHANGED',
       bounds: b,
       workArea: nearest.workArea, // always populated — nearest display if offscreen
-      offscreen: !insideAny,
+      offscreen: !insideAny || needsReveal,
     });
+    emitWindowMoved();
+    boundsPersister.markDirty(edgeDock.getVisibleBounds());
   };
   screen.on('display-metrics-changed', onDisplayChanged);
   screen.on('display-removed', onDisplayChanged);
+  screen.on('display-added', onDisplayChanged);
 
   if (process.env['SIDEBROWSER_E2E'] === '1') {
     (globalThis as Record<string, unknown>)['__sidebrowserTestHooks'] = {
@@ -594,7 +606,7 @@ app.whenReady().then(() => {
       fireEnterNow: () => watcher.emitEnterNow(),
       getActiveWebContents: () => viewManager.getActiveWebContents(),
       getWebContentsByUrlSubstring: (s: string) => viewManager.getWebContentsByUrlSubstring(s),
-      emitWindowMoved: () => edgeDock.dispatch({ type: 'WINDOW_MOVED', bounds: win.getBounds(), workArea: getWorkArea() }),
+      emitWindowMoved,
       emitDisplayChanged: onDisplayChanged,
       getEdgeDockState: () => edgeDock.getState(),
       getWindowBounds: () => win.getBounds(),
@@ -683,8 +695,10 @@ app.whenReady().then(() => {
   }
   win.once('closed', () => {
     watcher.stop();
+    edgeDock.dispose();
     screen.removeListener('display-metrics-changed', onDisplayChanged);
     screen.removeListener('display-removed', onDisplayChanged);
+    screen.removeListener('display-added', onDisplayChanged);
     nativeTheme.off('updated', onNativeThemeUpdated);
   });
 

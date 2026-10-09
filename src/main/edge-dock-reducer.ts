@@ -12,14 +12,14 @@
  *    effect carries the workArea so the executor knows where to center without querying
  *    Electron. (Plan literal has `workArea: Rect | null`; we revise to always-Rect
  *    per the briefing's §5 design note — keeps SNAP_TO_CENTER self-contained.)
- *  - HIDING/REVEALING + WINDOW_MOVED → no-op (guard: setBounds doesn't fire 'moved').
+ *  - HIDING/REVEALING + WINDOW_MOVED → no-op (ignore programmatic animation moves).
  *  - REVEALING + MOUSE_LEAVE → no-op (spec §10: ignore events mid-animation).
  *  - REVEALING + ANIM_DONE → no effects (renderer already has up-to-date state from
  *    the REVEALING entry broadcast).
- *  - cfg.enabled=false → no-op on every event (full disable guard).
+ *  - cfg.enabled=false disables docking; dim and display recovery remain active.
  */
 
-import { computeDockedSide } from './edge-geometry';
+import { canHideAtEdge, computeDockedSide } from './edge-geometry';
 
 // ---------------------------------------------------------------------------
 // Shared geometry type (Electron's Rectangle is structurally compatible)
@@ -54,7 +54,8 @@ export function initialState(): EdgeDockState {
 export type EdgeDockEvent =
   | { type: 'MOUSE_LEAVE' }
   | { type: 'MOUSE_ENTER' }
-  | { type: 'WINDOW_MOVED'; bounds: Rect; workArea: Rect }
+  | { type: 'WINDOW_MOVED'; bounds: Rect; workArea: Rect; displayBounds?: Rect[] }
+  | { type: 'CONFIG_CHANGED' }
   | {
       type: 'DISPLAY_CHANGED';
       bounds: Rect;
@@ -139,12 +140,29 @@ export function reduce(
   event: EdgeDockEvent,
   cfg: EdgeDockConfig,
 ): { nextState: EdgeDockState; effects: EdgeDockEffect[] } {
+  if (event.type === 'CONFIG_CHANGED') {
+    if (cfg.enabled || state.kind === 'DOCKED_NONE') return { nextState: state, effects: [] };
+    const side = state.kind === 'HIDING' || state.kind === 'REVEALING'
+      ? state.side : sideFromKind(state.kind);
+    const effects: EdgeDockEffect[] = [
+      { type: 'ANIM_CANCEL' },
+      { type: 'CLEAR_DIM' },
+      broadcast(null, false, false),
+    ];
+    if (state.kind !== 'DOCKED_LEFT' && state.kind !== 'DOCKED_RIGHT') {
+      effects.push({ type: 'ANIM_REVEAL', side, targetX: revealTargetX(side, state.workArea, cfg), ms: 0 });
+    }
+    return {
+      nextState: { kind: 'DOCKED_NONE', workArea: state.workArea, dimmed: false },
+      effects,
+    };
+  }
   // Edge-dock disabled: window-positioning behavior is off, but the dim
   // (mouse-leave / mouse-enter) feature is independent and must keep working.
   // We forward MOUSE_LEAVE / MOUSE_ENTER to the regular DOCKED_NONE branches
-  // below; every other event becomes a no-op so the window stays put.
+  // below; display recovery also remains active when docking is disabled.
   if (!cfg.enabled) {
-    if (event.type !== 'MOUSE_LEAVE' && event.type !== 'MOUSE_ENTER') {
+    if (event.type !== 'MOUSE_LEAVE' && event.type !== 'MOUSE_ENTER' && event.type !== 'DISPLAY_CHANGED') {
       return { nextState: state, effects: [] };
     }
     // If we somehow ended up not in DOCKED_NONE (e.g. user toggled enabled off
@@ -185,8 +203,8 @@ export function reduce(
         };
         const effects: EdgeDockEffect[] = [
           { type: 'APPLY_DIM' },
-          { type: 'ANIM_HIDE', side, targetX: hideTargetX(side, workArea, cfg), ms: cfg.animationMs },
           broadcast(side, false, true),
+          { type: 'ANIM_HIDE', side, targetX: hideTargetX(side, workArea, cfg), ms: cfg.animationMs },
         ];
         return { nextState, effects };
       }
@@ -301,12 +319,16 @@ export function reduce(
     case 'WINDOW_MOVED': {
       const { bounds, workArea: newWorkArea } = event;
 
-      // During animation: guard ignore (setBounds doesn't fire 'moved')
+      // Ignore programmatic animation moves and the deliberately offscreen hidden position.
       if (kind === 'HIDING' || kind === 'REVEALING' || kind === 'HIDDEN_LEFT' || kind === 'HIDDEN_RIGHT') {
         return { nextState: state, effects: [] };
       }
 
-      const newSide = computeDockedSide(bounds, newWorkArea, cfg.edgeThresholdPx);
+      let newSide = computeDockedSide(bounds, newWorkArea, cfg.edgeThresholdPx);
+      if (newSide && event.displayBounds &&
+          !canHideAtEdge(bounds, newWorkArea, newSide, cfg.triggerStripPx, event.displayBounds)) {
+        newSide = null;
+      }
       const { dimmed } = state;
 
       if (kind === 'DOCKED_NONE') {
@@ -364,17 +386,17 @@ export function reduce(
     case 'DISPLAY_CHANGED': {
       const { workArea, offscreen } = event;
 
-      const effects: EdgeDockEffect[] = [];
+      const effects: EdgeDockEffect[] = [{ type: 'ANIM_CANCEL' }];
 
       if (state.dimmed) {
         effects.push({ type: 'CLEAR_DIM' });
       }
 
+      effects.push(broadcast(null, false, false));
+
       if (offscreen) {
         effects.push({ type: 'SNAP_TO_CENTER', workArea, windowWidth: cfg.windowWidth });
       }
-
-      effects.push(broadcast(null, false, false));
 
       const nextState: EdgeDockState = {
         kind: 'DOCKED_NONE',

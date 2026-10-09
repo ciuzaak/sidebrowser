@@ -1,7 +1,7 @@
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { getChromeWindow, waitForAddressBarReady } from './helpers';
 
@@ -86,6 +86,74 @@ async function getPrimaryWorkArea(
 ): Promise<{ x: number; y: number; width: number; height: number }> {
   return app.evaluate(async ({ screen }) => screen.getPrimaryDisplay().workArea);
 }
+
+test('display-stress: shared edge stays visible; outer edge hides, persists and disables cleanly', async () => {
+  const userDataDir = mkdtempSync(join(tmpdir(), 'sidebrowser-multi-display-'));
+  try {
+    const app = await electron.launch({
+      args: [MAIN_PATH, `--user-data-dir=${userDataDir}`],
+      env: { ...process.env, SIDEBROWSER_E2E: '1' },
+    });
+    try {
+      await waitForAddressBarReady(await getChromeWindow(app));
+      const workArea = await getPrimaryWorkArea(app);
+      // Inject a deterministic adjacent display. Windows still controls the
+      // real BrowserWindow; only the topology reported to docking is replaced.
+      await app.evaluate(({ screen }) => {
+        const display = screen.getPrimaryDisplay();
+        const wa = display.workArea;
+        const neighbor = { ...wa, x: wa.x - wa.width };
+        screen.getAllDisplays = () => [
+          { ...display, bounds: wa },
+          { ...display, id: display.id + 1, bounds: neighbor, workArea: neighbor },
+        ];
+      });
+      const bounds = { x: workArea.x, y: workArea.y + 40, width: 393, height: Math.min(600, workArea.height - 80) };
+      await setWindowBounds(app, { ...bounds, x: workArea.x - 100 });
+      await emitWindowMoved(app);
+      await emitDisplayChanged(app);
+      expect((await getWindowBounds(app)).x).toBe(workArea.x - 100);
+      await setWindowBounds(app, bounds);
+      await emitWindowMoved(app);
+      await fireLeaveNow(app);
+      expect((await getState(app)).kind).toBe('DOCKED_NONE');
+      expect((await getWindowBounds(app)).x).toBe(workArea.x);
+
+      await app.evaluate(({ screen }) => {
+        const display = screen.getPrimaryDisplay();
+        screen.getAllDisplays = () => [{ ...display, bounds: display.workArea }];
+      });
+      await callHook(app, 'fireEnterNow');
+      await app.evaluate(() => {
+        const h = (globalThis as unknown as { __sidebrowserTestHooks: {
+          updateSettings: (p: unknown) => unknown;
+        } }).__sidebrowserTestHooks;
+        h.updateSettings({ edgeDock: { animationMs: 0 }, browsing: { muteWhenHidden: true } });
+      });
+      await emitWindowMoved(app);
+      await fireLeaveNow(app);
+      await expect.poll(async () => (await getState(app)).kind).toBe('HIDDEN_LEFT');
+      await expect.poll(() => callHook<boolean>(app, 'isActiveAudioMuted')).toBe(true);
+      await callHook(app, 'flushWindowBounds');
+      const persisted = JSON.parse(readFileSync(join(userDataDir, 'window-bounds.json'), 'utf8')) as { bounds: { x: number } };
+      expect(persisted.bounds.x).toBe(workArea.x);
+
+      await app.evaluate(() => {
+        const h = (globalThis as unknown as { __sidebrowserTestHooks: {
+          updateSettings: (p: unknown) => unknown;
+        } }).__sidebrowserTestHooks;
+        h.updateSettings({ edgeDock: { enabled: false } });
+      });
+      await expect.poll(async () => (await getState(app)).kind).toBe('DOCKED_NONE');
+      await expect.poll(async () => (await getWindowBounds(app)).x).toBe(workArea.x);
+      await expect.poll(() => callHook<boolean>(app, 'isActiveAudioMuted')).toBe(false);
+    } finally {
+      await app.close();
+    }
+  } finally {
+    rmSync(userDataDir, { recursive: true, force: true });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Test 1 — HIDDEN_LEFT + offscreen display change → SNAP_TO_CENTER (spec §10)
