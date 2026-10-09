@@ -523,15 +523,15 @@ describe('cfg.enabled = false', () => {
     expect(effects).toHaveLength(0);
   });
 
-  it('DISPLAY_CHANGED is no-op', () => {
+  it('DISPLAY_CHANGED still recovers an offscreen window when docking is disabled', () => {
     const state = dockedLeft();
     const { nextState, effects } = reduce(
       state,
-      { type: 'DISPLAY_CHANGED', bounds: BOUNDS_LEFT, workArea: WA, offscreen: false },
+      { type: 'DISPLAY_CHANGED', bounds: BOUNDS_LEFT, workArea: WA, offscreen: true },
       disabledCfg,
     );
-    expect(nextState).toBe(state);
-    expect(effects).toHaveLength(0);
+    expect(nextState.kind).toBe('DOCKED_NONE');
+    expect(effects.some((e) => e.type === 'SNAP_TO_CENTER')).toBe(true);
   });
 });
 

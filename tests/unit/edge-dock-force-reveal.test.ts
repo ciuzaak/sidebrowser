@@ -4,6 +4,7 @@ import { EdgeDock } from '@main/edge-dock';
 function makeDeps(overrides = {}) {
   return {
     setWindowX: vi.fn(),
+    setWindowPosition: vi.fn(),
     getWindowBounds: vi.fn(() => ({ x: 0, y: 0, width: 393, height: 852 })),
     applyDim: vi.fn(),
     clearDim: vi.fn(),

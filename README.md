@@ -14,7 +14,7 @@ Windows only，暂无移植 macOS 的计划。
 
 ## 核心功能
 
-- **贴边自动隐藏**（左/右均可）：窗口收起后留 3px 触发条，鼠标悬停即呼出
+- **贴边自动隐藏**（左/右均可）：窗口收起后留 3px 触发条，鼠标悬停即呼出。多屏交界处若收起会露在邻屏上，则保持可见，仅自动暗化；移到屏幕外侧边缘即可收起
 - **鼠标离开自动变暗/模糊**：离开窗口后触发暗化 + 模糊滤镜，强度和效果均可在设置里调
 - **手机模拟（M10 hybrid CDP）**：UA + Client Hints 头 + Chromium device emulation + CDP touch/pointer override，让 X.com / B 站等靠 Client Hints 路由的站点也按真移动版渲染
 - **可定制搜索引擎（M11）**：默认 Google，内置 4 项（Google / DuckDuckGo / Bing / 百度）+ 用户可添加/删除自定义条目（含 `{query}` 占位符的 URL 模板）

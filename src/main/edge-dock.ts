@@ -32,6 +32,8 @@ export type IntervalHandle = ReturnType<typeof setInterval>;
 export interface EdgeDockDeps {
   /** Move the window to the given x coordinate (updates only x; y/width/height preserved by caller). */
   setWindowX: (x: number) => void;
+  /** Recover both axes after a monitor is removed or repositioned. */
+  setWindowPosition: (x: number, y: number) => void;
   /** Return the window's current bounds (needed to compute fromX of REVEAL animations). */
   getWindowBounds: () => Rect;
   /** Apply the dim overlay (DimController.applyDim). */
@@ -77,6 +79,20 @@ export class EdgeDock {
     return this.state;
   }
 
+  /** Persist the visible position, never an animation frame on an adjacent display. */
+  getVisibleBounds(): Rect {
+    const bounds = this.deps.getWindowBounds();
+    const state = this.state;
+    if (state.kind === 'DOCKED_NONE' || state.kind === 'DOCKED_LEFT' || state.kind === 'DOCKED_RIGHT') return bounds;
+    const side = state.kind === 'HIDING' || state.kind === 'REVEALING'
+      ? state.side : state.kind === 'HIDDEN_LEFT' ? 'left' : 'right';
+    return { ...bounds, x: side === 'left' ? state.workArea.x : state.workArea.x + state.workArea.width - bounds.width };
+  }
+
+  dispose(): void {
+    this.cancelAnim();
+  }
+
   /**
    * 从 HIDDEN_LEFT / HIDDEN_RIGHT 状态强制回到 DOCKED_* 可见态。
    * 其它状态 no-op。用于第二实例激活第一实例时的"双击即可见"。
@@ -108,7 +124,10 @@ export class EdgeDock {
         return;
 
       case 'SNAP_TO_CENTER':
-        this.deps.setWindowX(fx.workArea.x + (fx.workArea.width - fx.windowWidth) / 2);
+        this.deps.setWindowPosition(
+          fx.workArea.x + Math.max(0, (fx.workArea.width - fx.windowWidth) / 2),
+          fx.workArea.y + Math.max(0, (fx.workArea.height - this.deps.getWindowBounds().height) / 2),
+        );
         return;
 
       case 'BROADCAST_STATE':

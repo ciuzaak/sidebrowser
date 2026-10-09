@@ -5,6 +5,22 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 the project follows [Semantic Versioning](https://semver.org/) at the
 minor level (each numbered milestone bumps the minor version).
 
+## [1.5.1] — 2026-10-09
+
+### Fixed
+
+- Keep windows visible at shared monitor edges when hiding would expose the
+  window on another display. Mouse-leave dimming still works; outer edges
+  continue to auto-hide. Handles negative coordinates and staggered displays.
+- Cancel hide/reveal animations on display topology changes and window close.
+  Recover both horizontal and vertical positions after a display is removed,
+  and avoid moving valid windows that span two displays.
+- Restore hidden windows, rendering and audio when edge docking is disabled.
+- Publish the correct final hidden state when animation duration is zero.
+- Persist the visible window position instead of hidden animation coordinates,
+  including programmatic moves that do not emit a Windows `moved` event.
+- Reclassify docking when the window is resized or a display is added.
+
 ## [1.5.0] — 2026-10-08
 
 Two milestones released together: M16 (browser essentials — the things
