@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 import { getPersistentSession } from './session-manager';
 import { desktopUa } from './user-agents';
 import { sanitizeUrl } from './url-validator';
+import { isPdfUrl } from '@shared/url';
 import {
   applyMobileEmulation,
   removeMobileEmulation,
@@ -375,7 +376,7 @@ export class ViewManager {
     // javascript:/data:/chrome: URLs can't reach the renderer.
     url = sanitizeUrl(url);
     const id = opts.id ?? nanoid();
-    const isMobile = opts.isMobile ?? this.getBrowsingDefaults().defaultIsMobile;
+    const isMobile = isPdfUrl(url) ? false : opts.isMobile ?? this.getBrowsingDefaults().defaultIsMobile;
     const history = opts.history ?? null;
     const tab: Tab = {
       ...makeEmptyTab(id, url, isMobile),
@@ -537,6 +538,7 @@ export class ViewManager {
     // `normalizeUrlInput` already ran in shared/url.ts; keeps javascript:/data:
     // out of the renderer regardless of entry point.
     url = sanitizeUrl(url);
+    this.preparePdfNavigation(id, url);
     this.updateTab(id, { url, isLoading: true });
     if (!managed.view) {
       // Unloaded tab: drop the stale history and create the page at `url`.
@@ -586,6 +588,7 @@ export class ViewManager {
   setMobile(id: string, isMobile: boolean): void {
     const managed = this.tabs.get(id);
     if (!managed) return;
+    if (isMobile && isPdfUrl(managed.tab.url)) return;
     if (!managed.view) {
       // Unloaded: just flip the flag; the page is created with the right UA.
       this.updateTab(id, { isMobile, favicon: null });
@@ -903,6 +906,20 @@ export class ViewManager {
 
   // ---------- private ----------
 
+  private preparePdfNavigation(id: string, url: string): void {
+    const managed = this.tabs.get(id);
+    if (!managed?.tab.isMobile || !isPdfUrl(url)) return;
+    // The PDF reader has its own fit/zoom controls and needs a desktop viewport.
+    if (managed.view) {
+      const wc = managed.view.webContents;
+      detachCdpEmulation(wc);
+      removeMobileEmulation(wc);
+      wc.setUserAgent(desktopUa());
+      wc.setZoomFactor(managed.zoom);
+    }
+    this.updateTab(id, { isMobile: false });
+  }
+
   /**
    * Create the page for a tab (no-op if it already has one): view, UA,
    * mobile emulation, listeners, audio state, then restore its history or
@@ -1215,6 +1232,17 @@ export class ViewManager {
     });
     const onStart = (): void => this.updateTab(id, { isLoading: true, crashed: null });
     const onStop = (): void => this.updateTab(id, { isLoading: false, ...navState() });
+    const onWillNavigate = (event: Electron.Event, url: string): void => {
+      if (!this.tabs.get(id)?.tab.isMobile || !isPdfUrl(url)) return;
+      // Restart before sending the PDF request: changing UA on an in-flight
+      // mobile navigation is too late and Chromium can download it instead.
+      event.preventDefault();
+      this.preparePdfNavigation(id, url);
+      setImmediate(() => this.navigate(id, url));
+    };
+    const onWillRedirect = (event: Electron.Event, url: string, _inPlace: boolean, isMainFrame: boolean): void => {
+      if (isMainFrame) onWillNavigate(event, url);
+    };
     const onNavigate = (_e: Electron.Event, url: string): void => {
       this.updateTab(id, { url, ...navState() });
       const managed = this.tabs.get(id);
@@ -1363,6 +1391,8 @@ export class ViewManager {
 
     wc.on('did-start-loading', onStart);
     wc.on('did-stop-loading', onStop);
+    wc.on('will-navigate', onWillNavigate);
+    wc.on('will-redirect', onWillRedirect);
     wc.on('did-navigate', onNavigate);
     wc.on('did-navigate-in-page', onNavigateInPage);
     wc.on('page-title-updated', onTitle);
@@ -1395,6 +1425,8 @@ export class ViewManager {
     return (): void => {
       wc.off('did-start-loading', onStart);
       wc.off('did-stop-loading', onStop);
+      wc.off('will-navigate', onWillNavigate);
+      wc.off('will-redirect', onWillRedirect);
       wc.off('did-navigate', onNavigate);
       wc.off('did-navigate-in-page', onNavigateInPage);
       wc.off('page-title-updated', onTitle);

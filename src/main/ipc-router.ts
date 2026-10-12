@@ -26,7 +26,14 @@ export function registerIpcRouter(
   settingsStore: SettingsStore,
   historyStore: HistoryStore,
   downloads: DownloadsManager,
+  openPdf: () => Promise<void>,
 ): void {
+  ipcMain.removeHandler(IpcChannels.pdfOpen);
+  ipcMain.handle(IpcChannels.pdfOpen, (event) => {
+    // Only our chrome may summon a native file picker; page frames cannot.
+    if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) return;
+    return openPdf();
+  });
   // Tab management.
   ipcMain.removeHandler(IpcChannels.tabCreate);
   ipcMain.handle(

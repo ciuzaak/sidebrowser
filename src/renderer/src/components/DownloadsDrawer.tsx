@@ -92,6 +92,7 @@ export function DownloadsDrawer({ open, downloads, onOutsideClose, toggleRef }: 
                 <button
                   type="button"
                   disabled={d.state !== 'completed'}
+                  aria-label={d.executable ? `Show ${d.filename} in folder` : `Open ${d.filename}`}
                   onClick={() =>
                     // Executables are never launched from here — show them instead.
                     d.executable
@@ -99,7 +100,7 @@ export function DownloadsDrawer({ open, downloads, onOutsideClose, toggleRef }: 
                       : window.sidebrowser.downloadsOpen(d.id)
                   }
                   className="min-w-0 flex-1 text-left disabled:cursor-default"
-                  title={d.path}
+                  title={/\.pdf$/i.test(d.filename) ? `Open PDF in sidebrowser: ${d.path}` : d.path}
                 >
                   <div
                     className={`truncate text-sm ${d.state === 'cancelled' || d.state === 'interrupted' || d.state === 'blocked' ? 'text-[var(--fg-muted)] line-through' : 'text-[var(--fg)]'}`}

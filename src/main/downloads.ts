@@ -6,7 +6,7 @@
  * executables are saved but never launched from the drawer.
  */
 import { existsSync, mkdirSync } from 'node:fs';
-import { basename } from 'node:path';
+import { basename, extname } from 'node:path';
 import type { DownloadItem, Session } from 'electron';
 import type { DownloadInfo } from '@shared/types';
 import { classifyDownload, sanitizeFilename, uniqueFilename } from './downloads-naming';
@@ -25,6 +25,7 @@ export interface DownloadsManagerDeps {
   onChanged: () => void;
   /** Electron shell bits, injected for testability. */
   openPath: (path: string) => Promise<string>;
+  openPdf: (path: string) => Promise<void>;
   showItemInFolder: (path: string) => void;
 }
 
@@ -108,10 +109,12 @@ export class DownloadsManager {
     return [...this.items.values()].map((t) => ({ ...t.info })).reverse();
   }
 
-  /** Open a finished, non-executable file with its default app. */
+  /** PDFs open in our reader; other finished, non-executable files use the OS. */
   open(id: string): void {
     const t = this.items.get(id);
-    if (t?.info.state === 'completed' && !t.info.executable) void this.deps.openPath(t.info.path);
+    if (t?.info.state !== 'completed' || t.info.executable) return;
+    if (extname(t.info.path).toLowerCase() === '.pdf') void this.deps.openPdf(t.info.path);
+    else void this.deps.openPath(t.info.path);
   }
 
   showInFolder(id: string): void {

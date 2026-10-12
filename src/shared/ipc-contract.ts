@@ -16,6 +16,8 @@ import type {
 } from './types';
 
 export const IpcChannels = {
+  /** Chrome renderer → main: select a local PDF and open a desktop tab. */
+  pdfOpen: 'pdf:open',
   // Multi-tab management (M2).
   tabCreate: 'tab:create',
   tabClose: 'tab:close',
@@ -144,6 +146,10 @@ export type ShortcutAction =
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];
 
 export interface IpcContract {
+  [IpcChannels.pdfOpen]: {
+    request: Record<string, never>;
+    response: void;
+  };
   [IpcChannels.tabCreate]: {
     /** Optional initial URL; defaults to about:blank. */
     request: { url?: string };

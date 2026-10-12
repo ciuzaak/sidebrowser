@@ -3,6 +3,7 @@
  *
  * Rules:
  * - Empty / whitespace → `about:blank`
+ * - Windows absolute drive path (optionally quoted) → escaped `file:///` URL
  * - Already-qualified scheme (`http`, `https`, `about`, `chrome`, `file`, `data`) → passthrough
  * - Single token that looks like a host (see `hostSchemeFor`) → prepend `http://` or `https://`
  * - Otherwise → treat as search query, substitute into `searchUrlTemplate`
@@ -16,6 +17,13 @@ export function normalizeUrlInput(raw: string, searchUrlTemplate: string): strin
   const input = raw.trim();
   if (input === '') return 'about:blank';
 
+  // Windows Explorer's "Copy as path" includes surrounding double quotes.
+  const path = input.startsWith('"') && input.endsWith('"') ? input.slice(1, -1) : input;
+  if (/^[a-z]:[\\/]/i.test(path)) {
+    const parts = path.replace(/\\/g, '/').split('/');
+    return `file:///${parts[0]}/${parts.slice(1).map(encodeURIComponent).join('/')}`;
+  }
+
   if (/^(https?|about|chrome|file|data):/i.test(input)) {
     return input;
   }
@@ -27,6 +35,17 @@ export function normalizeUrlInput(raw: string, searchUrlTemplate: string): strin
   }
 
   return searchUrlTemplate.replace('{query}', encodeURIComponent(input));
+}
+
+/** PDF filenames, including encoded names and URL queries/fragments. */
+export function isPdfUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return ['http:', 'https:', 'file:'].includes(parsed.protocol) &&
+      decodeURIComponent(parsed.pathname).toLowerCase().endsWith('.pdf');
+  } catch {
+    return false;
+  }
 }
 
 /**
