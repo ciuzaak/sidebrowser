@@ -1,11 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { hostSchemeFor, normalizeUrlInput } from '@shared/url';
+import { hostSchemeFor, isPdfUrl, normalizeUrlInput } from '@shared/url';
 
 const GOOGLE_T = 'https://www.google.com/search?q={query}';
 const DDG_T = 'https://duckduckgo.com/?q={query}';
 const BAIDU_T = 'https://www.baidu.com/s?wd={query}';
 
 describe('normalizeUrlInput', () => {
+  it('opens quoted Windows paths and escapes literal URL characters', () => {
+    const path = '"D:\\My Docs\\报告 #1%?.PDF"';
+    const url = normalizeUrlInput(path, GOOGLE_T);
+    expect(url).toBe(`file:///D:/My%20Docs/${encodeURIComponent('报告 #1%?.PDF')}`);
+    expect(new URL(url).hash).toBe('');
+    expect(new URL(url).search).toBe('');
+  });
+
+  it('accepts forward slash paths but searches drive-relative paths', () => {
+    expect(normalizeUrlInput('c:/docs/book.pdf', GOOGLE_T)).toBe('file:///c:/docs/book.pdf');
+    expect(normalizeUrlInput('C:book.pdf', GOOGLE_T)).toContain('google.com/search');
+  });
   it('prepends https:// to bare hostnames', () => {
     expect(normalizeUrlInput('google.com', GOOGLE_T)).toBe('https://google.com');
     expect(normalizeUrlInput('example.com/path?x=1', GOOGLE_T)).toBe('https://example.com/path?x=1');
@@ -56,6 +68,20 @@ describe('normalizeUrlInput', () => {
   it('returns about:blank for empty or whitespace-only input', () => {
     expect(normalizeUrlInput('', GOOGLE_T)).toBe('about:blank');
     expect(normalizeUrlInput('   ', GOOGLE_T)).toBe('about:blank');
+  });
+});
+
+describe('isPdfUrl', () => {
+  it('recognizes file and web PDFs regardless of case, query or fragment', () => {
+    for (const url of ['file:///D:/book.PDF', 'https://a.com/book.pdf?download=1#page=2', 'http://localhost/a%2Epdf']) {
+      expect(isPdfUrl(url)).toBe(true);
+    }
+  });
+
+  it('does not mistake searches, unsafe schemes or malformed URLs for PDFs', () => {
+    for (const url of ['https://a.com/search?q=book.pdf', 'https://a.com/book.pdf.html', 'data:book.pdf', 'view-source:file:///x.pdf', 'https://a.com/%zz.pdf', 'book.pdf']) {
+      expect(isPdfUrl(url)).toBe(false);
+    }
   });
 });
 

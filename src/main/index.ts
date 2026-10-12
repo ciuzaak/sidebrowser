@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, nativeTheme, ipcMain, shell, clipboard } from 'electron';
+import { app, BrowserWindow, screen, nativeTheme, ipcMain, shell, clipboard, dialog } from 'electron';
 import type { Rectangle } from 'electron';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
@@ -33,6 +33,45 @@ import { installMobileHeaderRewriter } from './mobile-emulation';
 import { getPersistentSession } from './session-manager';
 import { installPermissionPolicy } from './permissions';
 import { DownloadsManager } from './downloads';
+import { PdfFiles } from './pdf-files';
+import { isCursorInside } from './cursor-state';
+
+function createPdfFiles(
+  window: BrowserWindow,
+  views: ViewManager,
+  onDialogStateChange: (open: boolean) => void = () => {},
+): PdfFiles {
+  const withDialog = async <T>(run: () => Promise<T>): Promise<T> => {
+    onDialogStateChange(true);
+    try { return await run(); }
+    finally { onDialogStateChange(false); }
+  };
+  return new PdfFiles({
+    pickFile: async () => {
+      if (window.isDestroyed()) return null;
+      const result = await withDialog(() => dialog.showOpenDialog(window, {
+        title: 'Open PDF',
+        filters: [{ name: 'PDF documents', extensions: ['pdf'] }],
+        properties: ['openFile'],
+      }));
+      return result.canceled ? null : result.filePaths[0] ?? null;
+    },
+    openTab: (url) => {
+      if (!window.isDestroyed()) views.createTab(url, { isMobile: false });
+    },
+    showError: async (message) => {
+      if (!window.isDestroyed()) {
+        try {
+          await withDialog(() => dialog.showMessageBox(window, {
+            type: 'error', title: 'Open PDF', message, buttons: ['OK'],
+          }));
+        } catch (err) {
+          console.error('[sidebrowser] PDF error dialog failed:', err);
+        }
+      }
+    },
+  });
+}
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -242,16 +281,20 @@ app.whenReady().then(() => {
     viewManager.getMobileEmulationState(wcId),
   );
   // M16: downloads go straight to the Downloads folder (overridable in E2E).
+  let pdfDialogCount = 0;
+  let onPdfDialogStateChange = (open: boolean): void => { pdfDialogCount += open ? 1 : -1; };
+  const pdfFiles = createPdfFiles(win, viewManager, (open) => onPdfDialogStateChange(open));
   const downloads: DownloadsManager = new DownloadsManager({
     getDirectory: () => process.env['SIDEBROWSER_E2E_DOWNLOADS_DIR'] ?? app.getPath('downloads'),
     onChanged: () => {
       if (!win.isDestroyed()) win.webContents.send(IpcChannels.downloadsChanged, downloads.list());
     },
     openPath: (p) => shell.openPath(p),
+    openPdf: (p) => pdfFiles.openPath(p),
     showItemInFolder: (p) => { shell.showItemInFolder(p); },
   });
   downloads.install(getPersistentSession());
-  registerIpcRouter(win, viewManager, settingsStore, historyStore, downloads);
+  registerIpcRouter(win, viewManager, settingsStore, historyStore, downloads, () => pdfFiles.pickAndOpen());
 
   // 2b. Hidden Application Menu — spec §15 keyboard shortcuts. Installed once
   // globally per-process (Menu.setApplicationMenu is app-wide, not per-window),
@@ -260,6 +303,7 @@ app.whenReady().then(() => {
   // helpers; renderer-bound actions (focus address bar, toggle drawers) are
   // fanned out via the `chrome:shortcut` broadcast.
   installApplicationMenu({
+    onOpenPdf: () => { void pdfFiles.pickAndOpen(); },
     onNewTab: () => { viewManager.createTab('about:blank'); },
     onCloseActiveTab: () => { viewManager.closeActiveTab(); },
     onReloadActive: () => { viewManager.reloadActive(); },
@@ -504,7 +548,20 @@ app.whenReady().then(() => {
   nativeTheme.on('updated', onNativeThemeUpdated);
 
   // M4 direct dim wiring replaced: mouse events now route through EdgeDock.
-  watcher.onLeave(() => edgeDock.dispatch({ type: 'MOUSE_LEAVE' }));
+  // Native PDF dialogs extend beyond the side window. Keep the parent
+  // revealed while selecting a file, then resume the normal cursor policy.
+  onPdfDialogStateChange = (open): void => {
+    pdfDialogCount += open ? 1 : -1;
+    if (win.isDestroyed()) return;
+    if (open) edgeDock.dispatch({ type: 'MOUSE_ENTER' });
+    else if (pdfDialogCount === 0 && process.env['SIDEBROWSER_E2E'] !== '1') {
+      const inside = isCursorInside(screen.getCursorScreenPoint(), win.getBounds());
+      edgeDock.dispatch({ type: inside ? 'MOUSE_ENTER' : 'MOUSE_LEAVE' });
+    }
+  };
+  watcher.onLeave(() => {
+    if (pdfDialogCount === 0) edgeDock.dispatch({ type: 'MOUSE_LEAVE' });
+  });
   watcher.onEnter(() => edgeDock.dispatch({ type: 'MOUSE_ENTER' }));
 
   // M4 retarget behavior preserved (dim-only; unrelated to EdgeDock).
@@ -605,6 +662,7 @@ app.whenReady().then(() => {
       fireLeaveNow: () => watcher.emitLeaveNow(),
       fireEnterNow: () => watcher.emitEnterNow(),
       getActiveWebContents: () => viewManager.getActiveWebContents(),
+      isPdfDialogOpen: () => pdfDialogCount > 0,
       getWebContentsByUrlSubstring: (s: string) => viewManager.getWebContentsByUrlSubstring(s),
       emitWindowMoved,
       emitDisplayChanged: onDisplayChanged,
@@ -720,7 +778,8 @@ app.whenReady().then(() => {
           muteWhenHidden: s.browsing.muteWhenHidden,
         };
       }, historyRecorder);
-      registerIpcRouter(newWin, newViewManager, settingsStore, historyStore, downloads);
+      const newPdfFiles = createPdfFiles(newWin, newViewManager);
+      registerIpcRouter(newWin, newViewManager, settingsStore, historyStore, downloads, () => newPdfFiles.pickAndOpen());
       newWin.webContents.once('did-finish-load', () => {
         newViewManager.createTab('about:blank');
       });

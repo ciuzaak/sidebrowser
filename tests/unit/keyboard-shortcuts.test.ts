@@ -10,6 +10,7 @@ import {
 
 function makeDeps(): ShortcutDeps & {
   spies: {
+    onOpenPdf: ReturnType<typeof vi.fn>;
     onNewTab: ReturnType<typeof vi.fn>;
     onCloseActiveTab: ReturnType<typeof vi.fn>;
     onReloadActive: ReturnType<typeof vi.fn>;
@@ -23,6 +24,7 @@ function makeDeps(): ShortcutDeps & {
     emitToRenderer: ReturnType<typeof vi.fn>;
   };
 } {
+  const onOpenPdf = vi.fn();
   const onNewTab = vi.fn();
   const onCloseActiveTab = vi.fn();
   const onReloadActive = vi.fn();
@@ -35,6 +37,7 @@ function makeDeps(): ShortcutDeps & {
   const onReopenClosedTab = vi.fn();
   const emitToRenderer = vi.fn();
   return {
+    onOpenPdf,
     onNewTab,
     onCloseActiveTab,
     onReloadActive,
@@ -47,6 +50,7 @@ function makeDeps(): ShortcutDeps & {
     onReopenClosedTab,
     emitToRenderer,
     spies: {
+      onOpenPdf,
       onNewTab,
       onCloseActiveTab,
       onReloadActive,
@@ -87,11 +91,11 @@ function getSubmenu(
 
 describe('buildShortcutMenuTemplate', () => {
   // ── Test 1: Structure ─────────────────────────────────────────────────────
-  it('returns exactly one hidden top-level item with 10 submenu entries', () => {
+  it('returns exactly one hidden top-level item with 16 submenu entries', () => {
     // Spec §15 defined 9 logical shortcuts. M13 removed "Toggle Tab Drawer"
     // (CmdOrCtrl+Tab) — TabCycler now owns Ctrl+Tab via before-input-event.
-    // The menu template has 15 physical entries (M16 added zoom in ×2, zoom
-    // out, find, reopen closed tab):
+    // The menu template has 16 physical entries (M16 added zoom in ×2, zoom
+    // out, find, reopen closed tab; PDF support adds Ctrl+O):
     //  - Ctrl+R and F5 are two separate items that share onReloadActive.
     //  - F12 DevTools.
     const deps = makeDeps();
@@ -102,7 +106,7 @@ describe('buildShortcutMenuTemplate', () => {
     expect(top.visible).toBe(false);
 
     const submenu = getSubmenu(template);
-    expect(submenu).toHaveLength(15);
+    expect(submenu).toHaveLength(16);
   });
 
   // ── Test 2: Accelerators ──────────────────────────────────────────────────
@@ -128,6 +132,7 @@ describe('buildShortcutMenuTemplate', () => {
       ['Find in Page', 'CmdOrCtrl+F'],
       ['Reopen Closed Tab', 'CmdOrCtrl+Shift+T'],
       ['Toggle DevTools', 'F12'],
+      ['Open PDF', 'CmdOrCtrl+O'],
     ];
     expect(submenu).toHaveLength(expected.length);
     for (let i = 0; i < expected.length; i++) {
@@ -135,6 +140,14 @@ describe('buildShortcutMenuTemplate', () => {
       expect(submenu[i].label, `submenu[${i}].label`).toContain(labelSub);
       expect(submenu[i].accelerator, `submenu[${i}].accelerator`).toBe(accel);
     }
+  });
+
+  it('routes Ctrl+O to the PDF file picker', () => {
+    const deps = makeDeps();
+    const item = getSubmenu(buildShortcutMenuTemplate(deps)).find((i) => i.accelerator === 'CmdOrCtrl+O');
+    item!.click!();
+    expect(deps.spies.onOpenPdf).toHaveBeenCalledOnce();
+    expect(deps.spies.onNewTab).not.toHaveBeenCalled();
   });
 
   // ── Test 3: Direct handler routing ────────────────────────────────────────

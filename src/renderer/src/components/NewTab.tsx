@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactElement, type MouseEvent } from 'react';
-import { X } from 'lucide-react';
+import { FolderOpen, X } from 'lucide-react';
 import type { HistoryEntry, TopSite } from '@shared/types';
 import appIconUrl from '@resources/newtab-icon.png';
 import { useActiveTab } from '../store/tab-store';
@@ -75,6 +75,17 @@ export function NewTab(): ReactElement {
         <p className="mt-1 text-xs text-[var(--fg-muted)]">
           Pick up where you left off, or search above.
         </p>
+        <button
+          type="button"
+          data-testid="open-pdf"
+          title="Open PDF (Ctrl+O)"
+          onClick={() => { void window.sidebrowser.openPdf(); }}
+          className="mt-4 flex items-center gap-2 rounded-[var(--radius-md)] bg-[var(--surface-elevated)] px-3 py-2 text-xs text-[var(--fg)] shadow-[var(--shadow-card)] hover:bg-[var(--accent-tint)]"
+        >
+          <FolderOpen size={14} aria-hidden />
+          Open PDF
+          <span className="text-[var(--fg-muted)]">Ctrl+O</span>
+        </button>
       </div>
 
       {sites.length > 0 && (

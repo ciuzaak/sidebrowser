@@ -6,6 +6,7 @@ import type {
 } from '@shared/types';
 
 const api = {
+  openPdf: (): Promise<void> => ipcRenderer.invoke(IpcChannels.pdfOpen, {}),
   // Tab management
   createTab: (url?: string): Promise<Tab> =>
     ipcRenderer.invoke(IpcChannels.tabCreate, { url }),

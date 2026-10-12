@@ -5,6 +5,22 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 the project follows [Semantic Versioning](https://semver.org/) at the
 minor level (each numbered milestone bumps the minor version).
 
+## [1.6.0] — 2026-10-12
+
+### Added
+
+- Open local PDFs from the NewTab page or Ctrl+O in a new desktop tab using
+  the built-in PDF reader. Cancellation leaves tabs unchanged; missing or
+  unreadable selected files show an error.
+- Recognize Windows absolute paths in the address bar, including quoted
+  Explorer paths and filenames containing spaces, Unicode, `#` and `%`.
+- Open completed PDF downloads inside sidebrowser. Other downloads keep
+  their existing system-app behavior and executable files remain blocked
+  from launching in the drawer.
+- Automatically use desktop mode for `.pdf` URLs, webpage links and redirects.
+- Keep the side window visible while the native PDF file picker or error dialog
+  is open, then resume its normal mouse-leave behavior.
+
 ## [1.5.1] — 2026-10-09
 
 ### Fixed

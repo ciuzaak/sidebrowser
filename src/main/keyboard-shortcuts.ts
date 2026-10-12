@@ -41,6 +41,8 @@ import type { ShortcutAction } from '@shared/ipc-contract';
 // ---------------------------------------------------------------------------
 
 export interface ShortcutDeps {
+  /** Ctrl+O — select and open a local PDF in a new tab. */
+  onOpenPdf: () => void;
   /** Ctrl+T — opens a new blank tab. */
   onNewTab: () => void;
   /** Ctrl+W — closes the active tab (ViewManager auto-seeds a blank when empty). */
@@ -89,6 +91,7 @@ export function buildShortcutMenuTemplate(deps: ShortcutDeps): MenuItemConstruct
     { label: 'Find in Page',      accelerator: 'CmdOrCtrl+F',   click: () => deps.emitToRenderer('open-find') },
     { label: 'Reopen Closed Tab', accelerator: 'CmdOrCtrl+Shift+T', click: () => deps.onReopenClosedTab() },
     { label: 'Toggle DevTools',   accelerator: 'F12',           click: () => deps.onToggleDevTools() },
+    { label: 'Open PDF',          accelerator: 'CmdOrCtrl+O',   click: () => deps.onOpenPdf() },
   ];
 
   return [

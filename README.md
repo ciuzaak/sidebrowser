@@ -14,6 +14,7 @@ Windows only，暂无移植 macOS 的计划。
 
 ## 核心功能
 
+- **PDF 阅读**：新标签页点「Open PDF」或按 Ctrl+O 选择本地文件，在新标签页用内置阅读器打开。地址栏支持 Windows 绝对路径（包括资源管理器「复制文件地址」得到的带引号路径）；下载列表里点击已完成的 PDF，也在应用内打开。`.pdf` 地址、网页链接及重定向自动切到桌面模式；服务器强制下载的链接仍先下载。
 - **贴边自动隐藏**（左/右均可）：窗口收起后留 3px 触发条，鼠标悬停即呼出。多屏交界处若收起会露在邻屏上，则保持可见，仅自动暗化；移到屏幕外侧边缘即可收起
 - **鼠标离开自动变暗/模糊**：离开窗口后触发暗化 + 模糊滤镜，强度和效果均可在设置里调
 - **手机模拟（M10 hybrid CDP）**：UA + Client Hints 头 + Chromium device emulation + CDP touch/pointer override，让 X.com / B 站等靠 Client Hints 路由的站点也按真移动版渲染
@@ -71,6 +72,7 @@ pnpm lint         # ESLint
 | 快捷键 | 功能 |
 |---|---|
 | `Ctrl+T` | 新 tab |
+| `Ctrl+O` | 选择本地 PDF，在新 tab 打开 |
 | `Ctrl+W` | 关闭当前 tab |
 | `Ctrl+L` | 聚焦地址栏 |
 | `Ctrl+R` / `F5` | 刷新 |

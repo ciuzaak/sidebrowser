@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useActiveTab, useTabsStore } from '../store/tab-store';
 import { useWindowStateStore } from '../store/window-state-store';
+import { isPdfUrl } from '@shared/url';
 import {
   PILL_PLACEHOLDER,
   formatTabCount,
@@ -166,9 +167,9 @@ export function TopBar({
         }
       >
         <PillButton
-          ariaLabel={tab?.isMobile ? 'Switch to desktop' : 'Switch to mobile'}
+          ariaLabel={isPdfUrl(url) ? 'PDF uses desktop mode' : tab?.isMobile ? 'Switch to desktop' : 'Switch to mobile'}
           testId="topbar-ua-toggle"
-          disabled={disabled}
+          disabled={disabled || isPdfUrl(url)}
           active={tab?.isMobile}
           onClick={() => id && void window.sidebrowser.setMobile(id, !tab?.isMobile)}
         >
