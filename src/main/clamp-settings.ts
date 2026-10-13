@@ -47,6 +47,7 @@ import {
   BUILTIN_SEARCH_ENGINE_IDS,
   DISCARD_AFTER_OPTIONS,
 } from '@shared/settings-defaults';
+import { normalizeHexColor } from '@shared/pdf-toolbar';
 
 /**
  * `SettingsPatch` lives in `@shared/types` (moved in Task 4) because both the
@@ -197,6 +198,14 @@ function clampAppearance(
       partial.theme === 'dark' || partial.theme === 'light' || partial.theme === 'system'
         ? partial.theme
         : 'system';
+  }
+  if (partial.pdfToolbarTheme !== undefined) {
+    out.pdfToolbarTheme = ['system', 'dark', 'light', 'custom'].includes(partial.pdfToolbarTheme)
+      ? partial.pdfToolbarTheme : 'system';
+  }
+  if (partial.pdfToolbarColor !== undefined) {
+    const color = normalizeHexColor(partial.pdfToolbarColor);
+    if (color !== null) out.pdfToolbarColor = color;
   }
   return out;
 }

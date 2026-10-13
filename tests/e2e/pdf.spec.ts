@@ -54,6 +54,7 @@ async function withApp(run: (app: ElectronApplication, chrome: Page, path: strin
   let app: ElectronApplication | undefined;
   try {
     app = await electron.launch({
+      timeout: 30_000,
       args: [resolve('out/main/index.cjs'), `--user-data-dir=${join(dir, 'profile')}`],
       env: { ...process.env, SIDEBROWSER_E2E: '1', SIDEBROWSER_E2E_DOWNLOADS_DIR: join(dir, 'downloads') },
     });
@@ -92,6 +93,40 @@ async function expectReader(app: ElectronApplication, chrome: Page, url: string)
       return { state: viewer?.loadState_, pages: viewer?.documentDimensions?.pageDimensions?.length };
     })()`);
   }), { timeout: 15_000 }).toEqual({ state: 'success', pages: 1 });
+}
+
+interface PdfColors {
+  background: string; foreground: string; icon: string;
+  pageForeground: string; pageInputForeground: string;
+  documentBackground: string; viewerBackground: string; pluginBackground: number;
+}
+
+async function pdfColors(app: ElectronApplication): Promise<PdfColors | null> {
+  return app.evaluate(async () => {
+    const h = (globalThis as unknown as { __sidebrowserTestHooks: { getActiveWebContents: () => Electron.WebContents } }).__sidebrowserTestHooks;
+    const frame = h.getActiveWebContents().mainFrame.framesInSubtree.find((f) => f.url.startsWith('chrome-extension://'));
+    if (!frame) return null;
+    return frame.executeJavaScript(`(() => {
+      const viewer = document.querySelector('pdf-viewer');
+      const toolbar = viewer?.shadowRoot?.querySelector('viewer-toolbar');
+      const bar = toolbar?.shadowRoot?.querySelector('#toolbar');
+      const print = toolbar?.shadowRoot?.querySelector('#print');
+      const pageRoot = toolbar?.shadowRoot?.querySelector('viewer-page-selector')?.shadowRoot;
+      const pageContent = pageRoot?.querySelector('#content');
+      const pageInput = pageRoot?.querySelector('input');
+      if (!bar || !print) return null;
+      return {
+        background: getComputedStyle(bar).backgroundColor,
+        foreground: getComputedStyle(bar).color,
+        icon: getComputedStyle(print).getPropertyValue('--cr-icon-button-fill-color').trim(),
+        pageForeground: pageContent ? getComputedStyle(pageContent).color : '',
+        pageInputForeground: pageInput ? getComputedStyle(pageInput).color : '',
+        documentBackground: getComputedStyle(document.body).backgroundColor,
+        viewerBackground: getComputedStyle(viewer).backgroundColor,
+        pluginBackground: viewer.getBackgroundColor(),
+      };
+    })()`);
+  }) as Promise<PdfColors | null>;
 }
 
 test.describe('PDF reader', () => {
@@ -226,6 +261,139 @@ test.describe('PDF reader', () => {
       await expect(chrome.getByTestId('downloads-drawer')).toBeVisible();
       await chrome.getByRole('button', { name: `Open ${download.filename}`, exact: true }).click();
       await expectReader(app, chrome, pathToFileURL(download.path).href);
+    });
+  });
+
+  test('PDF toolbar themes update live without changing reading backgrounds', async () => {
+    await withApp(async (app, chrome, path) => {
+      await chrome.evaluate((url) => window.sidebrowser.createTab(url), pathToFileURL(path).href);
+      await expectReader(app, chrome, pathToFileURL(path).href);
+      await chrome.evaluate(() => window.sidebrowser.updateSettings({ appearance: { pdfToolbarTheme: 'dark' } }));
+      await app.evaluate(() => {
+        const h = (globalThis as unknown as { __sidebrowserTestHooks: {
+          getWindowBounds: () => Electron.Rectangle; setWindowBounds: (bounds: Electron.Rectangle) => void;
+        } }).__sidebrowserTestHooks;
+        h.setWindowBounds({ ...h.getWindowBounds(), width: 900 });
+      });
+      await expect.poll(async () => (await pdfColors(app))?.background).toBe('rgb(60, 60, 60)');
+      const initial = (await pdfColors(app))!;
+      expect(initial.foreground).toBe('rgb(255, 255, 255)');
+      expect(initial.icon).toBe('#ffffff');
+      expect(typeof initial.pluginBackground).toBe('number');
+      for (const [mode, color, expected, foreground] of [
+        ['light', '#3c3c3c', 'rgb(246, 246, 247)', 'rgb(0, 0, 0)'],
+        ['custom', '#ffd966', 'rgb(255, 217, 102)', 'rgb(0, 0, 0)'],
+        ['custom', '#7c3aed', 'rgb(124, 58, 237)', 'rgb(255, 255, 255)'],
+      ] as const) {
+        await chrome.evaluate(({ mode, color }) => window.sidebrowser.updateSettings({ appearance: { pdfToolbarTheme: mode, pdfToolbarColor: color } }), { mode, color });
+        await expect.poll(async () => (await pdfColors(app))?.background).toBe(expected);
+        const colors = (await pdfColors(app))!;
+        expect(colors.foreground).toBe(foreground);
+        expect(colors.pageForeground).toBe(foreground);
+        expect(colors.pageInputForeground).toBe(foreground);
+        expect(colors.documentBackground).toBe(initial.documentBackground);
+        expect(colors.viewerBackground).toBe(initial.viewerBackground);
+        expect(colors.pluginBackground).toBe(initial.pluginBackground);
+      }
+      await chrome.evaluate(() => window.sidebrowser.updateSettings({ appearance: { pdfToolbarTheme: 'system' } }));
+      await app.evaluate(({ nativeTheme }) => { nativeTheme.themeSource = 'light'; });
+      await expect.poll(async () => (await pdfColors(app))?.background).toBe('rgb(246, 246, 247)');
+      await app.evaluate(({ nativeTheme }) => { nativeTheme.themeSource = 'dark'; });
+      await expect.poll(async () => (await pdfColors(app))?.background).toBe('rgb(60, 60, 60)');
+    });
+  });
+
+  test('palette, hue, spectrum, HEX and reset controls work in Settings', async () => {
+    await withApp(async (app, chrome, path) => {
+      await chrome.evaluate((url) => window.sidebrowser.createTab(url), pathToFileURL(path).href);
+      await expectReader(app, chrome, pathToFileURL(path).href);
+      const appTheme = await chrome.evaluate(() => document.documentElement.dataset.theme);
+      await chrome.getByTestId('topbar-settings-toggle').click();
+      await chrome.getByTestId('settings-pdf-toolbar-theme').selectOption('custom');
+      await expect(chrome.getByTestId('pdf-toolbar-palette')).toBeVisible();
+      await chrome.getByRole('button', { name: 'Use Teal', exact: true }).click();
+      await expect.poll(async () => (await pdfColors(app))?.background).toBe('rgb(15, 118, 110)');
+      const hex = chrome.getByTestId('pdf-color-hex');
+      await hex.fill('#FFD966');
+      await hex.press('Enter');
+      await expect.poll(async () => (await pdfColors(app))?.background).toBe('rgb(255, 217, 102)');
+      await chrome.getByTestId('pdf-color-hue').press('Home');
+      const spectrum = chrome.getByTestId('pdf-color-spectrum');
+      const bounds = (await spectrum.boundingBox())!;
+      await spectrum.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
+      await expect(hex).toHaveValue('#804040');
+      await spectrum.press('ArrowLeft');
+      await expect(hex).toHaveValue('#804343');
+      await hex.fill('invalid');
+      await hex.press('Tab');
+      await expect(hex).toHaveValue('#804343');
+      expect(await chrome.evaluate(() => document.documentElement.dataset.theme)).toBe(appTheme);
+      await chrome.screenshot({ path: test.info().outputPath('pdf-toolbar-palette.png') });
+      await chrome.getByTestId('settings-close').click();
+      await expect.poll(() => app.evaluate(() => {
+        const h = (globalThis as unknown as { __sidebrowserTestHooks: { getActiveViewVisible: () => boolean } }).__sidebrowserTestHooks;
+        return h.getActiveViewVisible();
+      })).toBe(true);
+      const png = await app.evaluate(async () => {
+        const h = (globalThis as unknown as { __sidebrowserTestHooks: { getActiveWebContents: () => Electron.WebContents } }).__sidebrowserTestHooks;
+        return (await h.getActiveWebContents().capturePage()).toPNG().toString('base64');
+      });
+      writeFileSync(test.info().outputPath('pdf-toolbar-custom.png'), Buffer.from(png, 'base64'));
+      await chrome.getByTestId('topbar-settings-toggle').click();
+      await chrome.getByTestId('reset-pdf-toolbar').click();
+      await expect(chrome.getByTestId('settings-pdf-toolbar-theme')).toHaveValue('system');
+      await expect(chrome.getByTestId('pdf-toolbar-palette')).toHaveCount(0);
+      await expect(chrome.getByTestId('reset-pdf-toolbar')).not.toBeVisible();
+      expect((await chrome.evaluate(() => window.sidebrowser.getSettings())).appearance.pdfToolbarColor).toBe('#3c3c3c');
+    });
+  });
+
+  test('color applies to new and background PDF tabs, reload and lazy restore', async () => {
+    await withApp(async (app, chrome, path, base) => {
+      const first = await chrome.evaluate((url) => window.sidebrowser.createTab(url), pathToFileURL(path).href);
+      await expectReader(app, chrome, pathToFileURL(path).href);
+      await chrome.evaluate(() => window.sidebrowser.updateSettings({ appearance: { pdfToolbarTheme: 'custom', pdfToolbarColor: '#0f766e' } }));
+      await chrome.evaluate((url) => window.sidebrowser.createTab(url), `${base}/inline.pdf`);
+      await expectReader(app, chrome, `${base}/inline.pdf`);
+      await expect.poll(async () => (await pdfColors(app))?.background).toBe('rgb(15, 118, 110)');
+      await chrome.evaluate(() => window.sidebrowser.updateSettings({ appearance: { pdfToolbarTheme: 'light' } }));
+      await chrome.evaluate((id) => window.sidebrowser.activateTab(id), first.id);
+      await expect.poll(async () => (await pdfColors(app))?.background).toBe('rgb(246, 246, 247)');
+      await app.evaluate(async () => {
+        const h = (globalThis as unknown as { __sidebrowserTestHooks: { getActiveWebContents: () => Electron.WebContents } }).__sidebrowserTestHooks;
+        const wc = h.getActiveWebContents();
+        await new Promise<void>((done) => { wc.once('did-finish-load', done); wc.reload(); });
+      });
+      await expectReader(app, chrome, pathToFileURL(path).href);
+      await expect.poll(async () => (await pdfColors(app))?.background).toBe('rgb(246, 246, 247)');
+      await chrome.evaluate(() => window.sidebrowser.createTab());
+      await app.evaluate((_electron, id) => {
+        const h = (globalThis as unknown as { __sidebrowserTestHooks: { unloadTab: (id: string) => boolean } }).__sidebrowserTestHooks;
+        h.unloadTab(id);
+      }, first.id);
+      await chrome.evaluate((id) => window.sidebrowser.activateTab(id), first.id);
+      await expectReader(app, chrome, pathToFileURL(path).href);
+      await expect.poll(async () => (await pdfColors(app))?.background).toBe('rgb(246, 246, 247)');
+    });
+  });
+
+  test('custom toolbar color persists across app restart', async () => {
+    await withApp(async (app, chrome, path) => {
+      const profile = await app.evaluate(({ app }) => app.getPath('userData'));
+      await chrome.evaluate((url) => window.sidebrowser.createTab(url), pathToFileURL(path).href);
+      await expectReader(app, chrome, pathToFileURL(path).href);
+      await chrome.evaluate(() => window.sidebrowser.updateSettings({ appearance: { pdfToolbarTheme: 'custom', pdfToolbarColor: '#fb923c' } }));
+      await app.close();
+      const restored = await electron.launch({ args: [resolve('out/main/index.cjs'), `--user-data-dir=${profile}`], env: { ...process.env, SIDEBROWSER_E2E: '1' } });
+      try {
+        const restoredChrome = await getChromeWindow(restored);
+        await waitForAddressBarReady(restoredChrome);
+        await expectReader(restored, restoredChrome, pathToFileURL(path).href);
+        await expect.poll(async () => (await pdfColors(restored))?.background).toBe('rgb(251, 146, 60)');
+        const settings = await restoredChrome.evaluate(() => window.sidebrowser.getSettings());
+        expect(settings.appearance.pdfToolbarTheme).toBe('custom');
+        expect(settings.appearance.pdfToolbarColor).toBe('#fb923c');
+      } finally { await restored.close(); }
     });
   });
 });

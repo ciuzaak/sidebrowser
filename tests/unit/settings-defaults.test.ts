@@ -42,6 +42,6 @@ describe('DEFAULTS', () => {
   });
 
   it('has correct default for appearance', () => {
-    expect(DEFAULTS.appearance).toEqual({ theme: 'system' });
+    expect(DEFAULTS.appearance).toEqual({ theme: 'system', pdfToolbarTheme: 'system', pdfToolbarColor: '#3c3c3c' });
   });
 });

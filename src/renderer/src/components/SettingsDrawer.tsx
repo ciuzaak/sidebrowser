@@ -1,11 +1,12 @@
 import { ChevronsUpDown, RotateCcw, X, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, CSSProperties, ReactElement, ReactNode, RefObject } from 'react';
-import type { Settings, ThemeChoice, SearchEngine } from '@shared/types';
+import type { Settings, ThemeChoice, SearchEngine, PdfToolbarTheme } from '@shared/types';
 import { DEFAULTS, BUILTIN_SEARCH_ENGINES } from '@shared/settings-defaults';
 import { nanoid } from 'nanoid';
 import { useSettingsStore } from '../store/settings-store';
 import { StorageSection } from './StorageSection';
+import { PdfToolbarPalette } from './PdfToolbarPalette';
 
 /**
  * Right-side overlay drawer exposing all 6 Settings sections (spec §7).
@@ -109,6 +110,37 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
               <option value="light">Light</option>
             </SelectField>
           </Row>
+          <Row
+            label="PDF toolbar"
+            rightSlot={
+              <ResetIcon
+                show={settings.appearance.pdfToolbarTheme !== DEFAULTS.appearance.pdfToolbarTheme || settings.appearance.pdfToolbarColor !== DEFAULTS.appearance.pdfToolbarColor}
+                onClick={() => void update({ appearance: {
+                  pdfToolbarTheme: DEFAULTS.appearance.pdfToolbarTheme,
+                  pdfToolbarColor: DEFAULTS.appearance.pdfToolbarColor,
+                } })}
+                testId="reset-pdf-toolbar"
+              />
+            }
+          >
+            <SelectField
+              testId="settings-pdf-toolbar-theme"
+              value={settings.appearance.pdfToolbarTheme}
+              onChange={(v) => void update({ appearance: { pdfToolbarTheme: v as PdfToolbarTheme } })}
+            >
+              <option value="system">System</option>
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+              <option value="custom">Custom</option>
+            </SelectField>
+          </Row>
+          {settings.appearance.pdfToolbarTheme === 'custom' && (
+            <PdfToolbarPalette
+              value={settings.appearance.pdfToolbarColor}
+              onChange={(pdfToolbarColor) => void update({ appearance: { pdfToolbarColor } })}
+            />
+          )}
+          <p className="text-xs text-[var(--fg-muted)]">Changes only the PDF toolbar. System follows your device theme.</p>
         </Section>
 
         {/* ── 1. Window ───────────────────────────────────────── */}

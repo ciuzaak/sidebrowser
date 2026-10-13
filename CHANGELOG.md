@@ -5,6 +5,16 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 the project follows [Semantic Versioning](https://semver.org/) at the
 minor level (each numbered milestone bumps the minor version).
 
+## [1.6.1] — 2026-10-13
+
+### Added
+
+- PDF toolbar colors in Settings → Appearance: System, Dark, Light and Custom,
+  with preset swatches, an inline spectrum/hue palette, HEX input and preview.
+  Text and icons choose readable black or white; reading backgrounds stay unchanged.
+- Apply toolbar colors immediately to loaded PDFs and preserve them through
+  refresh, lazy restore and app restart. Reset restores the default settings.
+
 ## [1.6.0] — 2026-10-12
 
 ### Added

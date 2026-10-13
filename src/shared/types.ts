@@ -118,9 +118,12 @@ export interface BrowsingSettings {
 }
 
 export type ThemeChoice = 'system' | 'dark' | 'light';
+export type PdfToolbarTheme = ThemeChoice | 'custom';
 
 export interface AppearanceSettings {
   theme: ThemeChoice;
+  pdfToolbarTheme: PdfToolbarTheme;
+  pdfToolbarColor: string;
 }
 
 /**
