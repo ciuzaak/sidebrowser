@@ -164,9 +164,15 @@ test.describe('PDF reader', () => {
   test('cancelling leaves the tab list unchanged', async () => {
     await withApp(async (app, chrome) => {
       await stubPicker(app, null);
-      const before = await chrome.evaluate(() => window.sidebrowser.requestTabsSnapshot());
+      // Loading may finish during the dialog; cancellation must preserve tab
+      // identity, navigation and activation rather than freeze transient state.
+      const tabState = () => chrome.evaluate(async () => {
+        const s = await window.sidebrowser.requestTabsSnapshot();
+        return { activeId: s.activeId, tabs: s.tabs.map(({ id, url, isMobile }) => ({ id, url, isMobile })) };
+      });
+      const before = await tabState();
       await chrome.evaluate(() => window.sidebrowser.openPdf());
-      expect(await chrome.evaluate(() => window.sidebrowser.requestTabsSnapshot())).toEqual(before);
+      expect(await tabState()).toEqual(before);
     });
   });
 
