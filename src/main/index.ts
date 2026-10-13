@@ -35,6 +35,8 @@ import { installPermissionPolicy } from './permissions';
 import { DownloadsManager } from './downloads';
 import { PdfFiles } from './pdf-files';
 import { isCursorInside } from './cursor-state';
+import { PdfToolbarThemes } from './pdf-toolbar-theme';
+import { resolvePdfToolbarStyle } from '@shared/pdf-toolbar';
 
 function createPdfFiles(
   window: BrowserWindow,
@@ -281,6 +283,10 @@ app.whenReady().then(() => {
     viewManager.getMobileEmulationState(wcId),
   );
   // M16: downloads go straight to the Downloads folder (overridable in E2E).
+  const pdfToolbarThemes = new PdfToolbarThemes(() =>
+    resolvePdfToolbarStyle(settingsStore.get().appearance, nativeTheme.shouldUseDarkColors),
+  );
+  viewManager.onTabAttach((wc) => pdfToolbarThemes.attach(wc));
   let pdfDialogCount = 0;
   let onPdfDialogStateChange = (open: boolean): void => { pdfDialogCount += open ? 1 : -1; };
   const pdfFiles = createPdfFiles(win, viewManager, (open) => onPdfDialogStateChange(open));
@@ -539,6 +545,7 @@ app.whenReady().then(() => {
   }));
 
   const onNativeThemeUpdated = (): void => {
+    pdfToolbarThemes.refresh();
     if (!win.isDestroyed()) {
       win.webContents.send(IpcChannels.nativeThemeUpdated, {
         shouldUseDarkColors: nativeTheme.shouldUseDarkColors,
@@ -591,6 +598,7 @@ app.whenReady().then(() => {
   let lastAlwaysOnTop = settingsStore.get().window.alwaysOnTop;
   let lastEdgeDockEnabled = settingsStore.get().edgeDock.enabled;
   settingsStore.onChanged((settings) => {
+    pdfToolbarThemes.refresh();
     // M16: browsing.muteWhenHidden may have changed.
     viewManager.refreshAudio();
     if (dim.isActive) void dim.restyle(settings.dim);
@@ -753,6 +761,7 @@ app.whenReady().then(() => {
   }
   win.once('closed', () => {
     watcher.stop();
+    pdfToolbarThemes.dispose();
     edgeDock.dispose();
     screen.removeListener('display-metrics-changed', onDisplayChanged);
     screen.removeListener('display-removed', onDisplayChanged);
@@ -779,6 +788,7 @@ app.whenReady().then(() => {
         };
       }, historyRecorder);
       const newPdfFiles = createPdfFiles(newWin, newViewManager);
+      newViewManager.onTabAttach((wc) => pdfToolbarThemes.attach(wc));
       registerIpcRouter(newWin, newViewManager, settingsStore, historyStore, downloads, () => newPdfFiles.pickAndOpen());
       newWin.webContents.once('did-finish-load', () => {
         newViewManager.createTab('about:blank');

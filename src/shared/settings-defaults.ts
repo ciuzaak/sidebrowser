@@ -54,7 +54,7 @@ export const DEFAULTS: Settings = {
   edgeDock: { enabled: true, animationMs: 200, triggerStripPx: 3 },
   lifecycle: { restoreTabsOnLaunch: true, discardAfterMin: 30 },
   browsing: { defaultIsMobile: true, mobileUserAgent: MOBILE_UA, muteWhenHidden: true },
-  appearance: { theme: 'system' },
+  appearance: { theme: 'system', pdfToolbarTheme: 'system', pdfToolbarColor: '#3c3c3c' },
   search: {
     engines: [...BUILTIN_SEARCH_ENGINES],
     activeId: 'google',
