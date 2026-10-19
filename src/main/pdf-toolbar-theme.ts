@@ -1,6 +1,8 @@
 import type { WebContents } from 'electron';
 import { normalizeHexColor, PDF_TOOLBAR_DARK, toolbarForeground, type PdfToolbarStyle } from '@shared/pdf-toolbar';
 
+import { applyPdfPluginSurfaceStyle, applyPdfViewerStyle, type PdfPluginViewport } from './pdf-viewer-style';
+
 const PDF_EXTENSION = 'mhjfbmdgcfjbbpaeojofohoefgiehjai';
 
 export function isPdfViewerFrame(url: string): boolean {
@@ -10,69 +12,10 @@ export function isPdfViewerFrame(url: string): boolean {
   } catch { return false; }
 }
 
-/** Executes only in Chromium's PDF extension; every selector stays inside its toolbar. */
-function applyToolbarStyle(style: PdfToolbarStyle): void {
-  const scope = window as Window & {
-    __sidebrowserPdfToolbarTheme?: { apply: (style: PdfToolbarStyle) => void };
-  };
-  if (scope.__sidebrowserPdfToolbarTheme) {
-    scope.__sidebrowserPdfToolbarTheme.apply(style);
-    return;
-  }
-  let current = style;
-  const observer = new MutationObserver(() => update());
-  const update = (): void => {
-    const viewer = document.querySelector('pdf-viewer');
-    const toolbar = viewer?.shadowRoot?.querySelector<HTMLElement>('viewer-toolbar');
-    if (!toolbar?.shadowRoot) {
-      if (viewer?.shadowRoot) observer.observe(viewer.shadowRoot, { childList: true, subtree: true });
-      return;
-    }
-    observer.disconnect();
-    toolbar.style.setProperty('--viewer-pdf-toolbar-background-color', current.background);
-    toolbar.style.setProperty('--pdf-toolbar-text-color', current.foreground);
-    let sheet = toolbar.shadowRoot.querySelector<HTMLStyleElement>('#sidebrowser-pdf-toolbar-colors');
-    if (!sheet) {
-      sheet = document.createElement('style');
-      sheet.id = 'sidebrowser-pdf-toolbar-colors';
-      toolbar.shadowRoot.append(sheet);
-    }
-    const rgb = current.foreground === '#ffffff' ? '255,255,255' : '0,0,0';
-    const css = `
-      #toolbar { background-color: ${current.background} !important; color: ${current.foreground} !important; }
-      :host { --active-button-bg: rgba(${rgb},.16); --viewer-icon-focus-outline-color: ${current.foreground}; }
-      .vertical-separator { background: rgba(${rgb},.3) !important; }
-      #toolbar input { background: rgba(${rgb},.1); color: ${current.foreground}; }
-      #toolbar cr-icon-button:hover { background: rgba(${rgb},.1); }
-    `;
-    if (sheet.textContent !== css) sheet.textContent = css;
-    // Page numbers have their own shadow tree and hardcoded white text.
-    const pageSelector = toolbar.shadowRoot.querySelector('viewer-page-selector');
-    if (pageSelector?.shadowRoot) {
-      let pageSheet = pageSelector.shadowRoot.querySelector<HTMLStyleElement>('#sidebrowser-pdf-page-selector-colors');
-      if (!pageSheet) {
-        pageSheet = document.createElement('style');
-        pageSheet.id = 'sidebrowser-pdf-page-selector-colors';
-        pageSelector.shadowRoot.append(pageSheet);
-      }
-      const pageCss = `#content, input { color: ${current.foreground} !important; } input { background: rgba(${rgb},.1) !important; }`;
-      if (pageSheet.textContent !== pageCss) pageSheet.textContent = pageCss;
-    }
-  };
-  scope.__sidebrowserPdfToolbarTheme = {
-    apply: (next) => { current = next; update(); },
-  };
-  observer.observe(document, { childList: true, subtree: true });
-  void customElements.whenDefined('pdf-viewer').then(update);
-  void customElements.whenDefined('viewer-toolbar').then(update);
-  void customElements.whenDefined('viewer-page-selector').then(update);
-  update();
-}
-
 export function buildPdfToolbarScript(style: PdfToolbarStyle): string {
   // Persisted settings and IPC input never become arbitrary CSS or JavaScript.
   const background = normalizeHexColor(style.background) ?? PDF_TOOLBAR_DARK;
-  return `(${applyToolbarStyle.toString()})(${JSON.stringify({ background, foreground: toolbarForeground(background) })})`;
+  return `(${applyPdfViewerStyle.toString()})(${JSON.stringify({ background, foreground: toolbarForeground(background) })})`;
 }
 
 /** Owns frame-load listeners and updates every loaded PDF, including background tabs. */
@@ -109,11 +52,21 @@ export class PdfToolbarThemes {
 
   private apply(wc: WebContents, script: string): void {
     if (wc.isDestroyed()) return;
-    for (const frame of wc.mainFrame.framesInSubtree) {
-      if (isPdfViewerFrame(frame.url)) {
-        // Navigation/unloading can destroy a frame while the promise is pending.
-        void frame.executeJavaScript(script).catch(() => {});
-      }
+    const frames = wc.mainFrame.framesInSubtree;
+    if (!frames.some(frame => isPdfViewerFrame(frame.url))) return;
+    const background = normalizeHexColor(this.getStyle().background) ?? PDF_TOOLBAR_DARK;
+    const style = { background, foreground: toolbarForeground(background) };
+    for (const frame of frames.filter(frame => isPdfViewerFrame(frame.url))) {
+      void frame.executeJavaScript(script).then((value) => {
+        if (wc.isDestroyed()) return;
+        const viewport = value as PdfPluginViewport | null;
+        const surfaceScript = `(${applyPdfPluginSurfaceStyle.toString()})(${JSON.stringify(style)},${JSON.stringify(viewport ?? null)})`;
+        for (const surface of wc.mainFrame.framesInSubtree) {
+          // Guarded inside the script: only Chromium's generated native plugin
+          // document receives styles and the compensated shadow-cache refresh.
+          if (!isPdfViewerFrame(surface.url)) void surface.executeJavaScript(surfaceScript).catch(() => {});
+        }
+      }).catch(() => {});
     }
   }
 }

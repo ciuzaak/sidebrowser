@@ -5,6 +5,26 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/);
 the project follows [Semantic Versioning](https://semver.org/) at the
 minor level (each numbered milestone bumps the minor version).
 
+## [Unreleased]
+
+## [1.6.2] — 2026-10-19
+
+### Fixed
+
+- Match PDF page gaps and surrounding reading backgrounds to the selected PDF
+  toolbar color, including live theme changes. PDF page contents keep their
+  original colors. Rename the setting to PDF colors to reflect its wider scope.
+- Repaint PDF backgrounds immediately after changing colors, without requiring
+  a zoom, scroll, or reload to refresh the native plugin's cached rendering.
+- Rebuild PDFium's separately cached page-edge shadows on color changes, keeping
+  the current reading position and zoom and prioritizing ongoing user navigation.
+- Extend PDF colors to the navigation sidebar, with readable page numbers,
+  icons and thumbnail selection outlines on light, dark and custom backgrounds.
+- Apply PDF colors to open and newly created menus, dialogs, annotation panels,
+  bookmarks, inputs, text selections, scrollbars and the find bar. Keep these
+  surfaces readable and update them immediately, including system theme changes.
+- Recognize PDF viewer tabs without a `.pdf` URL when styling the find bar.
+
 ## [1.6.1] — 2026-10-13
 
 ### Added

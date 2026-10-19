@@ -8,11 +8,10 @@ export function resolveTheme(choice: ThemeChoice, systemIsDark: boolean): 'dark'
 }
 
 /**
- * Resolves effective theme from user choice + OS hint, writes to
- * `document.documentElement.dataset.theme`, subscribes to native-theme
- * updates while mounted.
+ * Subscribe to the native theme without changing the app's resolved theme.
+ * PDF controls may follow the system independently of the app theme.
  */
-export function useTheme(choice: ThemeChoice): 'dark' | 'light' {
+export function useSystemDark(): boolean | null {
   // null = not yet resolved from OS. Avoids FOUC on dark-OS systems where
   // the initial default of `false` would briefly paint light before the
   // first IPC resolution.
@@ -28,6 +27,12 @@ export function useTheme(choice: ThemeChoice): 'dark' | 'light' {
     });
     return () => { if (unsub) unsub(); };
   }, []);
+
+  return systemIsDark;
+}
+
+export function useTheme(choice: ThemeChoice): 'dark' | 'light' {
+  const systemIsDark = useSystemDark();
 
   // Keep returning a valid ThemeChoice-resolved value even before first OS
   // read — callers that capture the return (currently none) should still see

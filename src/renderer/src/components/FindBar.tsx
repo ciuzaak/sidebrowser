@@ -1,6 +1,11 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactElement } from 'react';
 import { ChevronDown, ChevronUp, X } from 'lucide-react';
 import type { FindResult } from '@shared/types';
+import { isPdfUrl } from '@shared/url';
+import { resolvePdfToolbarStyle } from '@shared/pdf-toolbar';
+import { useActiveTab } from '../store/tab-store';
+import { useSettingsStore } from '../store/settings-store';
+import { useSystemDark } from '../theme/useTheme';
 
 interface Props {
   onClose: () => void;
@@ -18,6 +23,23 @@ export function FindBar({ onClose, focusSignal }: Props): ReactElement {
   const [text, setText] = useState('');
   const [result, setResult] = useState<FindResult | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const activeTab = useActiveTab();
+  const appearance = useSettingsStore((s) => s.settings?.appearance);
+  const systemDark = useSystemDark();
+  const pdf = appearance && (activeTab?.isPdf || isPdfUrl(activeTab?.url ?? ''))
+    ? resolvePdfToolbarStyle(appearance, systemDark ?? false) : null;
+  const rgb = pdf?.foreground === '#ffffff' ? '255,255,255' : '0,0,0';
+  const pdfColors = pdf ? {
+    '--surface-elevated': pdf.background,
+    '--surface-sunken': `rgba(${rgb},.14)`,
+    '--fg': pdf.foreground,
+    '--fg-muted': pdf.foreground,
+    '--border': `rgba(${rgb},.3)`,
+    '--accent': pdf.foreground,
+    '--accent-tint': `rgba(${rgb},.14)`,
+    '--danger': pdf.foreground,
+    colorScheme: pdf.foreground === '#ffffff' ? 'dark' : 'light',
+  } as CSSProperties : undefined;
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -67,7 +89,8 @@ export function FindBar({ onClose, focusSignal }: Props): ReactElement {
   return (
     <div
       data-testid="find-bar"
-      className="flex h-9 shrink-0 items-center gap-1 border-b border-[var(--border)] bg-[var(--surface-elevated)] px-2 shadow-[var(--shadow-elevated)]"
+      style={pdfColors}
+      className="flex h-9 shrink-0 items-center gap-1 border-b border-[var(--border)] bg-[var(--surface-elevated)] px-2 shadow-[var(--shadow-elevated)] selection:bg-[var(--fg)] selection:text-[var(--surface-elevated)]"
     >
       <input
         ref={inputRef}

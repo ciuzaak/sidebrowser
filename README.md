@@ -15,7 +15,7 @@ Windows only，暂无移植 macOS 的计划。
 ## 核心功能
 
 - **PDF 阅读**：新标签页点「Open PDF」或按 Ctrl+O 选择本地文件，在新标签页用内置阅读器打开。地址栏支持 Windows 绝对路径（包括资源管理器「复制文件地址」得到的带引号路径）；下载列表里点击已完成的 PDF，也在应用内打开。`.pdf` 地址、网页链接及重定向自动切到桌面模式；服务器强制下载的链接仍先下载。
-- **PDF 工具栏调色**：Settings → Appearance → PDF toolbar 支持 System / Dark / Light / Custom。Custom 提供预设色块、色相与明暗调色板、HEX 输入和预览；工具栏图标及文字自动适配对比度。只调整工具栏，保留阅读区背景；颜色会保存，刷新和重启后仍生效。
+- **PDF 阅读器配色**：Settings → Appearance → PDF colors 支持 System / Dark / Light / Custom。Custom 提供预设色块、色相与明暗调色板、HEX 输入和预览；工具栏、侧栏、页间背景、菜单、对话框、批注面板、查找栏和滚动条统一配色，文字、图标、选中与悬停状态自动适配对比度；改色后立即生效，已打开或稍后打开的控件均会更新。PDF 页面内容保持原色；颜色会保存，刷新和重启后仍生效。
 - **贴边自动隐藏**（左/右均可）：窗口收起后留 3px 触发条，鼠标悬停即呼出。多屏交界处若收起会露在邻屏上，则保持可见，仅自动暗化；移到屏幕外侧边缘即可收起
 - **鼠标离开自动变暗/模糊**：离开窗口后触发暗化 + 模糊滤镜，强度和效果均可在设置里调
 - **手机模拟（M10 hybrid CDP）**：UA + Client Hints 头 + Chromium device emulation + CDP touch/pointer override，让 X.com / B 站等靠 Client Hints 路由的站点也按真移动版渲染
