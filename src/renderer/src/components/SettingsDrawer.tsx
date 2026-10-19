@@ -111,7 +111,7 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
             </SelectField>
           </Row>
           <Row
-            label="PDF toolbar"
+            label="PDF colors"
             rightSlot={
               <ResetIcon
                 show={settings.appearance.pdfToolbarTheme !== DEFAULTS.appearance.pdfToolbarTheme || settings.appearance.pdfToolbarColor !== DEFAULTS.appearance.pdfToolbarColor}
@@ -140,7 +140,7 @@ export function SettingsDrawer({ open, onClose, toggleRef }: SettingsDrawerProps
               onChange={(pdfToolbarColor) => void update({ appearance: { pdfToolbarColor } })}
             />
           )}
-          <p className="text-xs text-[var(--fg-muted)]">Changes only the PDF toolbar. System follows your device theme.</p>
+          <p className="text-xs text-[var(--fg-muted)]">Colors the PDF reader, menus, dialogs and find bar. Changes apply immediately. System follows your device theme.</p>
         </Section>
 
         {/* ── 1. Window ───────────────────────────────────────── */}

@@ -6,6 +6,8 @@ export interface Tab {
   id: string;
   url: string;
   title: string;
+  /** Detected built-in PDF viewer, including PDF responses without a .pdf URL. */
+  isPdf?: boolean;
   /** True = mobile UA + viewport behaviour; false = desktop. Per-tab independent (spec §2). */
   isMobile: boolean;
   /** Favicon URL (http(s) or data:) populated by `page-favicon-updated`. null = none received yet. */

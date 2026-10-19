@@ -5,6 +5,7 @@ import { getPersistentSession } from './session-manager';
 import { desktopUa } from './user-agents';
 import { sanitizeUrl } from './url-validator';
 import { isPdfUrl } from '@shared/url';
+import { isPdfViewerFrame } from './pdf-toolbar-theme';
 import {
   applyMobileEmulation,
   removeMobileEmulation,
@@ -1232,6 +1233,10 @@ export class ViewManager {
     });
     const onStart = (): void => this.updateTab(id, { isLoading: true, crashed: null });
     const onStop = (): void => this.updateTab(id, { isLoading: false, ...navState() });
+    const onFrameLoad = (): void => {
+      const isPdf = wc.mainFrame.framesInSubtree.some((frame) => isPdfViewerFrame(frame.url));
+      if (isPdf !== Boolean(this.tabs.get(id)?.tab.isPdf)) this.updateTab(id, { isPdf });
+    };
     const onWillNavigate = (event: Electron.Event, url: string): void => {
       if (!this.tabs.get(id)?.tab.isMobile || !isPdfUrl(url)) return;
       // Restart before sending the PDF request: changing UA on an in-flight
@@ -1244,7 +1249,7 @@ export class ViewManager {
       if (isMainFrame) onWillNavigate(event, url);
     };
     const onNavigate = (_e: Electron.Event, url: string): void => {
-      this.updateTab(id, { url, ...navState() });
+      this.updateTab(id, { url, ...navState(), ...(this.tabs.get(id)?.tab.isPdf ? { isPdf: false } : {}) });
       const managed = this.tabs.get(id);
       if (!managed) return;
       // M10.5: re-send the CDP overrides on every fresh navigation —
@@ -1394,6 +1399,7 @@ export class ViewManager {
     wc.on('will-navigate', onWillNavigate);
     wc.on('will-redirect', onWillRedirect);
     wc.on('did-navigate', onNavigate);
+    wc.on('did-frame-finish-load', onFrameLoad);
     wc.on('did-navigate-in-page', onNavigateInPage);
     wc.on('page-title-updated', onTitle);
     wc.on('page-favicon-updated', onFavicon);
@@ -1428,6 +1434,7 @@ export class ViewManager {
       wc.off('will-navigate', onWillNavigate);
       wc.off('will-redirect', onWillRedirect);
       wc.off('did-navigate', onNavigate);
+      wc.off('did-frame-finish-load', onFrameLoad);
       wc.off('did-navigate-in-page', onNavigateInPage);
       wc.off('page-title-updated', onTitle);
       wc.off('page-favicon-updated', onFavicon);
